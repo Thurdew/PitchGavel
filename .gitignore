@@ -1,0 +1,26 @@
+# Bağımlılıklar — package.json/package-lock.json'dan `npm install` ile yeniden kurulur.
+node_modules/
+
+# ETL ham veri kaynakları (dcaribou/transfermarkt-datasets'ten indirilir, bkz. README/claude.md
+# "npm run etl") — appearances.csv tek başına ~150MB, GitHub'ın 100MB dosya sınırını aşıyor.
+# İşlenmiş çıktı (server/data/processed/players.json) KASITLI OLARAK dahil ediliyor — repo
+# klonlanır klonlanmaz oyun ETL'siz de çalışabilsin diye.
+server/data/raw/
+
+# Loglar / OS artıkları
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Editör
+.vscode/
+.idea/
+
+# Claude Code — makineye özel izin listesi, paylaşılmaya uygun değil.
+.claude/settings.local.json
+
+# Kullanıcının kök dizine bıraktığı orijinal logo/icon dosyaları — client/public/assets/
+# içine kopyalandı (bkz. claude.md), buradaki kopyalar artık yinelenen/gereksiz.
+/pitchgavel-icon.png
+/pitchgavel-logo-dark.png
