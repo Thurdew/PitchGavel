@@ -5,6 +5,9 @@
   "description": "PitchGavel - Acik Arttirmali Kadro Kurma & Mac Simulasyonu Oyunu - Backend",
   "main": "src/index.js",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch-path=src --watch-path=../client/public src/index.js",
