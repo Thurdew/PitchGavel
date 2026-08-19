@@ -49,6 +49,26 @@ function registerDraftSockets(io, socket, ctx) {
     cb?.(result);
   });
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çark Modu — sırası gelen katılımcı çarkı çevirir
+  // (sonuç sunucuda belirlenir, bkz. DraftEngine.spinWheel), sonra o bandın içinden bir oyuncu
+  // seçer (bkz. draft:wheelPick).
+  socket.on('draft:spinWheel', ({ code } = {}, cb) => {
+    const room = getRoom(code);
+    if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
+    const result = draftEngine.spinWheel(room, socket.data.clientId);
+    cb?.(result);
+  });
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "Rakipten istediğin oyuncuyu al" segmenti
+  // için `ownerClientId` de gerekiyor (hangi rakibin kadrosundan çalındığı) — diğer segment
+  // türlerinde bu alan sunucu tarafında yok sayılır (bkz. DraftEngine.submitWheelPick).
+  socket.on('draft:wheelPick', ({ code, playerId, ownerClientId } = {}, cb) => {
+    const room = getRoom(code);
+    if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
+    const result = draftEngine.submitWheelPick(room, socket.data.clientId, { playerId, ownerClientId });
+    cb?.(result);
+  });
+
   // [KULLANICI İSTEĞİ] "Açık arttırmada durdurma gelsin, iki oyuncu da onayladığında oyun
   // duraklatılsın" — bkz. DraftEngine.togglePauseVote.
   socket.on('draft:pauseToggle', ({ code } = {}, cb) => {

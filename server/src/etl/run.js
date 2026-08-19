@@ -14,6 +14,10 @@ const {
 } = require('../shared/football');
 const { ACHIEVEMENTS, legendScore, RATING_OVERRIDES } = require('./icons');
 const MANUAL_POSITIONS = require('./manualPositionOverrides');
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — EA POLİTİKASI BİLEREK GERİ ALINDI] bkz. fc26RatingOverrides.js
+// dosya başı notu — 2026-27 için EA FC26 reytingleri (Süper Lig + büyük 5 Avrupa ligi) kullanıcı
+// onayıyla DOĞRUDAN uygulanıyor.
+const { resolveFc26Overrides } = require('./fc26RatingOverrides');
 
 const RAW_DIR = path.join(__dirname, '..', '..', 'data', 'raw');
 const OUT_DIR = path.join(__dirname, '..', '..', 'data', 'processed');
@@ -804,6 +808,142 @@ async function main() {
   }
 
   const allPlayers = [...activePlayers, ...iconPlayers];
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — EA POLİTİKASI BİLEREK GERİ ALINDI] "Diğer büyük 5 ligi
+  // de ekledim, onları da ekle" — Süper Lig'den sonra kullanıcı büyük 5 Avrupa ligi için de aynı
+  // FC26 2026-27 reyting dosyalarını ekledi. Sadece eşleşen oyuncuların `rating`'i DEĞİŞTİRİLİR,
+  // eşleşmeyenler kendi bağımsız formülümüzün ürettiği değeri korur (bkz. fc26RatingOverrides.js
+  // dosya başı notu). Süper Lig dosyası Transfermarkt kulüp adlarının tutarsız yazımı yüzünden
+  // (bazıları Türkçe karakterli, bazıları ASCII'ye düzleştirilmiş) elle bir `clubAliases`/
+  // `nameAliases` tablosu gerektiriyor; diğer 5 ligin kulüp adları buna göre daha tutarlı olduğu
+  // için genel "kulüp adı benzerliği" (fc26RatingOverrides.js `sameCoreClub`) yeterli.
+  const SUPER_LIG_CLUB_ALIASES = {
+    'Beşiktaş': ['Beşiktaş Jimnastik Kulübü'],
+    'Galatasaray': ['Galatasaray'],
+    'Fenerbahçe': ['Fenerbahce'],
+    'Trabzonspor': ['Trabzonspor'],
+    'Başakşehir': ['Basaksehir FK'],
+    'Kasımpaşa': ['Kasimpasa'],
+    'Eyüpspor': ['Eyüpspor'],
+    'Göztepe': ['Göztepe'],
+    'Samsunspor': ['Samsunspor'],
+    'Çaykur Rizespor': ['Caykur Rizespor'],
+    'Konyaspor': ['Konyaspor'],
+    'Kocaelispor': ['Kocaelispor'],
+    'Alanyaspor': ['Alanyaspor'],
+    'Gaziantep FK': ['Gaziantep FK'],
+    'Gençlerbirliği': ['Gençlerbirliği Spor Kulübü'],
+    'Erzurumspor FK': ['Erzurumspor FK'],
+    'Çorum FK': [],
+  };
+  const SUPER_LIG_NAME_ALIASES = {
+    'anderson talisca': 'talisca',
+    'oghenekaro etebo': 'peter etebo',
+    'halil ibrahim dervisoglu': 'halil dervisoglu',
+  };
+  // [KULLANICI İSTEĞİ] "tamamla" — La Liga'nın eşleşme oranı diğer liglere göre belirgin düşüktü
+  // (bkz. claude.md "FC26 Reyting Override'ı" notu): fcratings.com kaynaklı bu dosya İspanyol
+  // futbolunda çok yaygın TEK KELİMELİK takma adlar kullanıyor (Vini Jr., Balde, Fermín, Carvajal,
+  // Sancet, Cucho, Isi...) — bizim Transfermarkt kaynaklı havuzumuzdaki tam isimlerle otomatik
+  // eşleşmiyordu. Her biri club-scoped bir aday araması + gerçek futbol bilgisiyle DOĞRULANARAK
+  // (bkz. check_laliga.tmp.js — eşleştirme sonrası silindi) elle çözüldü; her alias globalde TEK
+  // bir adaya çıkıyor (denendi/doğrulandı).
+  const LA_LIGA_NAME_ALIASES = {
+    'balde': 'alejandro balde',
+    'fermin': 'fermin lopez',
+    'vini jr': 'vinicius junior',
+    'carvajal': 'daniel carvajal',
+    'brahim': 'brahim diaz',
+    'asencio': 'raul asencio',
+    'gonzalo': 'gonzalo garcia',
+    'pubill': 'marc pubill',
+    'rodri mendoza': 'rodrigo mendoza',
+    'moleiro': 'alberto moleiro',
+    'ayoze': 'ayoze perez',
+    'parejo': 'dani parejo',
+    'pedraza': 'alfonso pedraza',
+    'alfon': 'alfon gonzalez',
+    'oyarzabal': 'mikel oyarzabal',
+    'barrenetxea': 'ander barrenetxea',
+    'zubeldia': 'igor zubeldia',
+    'jon mikel aramburu': 'jon aramburu',
+    'gorrotxa': 'jon gorrotxategi',
+    'turrientes': 'benat turrientes',
+    'odriozola': 'alvaro odriozola',
+    'karrikaburu': 'jon karrikaburu',
+    'frances': 'alejandro frances',
+    'flavien enzo boyomo': 'enzo boyomo',
+    'catena': 'alejandro catena',
+    'moncayola': 'jon moncayola',
+    'aitor': 'aitor fernandez',
+    'herrando': 'jorge herrando',
+    'osambela': 'asier osambela',
+    'arguibide': 'inigo arguibide',
+    'de frutos': 'jorge de frutos',
+    'isi': 'isi palazon',
+    'gumbau': 'gerard gumbau',
+    'de las sias': 'marco de las sias',
+    'gaya': 'jose gaya',
+    'agirrezabala': 'julen agirrezabala',
+    'copete': 'jose copete',
+    'carmona': 'jose angel carmona',
+    'akor jerome adams': 'akor adams',
+    'peque': 'peque fernandez',
+    'sivera': 'antonio sivera',
+    'jonny': 'jonny otto',
+    'pacheco': 'jon pacheco',
+    'alena': 'carles alena',
+    'guridi': 'jon guridi',
+    'abderrahman rebbach': 'abde rebbach',
+    'mariano': 'mariano diaz',
+    'raillo': 'antonio raillo',
+    'abdelkabir abqar': 'abdel abqar',
+    'karl edouard etta eyong': 'karl etta eyong',
+    'olasagasti': 'jon ander olasagasti',
+    'dela': 'adrian dela',
+    'morales': 'jose luis morales',
+    'elgezabal': 'unai elgezabal',
+    'bigas': 'pedro bigas',
+    'valera': 'german valera',
+    'alvaro': 'alvaro rodriguez',
+    'mourad daoudi el ghezouani': 'mourad el ghezouani',
+    'iturbe': 'alejandro iturbe',
+    'aaron': 'aaron escandell',
+  };
+  const FC26_RATING_FILES = [
+    { file: 'super_lig_2026_2027_fc26_reytingleri.md', label: 'Süper Lig', clubAliases: SUPER_LIG_CLUB_ALIASES, nameAliases: SUPER_LIG_NAME_ALIASES },
+    { file: 'premier_league_2026_2027_fc26_reytingleri.md', label: 'Premier League' },
+    { file: 'la_liga_2026_2027_fc26_reytingleri.md', label: 'La Liga', nameAliases: LA_LIGA_NAME_ALIASES },
+    { file: 'bundesliga_2026_2027_fc26_reytingleri.md', label: 'Bundesliga' },
+    { file: 'serie_a_2026_2027_fc26_reytingleri.md', label: 'Serie A' },
+    { file: 'ligue_1_2026_2027_fc26_reytingleri.md', label: 'Ligue 1' },
+  ];
+
+  let fc26TotalApplied = 0;
+  let fc26TotalRows = 0;
+  for (const cfg of FC26_RATING_FILES) {
+    const mdPath = path.join(OUT_DIR, cfg.file);
+    if (!fs.existsSync(mdPath)) { console.log(`[etl] FC26 override — ${cfg.label}: dosya bulunamadı (${cfg.file}), atlanıyor`); continue; }
+    const { overrides, unmatched } = resolveFc26Overrides(allPlayers, mdPath, {
+      clubAliases: cfg.clubAliases, nameAliases: cfg.nameAliases,
+    });
+    let applied = 0;
+    for (const p of allPlayers) {
+      const ov = overrides.get(p.id);
+      if (!ov) continue;
+      p.rating = Math.max(1, Math.min(99, Math.round(ov.rating)));
+      p.ratingOverrideSource = 'fc26-2026-27'; // şeffaflık: bu reytingin kendi formülümüzden DEĞİL EA FC26'dan geldiğini işaretler
+      applied++;
+    }
+    fc26TotalApplied += applied;
+    fc26TotalRows += applied + unmatched.length;
+    console.log(`[etl] FC26 override — ${cfg.label}: ${applied}/${applied + unmatched.length} oyuncu eşleşti, reytingleri FC26 değeriyle değiştirildi`);
+    if (unmatched.length) {
+      console.log(`[etl]   eşleşmeyen ${unmatched.length} oyuncu (havuzumuzda yok ya da isim belirsiz — kendi formülümüzün reytingini korur):`);
+      for (const line of unmatched) console.log(`    - ${line}`);
+    }
+  }
+  console.log(`[etl] FC26 override TOPLAM: ${fc26TotalApplied}/${fc26TotalRows} oyuncu eşleşti (6 dosya)`);
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(OUT_FILE, JSON.stringify({

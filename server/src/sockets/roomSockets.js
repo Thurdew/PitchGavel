@@ -75,6 +75,27 @@ function registerRoomSockets(io, socket, ctx) {
     broadcastState(room);
   });
 
+  // [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton, oyundayken de oyundan çıkmak
+  // için bir şey ekle" — istemci tarafı zaten yerel state.room'u sıfırlayıp lobiye dönüyordu
+  // ama socket bu odaya HÂLÂ join'li kalıyordu (bkz. socket.join(room.code) yukarıda) — bu
+  // yüzden odadaki başka bir olay (ör. rakip "Tekrar Oyna"ya basınca) yayınlanan room:state/
+  // room:rematch, ayrılmış istemciye de ulaşıp onu sessizce odaya geri sürükleyebiliyordu. Bu
+  // event, gerçek bir socket kopması (disconnect) ile AYNI etkiyi (handleDisconnect — oyuncu
+  // "bağlı değil" işaretlenir, hazırım oyu düşer, draft/maç durumu DOKUNULMAZ — rakip
+  // reconnect'te olduğu gibi devam edebilir) kasıtlı/istemci tetiklemeli olarak uygular, ARTI
+  // socket'i o odanın broadcast grubundan gerçekten çıkarır (socket.leave).
+  socket.on('room:leave', ({ code } = {}, cb) => {
+    const targetCode = (code || socket.data.roomCode || '').toUpperCase();
+    const room = roomManager.getRoom(targetCode);
+    if (room) {
+      const changed = roomManager.handleDisconnect(socket.id);
+      socket.leave(room.code);
+      if (changed) broadcastState(changed);
+    }
+    if (socket.data.roomCode === targetCode) socket.data.roomCode = null;
+    cb?.({ ok: true });
+  });
+
   socket.on('disconnect', () => {
     const room = roomManager.handleDisconnect(socket.id);
     if (room) broadcastState(room);

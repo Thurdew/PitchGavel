@@ -1,5 +1,16 @@
 import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney } from './helpers.js';
 
+// [KULLANICI İSTEĞİ] "Oyundayken oyundan çıkmak için bir şey ekle" — üst bardaki genel
+// "🏠 Ana Sayfa" butonuna (bkz. index.html/app.js) ek olarak, oyunun İÇİNDEYKEN (draft/dizilim)
+// bağlamsal bir çıkış kontrolü — actions.leaveRoom() zaten devam eden bir oyunda onay istiyor
+// (bkz. app.js), burada sadece o aksiyona bağlanan küçük bir buton üretiliyor.
+function leaveGameButton(actions) {
+  return el('button', {
+    type: 'button', class: 'btn small secondary',
+    onclick: () => actions.leaveRoom(),
+  }, '🚪 Oyundan Çık');
+}
+
 // ============================== LOBBY ==============================
 // [KULLANICI İSTEĞİ] "İki farklı kutu değilde tek kutuda göster. Oda kur veya odaya katıl
 // seçeneği koy. Değer seçildikten sonra ad ve kod yazma yeri gelsin." — önce tek bir kartta
@@ -44,20 +55,22 @@ export function renderLobby({ state, actions }) {
   // açıklama metni native tooltip'e (title) taşındı, ekranda ayrı bir satır kaplamıyor.
   // [KULLANICI İSTEĞİ] "Kartlar boş duruyor, ilgi çekici değil" — küçük bir ok (hover'da beliren)
   // ile birlikte tek bir yardımcı fonksiyondan üretiliyor (bkz. .lobby-mode-arrow CSS'i).
-  function lobbyModeCard(icon, label, desc, onClick) {
+  function lobbyModeCard(num, label, desc, onClick) {
     return el('button', { class: 'lobby-mode-btn', onclick: onClick }, [
-      el('div', { class: 'lobby-mode-icon' }, icon),
-      el('div', { class: 'lobby-mode-label-row' }, [
-        el('div', { class: 'lobby-mode-label' }, label),
-        el('div', { class: 'lobby-mode-arrow' }, '→'),
+      el('div', { class: 'lobby-mode-num' }, num),
+      el('div', { class: 'lobby-mode-body' }, [
+        el('div', { class: 'lobby-mode-label-row' }, [
+          el('div', { class: 'lobby-mode-label' }, label),
+          el('div', { class: 'lobby-mode-arrow' }, '→'),
+        ]),
+        el('div', { class: 'lobby-mode-desc' }, desc),
       ]),
-      el('div', { class: 'lobby-mode-desc' }, desc),
     ]);
   }
 
   const modePicker = ui.mode ? null : el('div', { class: 'lobby-mode-picker' }, [
-    lobbyModeCard('➕', 'Oda Kur', 'Yeni bir oda aç, kodu rakibine gönder', () => selectMode('create')),
-    lobbyModeCard('🔑', 'Odaya Katıl', 'Rakibinden aldığın kodla gir', () => selectMode('join')),
+    lobbyModeCard('01', 'Oda Kur', 'Yeni bir oda aç, kodu rakibine gönder', () => selectMode('create')),
+    lobbyModeCard('02', 'Odaya Katıl', 'Rakibinden aldığın kodla gir', () => selectMode('join')),
   ]);
 
   // Kompakt hap-düğme grubu — bkz. yukarıdaki not. Dizilim ekranındaki `.formation-pick`/
@@ -80,11 +93,12 @@ export function renderLobby({ state, actions }) {
     ]);
   }
 
-  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft modu — sadece host, oda kurarken seçer;
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft / Çark Modu — sadece host, oda kurarken seçer;
   // oda ömrü boyunca sabit kalır (bkz. claude.md "Ek Mod Fikirleri" / RoomManager.createRoom).
   const draftModePicker = ui.mode === 'create' ? pillToggle('Draft Modu', [
     ['live', '⏱️ Canlı Açık Arttırma', 'Teklifler anlık görünür, süre bitene kadar yükselir'],
     ['blind', '🙈 Kör Draft', 'Tek seferlik gizli teklif — rakibinkini göremezsin'],
+    ['wheel', '🎡 Çark Modu', 'Bütçe yok — sırayla çark çevirip çıkan reyting bandından ücretsiz seç'],
   ], ui.draftMode, selectDraftMode) : null;
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Tek Lig Modu — draftMode'dan bağımsız ikinci bir
@@ -113,7 +127,7 @@ export function renderLobby({ state, actions }) {
   // ekranında (mod seçilmeden önceki hâlde) kullanıyoruz.
   if (ui.mode) {
     const hero = el('div', { class: 'lobby-hero' }, [
-      el('h1', { class: 'lobby-title compact' }, ui.mode === 'create' ? '➕ Oda Kur' : '🔑 Odaya Katıl'),
+      el('h1', { class: 'lobby-title compact' }, ui.mode === 'create' ? 'Oda Kur' : 'Odaya Katıl'),
     ]);
     return el('div', { class: 'lobby-shell' }, [
       hero,
@@ -133,13 +147,13 @@ export function renderLobby({ state, actions }) {
   // geri kalanındaki "trading card" diliyle atmosfer kuruyor. Dar ekranda hepsi tek sütuna
   // katlanıyor, dekoratif kartlar gizleniyor (bkz. CSS media query).
   const FEATURES = [
-    ['⚡', 'Canlı Açık Arttırma', 'Teklifler anlık, heyecan bitmiyor'],
-    ['🌍', '3500+ Oyuncu', '6 lig, gerçek piyasa verisiyle'],
-    ['⚽', 'Maç Simülasyonu', 'Ev sahibi + deplasman, dakika dakika'],
-    ['🏆', '38 Efsane', 'Icon oyuncularla kadronu güçlendir'],
+    ['LV', 'Canlı Açık Arttırma', 'Teklifler anlık, heyecan bitmiyor'],
+    ['DB', '3500+ Oyuncu', '6 lig, gerçek piyasa verisiyle'],
+    ['SM', 'Maç Simülasyonu', 'Ev sahibi + deplasman, dakika dakika'],
+    ['IC', '38 Efsane', 'Icon oyuncularla kadronu güçlendir'],
   ];
-  const featureStrip = el('div', { class: 'lobby-features' }, FEATURES.map(([icon, title, desc]) => el('div', { class: 'lobby-feature' }, [
-    el('div', { class: 'lobby-feature-icon' }, icon),
+  const featureStrip = el('div', { class: 'lobby-features' }, FEATURES.map(([code, title, desc]) => el('div', { class: 'lobby-feature' }, [
+    el('div', { class: 'lobby-feature-code' }, code),
     el('div', {}, [
       el('div', { class: 'lobby-feature-title' }, title),
       el('div', { class: 'lobby-feature-desc' }, desc),
@@ -152,15 +166,8 @@ export function renderLobby({ state, actions }) {
   decorB.classList.add('lobby-decor-card', 'b');
   const decor = el('div', { class: 'lobby-decor', 'aria-hidden': 'true' }, [decorA, decorB]);
 
-  // [KULLANICI İSTEĞİ] "Logo ve iconu proje dosyasının içine attım, kullanmak istiyorum" —
-  // gerçek marka logosu (bkz. client/public/assets/logo-dark.png) SADECE mod seçilmeden
-  // önceki ilk hero ekranında (kompakt "➕ Oda Kur" başlığında değil — orada zaten kalabalık
-  // olmasın diye sade tutulmuştu, bkz. yukarıdaki "lobi kalabalığı" notları).
-  const logoImg = el('img', { class: 'lobby-logo', src: '/assets/logo-dark.png', alt: 'PitchGavel — Kadro Açık Arttırması' });
-
   const heroCol = el('div', { class: 'lobby-hero-col' }, [
-    logoImg,
-    el('div', { class: 'lobby-hero-badge' }, '⚽ CANLI AÇIK ARTTIRMA'),
+    el('div', { class: 'lobby-hero-badge' }, 'CANLI AÇIK ARTTIRMA'),
     el('h1', { class: 'lobby-title' }, ['Kendi ', el('span', {}, '11'), '\'ini kur.']),
     el('p', { class: 'lobby-sub' }, 'Rakibinle canlı açık arttırmada kadro topla, formasyonunu seç, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla.'),
     featureStrip,
@@ -190,7 +197,9 @@ export function renderWaitingRoom({ state, actions }) {
       el('h3', {}, 'Oda Kodu — rakibine/gruba gönder'),
       el('div', { class: 'room-code' }, room.code),
       el('div', { class: 'muted', style: 'margin-top:8px' },
-        room.draftMode === 'blind' ? '🙈 Kör Draft modu — teklifler gizli' : '⏱️ Canlı Açık Arttırma modu'),
+        room.draftMode === 'blind' ? '🙈 Kör Draft modu — teklifler gizli'
+          : room.draftMode === 'wheel' ? '🎡 Çark Modu — bütçe yok, çarktan çıkan bantla ücretsiz seç'
+          : '⏱️ Canlı Açık Arttırma modu'),
       el('div', { class: 'muted', style: 'margin-top:4px' },
         room.playerPool === 'super-lig' ? '🇹🇷 Tek Lig Modu — sadece Süper Lig + Türk icon\'lar' : '🌍 Tüm ligler'),
       el('div', { class: 'muted', style: 'margin-top:4px' }, `👥 En fazla ${room.maxPlayers || 8} kişi katılabilir`),
@@ -203,17 +212,36 @@ export function renderWaitingRoom({ state, actions }) {
         votes.includes(p.clientId) ? el('span', { class: 'status-pill done' }, 'Hazır') : null,
       ]))),
       el('button', {
-        class: `btn block ${iAmReady ? 'secondary' : ''}`,
+        class: `btn block ticket-btn ${iAmReady ? 'secondary' : ''}`,
         style: 'margin-top:16px',
         onclick: () => actions.toggleDraftReady(),
-      }, iAmReady ? '⏳ Hazırsın — oyunu geri çekmek için tıkla' : '✅ Hazırım'),
+      }, [
+        el('span', { class: 'ticket-btn-icon' }, iAmReady ? '⏳' : '✅'),
+        el('span', { class: 'ticket-btn-label' }, [
+          el('span', { class: 'ticket-btn-title' }, iAmReady ? 'Hazırsın' : 'Hazırım'),
+          iAmReady ? el('span', { class: 'ticket-btn-sub' }, 'geri çekmek için tıkla') : null,
+        ]),
+      ]),
       amIHost
-        ? el('button', {
-            class: 'btn block',
-            style: 'margin-top:10px',
-            disabled: allReady ? undefined : 'disabled',
-            onclick: () => actions.startDraft(),
-          }, allReady ? '🚀 Draftı Başlat' : `Başlatmak için herkes hazır olmalı (${votes.length}/${room.players.length})`)
+        ? (allReady
+          ? el('button', {
+              class: 'btn block ticket-btn start-ready',
+              style: 'margin-top:10px',
+              onclick: () => actions.startDraft(),
+            }, [
+              el('span', { class: 'ticket-btn-icon' }, '🚀'),
+              el('span', { class: 'ticket-btn-label' }, el('span', { class: 'ticket-btn-title' }, 'Draftı Başlat')),
+            ])
+          : el('div', { class: 'start-progress', style: 'margin-top:10px' }, [
+              el('div', { class: 'start-progress-row' }, [
+                el('span', {}, 'Başlamak için herkes hazır olmalı'),
+                el('span', { class: 'start-progress-count' }, `${votes.length}/${room.players.length}`),
+              ]),
+              el('div', { class: 'start-progress-bar' }, el('div', {
+                class: 'start-progress-fill',
+                style: `width:${(votes.length / room.players.length) * 100}%`,
+              })),
+            ]))
         : el('p', { class: 'muted', style: 'margin-top:12px;text-align:center' },
             allReady ? 'Herkes hazır — oda sahibinin başlatması bekleniyor...' : `Hazır: ${votes.length}/${room.players.length}`),
     ]),
@@ -226,6 +254,72 @@ let timerInterval = null;
 // bazında hatırlar ki route() DOM'u sıfırdan kursa bile (bkz. app.js) bir sonraki teklif geldiğinde
 // eski değerden yeni değere doğru "sayarak" yükselsin, anlık belirmesin (bkz. countUpMoney).
 const lastShownBid = new Map();
+
+// ============================== ÇARK MODU v2 ==============================
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Çarka animasyon ekle, döndüğü belli olsun, daha güzel
+// bir çark olsun, çıkan sonuç ekrana gelsin." — segment listesi artık global bir config sabiti
+// DEĞİL, bu draftın kendi çarkı (bkz. state.draft.wheelSegments, DraftEngine.emitDraft). Dilim
+// renkleri artık havuza (iyi/orta/kötü) göre — hem "hangi dilim iyi/kötü" görsel bir ipucu hem
+// de aynı havuzdaki komşu dilimler birbirinden ayırt edilsin diye pool başına 3 ton.
+const POOL_COLORS = {
+  iyi: ['#22c55e', '#16a34a', '#4ade80'],
+  orta: ['#ff9500', '#e08000', '#ffb347'],
+  kötü: ['#fb4155', '#c81e37', '#ff6b81'],
+};
+
+function wheelGeometry(segments) {
+  const total = segments.reduce((s, x) => s + x.weight, 0);
+  let acc = 0;
+  const poolCounters = { iyi: 0, orta: 0, kötü: 0 };
+  return segments.map((seg) => {
+    const startPct = (acc / total) * 100;
+    acc += seg.weight;
+    const endPct = (acc / total) * 100;
+    const startDeg = (startPct / 100) * 360;
+    const endDeg = (endPct / 100) * 360;
+    const shades = POOL_COLORS[seg.pool] || POOL_COLORS.orta;
+    const color = shades[(poolCounters[seg.pool] || 0) % shades.length];
+    poolCounters[seg.pool] = (poolCounters[seg.pool] || 0) + 1;
+    return { ...seg, color, startPct, endPct, startDeg, endDeg, centerDeg: (startDeg + endDeg) / 2 };
+  });
+}
+
+// [KULLANICI İSTEĞİ] "Döndüğü belli olsun, daha güzel bir çark olsun" — v1'deki 5 tur/2.6sn'den
+// biraz uzatıldı (7 tam tur + 3.2sn) — hem daha "gerçek bir çark" hissi hem de aşağıdaki reveal
+// gecikmesiyle (WHEEL_REVEAL_DELAY_MS) senkron bir bekleme penceresi sağlıyor.
+const WHEEL_SPIN_DURATION_MS = 3200;
+const WHEEL_SPIN_SPINS = 7;
+// [KULLANICI İSTEĞİ] "Çıkan sonuç ekrana gelsin" — animasyon bitmeden sonucu (band/oyuncu
+// listesi) hiç göstermiyoruz, animasyon süresinden biraz sonra (bkz. wheelRevealReady) açığa
+// çıkarıyoruz — sonuç gerçekten "ekrana gelen" dramatik bir an oluyor, dönerken zaten belli.
+const WHEEL_REVEAL_DELAY_MS = WHEEL_SPIN_DURATION_MS + 150;
+
+// Çarkı görsel olarak istenen dilimde durdurmak için gereken toplam dönüş açısı — birkaç tam
+// tur (heyecan için) + dilimin ortasına (küçük bir rastgele sapmayla, hep aynı noktada
+// durmasın diye) hizalanacak açı. Pointer sabit üstte (0deg/12 yönü) olduğu için CSS
+// conic-gradient'in KENDİ 0deg'i (üst, saat yönü) ile aynı referans kullanılıyor. `label`
+// çarkın GEOMETRİSİNDE (geo) yoksa (ör. sunucunun "kimsede yok — havuzdan seç" gibi sentetik bir
+// segmente düşürdüğü durum) dilimi bulamayız — bu durumda rastgele bir dilimde durur (hangi
+// dilimde durduğunun bir önemi yok, sonuç zaten farklı bir mekanizmayla — pick listesi/reveal
+// metniyle — anlatılıyor).
+function wheelRotationFor(geo, label, spins = WHEEL_SPIN_SPINS) {
+  const seg = geo.find((s) => s.label === label);
+  if (!seg) return spins * 360 + Math.random() * 360;
+  const width = seg.endDeg - seg.startDeg;
+  const jitter = (Math.random() - 0.5) * width * 0.6;
+  const target = seg.centerDeg + jitter;
+  return spins * 360 + (360 - target);
+}
+
+// Bir spin'in animasyonunu SADECE İLK render'ında oynat (route() DOM'u sıfırdan kursa da,
+// bkz. lastShownBid ile aynı desen) — sonraki re-render'larda çark zaten vardığı açıda durur.
+const wheelSpinAnimated = new Map(); // spinKey -> final rotation (deg)
+// [KULLANICI İSTEĞİ] Suspense — animasyon bitene kadar sonucu (band/pick listesi) gizler. Bir
+// spinKey için reveal zamanlayıcısı SADECE bir kez kurulur (aksi halde her ara re-render'da
+// yeniden 3.2sn'lik bir bekleme başlardı).
+const wheelRevealReady = new Map(); // spinKey -> true (animasyon bitti, sonuç gösterilebilir)
+const wheelRevealScheduled = new Set(); // spinKey -> zamanlayıcı zaten kuruldu mu
+const WHEEL_AUTO_KINDS = new Set(['forced_worst', 'give_best']); // sunucudaki AUTO_RESOLVE_KINDS ile aynı
 
 export function renderDraft({ state, actions }) {
   const d = state.draft;
@@ -260,6 +354,7 @@ export function renderDraft({ state, actions }) {
       class: `btn small ${d.paused || iVotedPause ? 'danger' : 'secondary'}`,
       onclick: () => actions.togglePause(),
     }, pauseLabel),
+    leaveGameButton(actions),
   ]));
 
   if (d.paused) {
@@ -281,7 +376,7 @@ export function renderDraft({ state, actions }) {
   // sunucu bir süre (bkz. ROUND_RESULT_DELAY_MS) yeni tur başlatmadan bekliyor; o pencerede
   // istemci canlı round yerine net bir "Tur Sonucu" panelini gösterir (round tekrar dolana
   // kadar otomatik olarak kalır — ayrı bir zamanlayıcıya gerek yok).
-  const RESOLVED_EVENT_TYPES = ['auction_resolved', 'blind_auction_resolved', 'one_sided_assigned'];
+  const RESOLVED_EVENT_TYPES = ['auction_resolved', 'blind_auction_resolved', 'one_sided_assigned', 'wheel_turn_resolved'];
   const resultEvent = d.event && RESOLVED_EVENT_TYPES.includes(d.event.type) ? d.event : null;
 
   if (resultEvent) {
@@ -291,6 +386,8 @@ export function renderDraft({ state, actions }) {
   } else if (round.kind === 'one_sided') {
     roundPanel.appendChild(el('h3', {}, `Tek taraflı ihtiyaç — ${round.slotType}`));
     roundPanel.appendChild(playerCard(round.main, { slot: round.slotType, tag: 'Rakipsiz atandı' }));
+  } else if (round.kind === 'wheel') {
+    roundPanel.appendChild(renderWheelRound({ state, actions, round, paused: d.paused }));
   } else {
     const isBlind = round.kind === 'blind_auction';
     roundPanel.appendChild(el('h3', {}, isBlind
@@ -483,6 +580,228 @@ export function renderDraft({ state, actions }) {
   return root;
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Round artık TEK KİŞİLİK bir tur
+// (bkz. DraftEngine.nextWheelTurn) — sırası gelen kişi çarkı çevirir (görsel dilim/döndürme,
+// bkz. wheelGeometry/wheelRotationFor), animasyon bitene kadar (bkz. wheelRevealReady) sonuç
+// gizli kalır, sonra o segmente uygun bir seçim ekranı (ya da özel aksiyonlarda otomatik sonuç)
+// açılır. Diğer katılımcılar da aynı anda AYNI çark animasyonunu/reveal zamanlamasını görür
+// (round zaten broadcast edildiği için).
+function renderWheelRound({ state, actions, round, paused }) {
+  const wrap = el('div', { class: 'wheel-round' });
+  const nameOf = (id) => (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
+  const segments = (state.draft && state.draft.wheelSegments) || [];
+  const geo = wheelGeometry(segments);
+  const myTurn = round.clientId === state.clientId;
+  const turnName = nameOf(round.clientId) + (myTurn ? ' (sen)' : '');
+
+  wrap.appendChild(el('h3', {}, `Çark Modu — ${round.slotType} pozisyonu`));
+
+  // --- Çark grafiği: conic-gradient dilimler + döndürme animasyonu ---
+  const spinKey = round.currentSpin ? `${round.clientId}@${round.deadline}` : null;
+  const revealReady = spinKey ? wheelRevealReady.get(spinKey) === true : false;
+
+  if (spinKey && !wheelRevealScheduled.has(spinKey)) {
+    wheelRevealScheduled.add(spinKey);
+    setTimeout(() => {
+      wheelRevealReady.set(spinKey, true);
+      actions.route();
+    }, WHEEL_REVEAL_DELAY_MS);
+  }
+
+  const isAutoKind = round.currentSpin && WHEEL_AUTO_KINDS.has(round.currentSpin.kind);
+  let bannerText;
+  if (round.phase === 'awaiting_spin') {
+    bannerText = myTurn ? '🎡 Sıra sende! Çarkı çevir.' : `⏳ ${turnName} çeviriyor...`;
+  } else if (!revealReady) {
+    bannerText = '🎡 Çark dönüyor...';
+  } else if (isAutoKind) {
+    bannerText = `⚡ ${round.currentSpin.label} — sonuç uygulanıyor!`;
+  } else {
+    bannerText = myTurn ? `🎯 ${round.currentSpin.label} bandı çıktı — bir oyuncu seç!` : `⏳ ${turnName} seçim yapıyor...`;
+  }
+  wrap.appendChild(el('div', { class: `wheel-turn-banner ${myTurn ? 'mine' : ''}` }, bannerText));
+
+  const disk = el('div', { class: 'wheel-disk' });
+  disk.style.background = `conic-gradient(${geo.map((s) => `${s.color} ${s.startPct}% ${s.endPct}%`).join(', ')})`;
+  for (const s of geo) {
+    disk.appendChild(el('div', {
+      class: 'wheel-slice-label',
+      style: `transform: rotate(${s.centerDeg}deg) translateY(-78px) rotate(${-(s.centerDeg + (wheelSpinAnimated.get(spinKey) || 0))}deg);`,
+    }, s.label));
+  }
+
+  if (round.currentSpin) {
+    let finalDeg = wheelSpinAnimated.get(spinKey);
+    if (finalDeg == null) {
+      // Bu spin için İLK render — animasyonu şimdi başlat (0'dan hedef açıya, bkz. yorum
+      // yukarıda). İki iç içe rAF: tarayıcının "transition:none + rotate(0)" durumunu gerçekten
+      // boyaması için (aksi halde 0'dan başlamadan direkt hedefe atlayabiliyor).
+      finalDeg = wheelRotationFor(geo, round.currentSpin.label);
+      wheelSpinAnimated.set(spinKey, finalDeg);
+      disk.style.transition = 'none';
+      disk.style.transform = 'rotate(0deg)';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          disk.style.transition = `transform ${WHEEL_SPIN_DURATION_MS}ms cubic-bezier(0.14, 0.68, 0.16, 1)`;
+          disk.style.transform = `rotate(${finalDeg}deg)`;
+        });
+      });
+    } else {
+      disk.style.transition = 'none';
+      disk.style.transform = `rotate(${finalDeg}deg)`;
+    }
+  } else {
+    disk.style.transition = 'none';
+    disk.style.transform = 'rotate(0deg)';
+  }
+
+  const stage = el('div', {
+    // [KULLANICI İSTEĞİ] "Döndüğü belli olsun" — dönerken (reveal'a kadar) bir glow/pulse
+    // halkası, iniş anında pointer'da kısa bir "bounce" (bkz. styles.css .wheel-stage.spinning /
+    // .wheel-pointer.landed).
+    class: `wheel-stage ${round.currentSpin && !revealReady ? 'spinning' : ''}`,
+  }, [el('div', { class: `wheel-pointer ${revealReady ? 'landed' : ''}` }), disk]);
+  wrap.appendChild(stage);
+
+  // --- Geri sayım (spin öncesi/sonrası aynı deadline mekanizması) ---
+  const timerLabel = el('div', { class: 'timer-label' }, '—');
+  const timerFill = el('div', { class: 'timer-fill', style: 'width:100%' });
+  const timerWrap = el('div', { class: 'timer-wrap' }, [el('div', { class: 'timer-bar' }, timerFill), timerLabel]);
+  wrap.appendChild(timerWrap);
+
+  clearInterval(timerInterval);
+  const nominalMs = (state.config?.WHEEL_PICK_DURATION_SECONDS || 20) * 1000;
+  if (paused) {
+    const frozenLeft = round.pausedRemainingMs != null ? round.pausedRemainingMs : 0;
+    timerLabel.textContent = `⏸ ${(frozenLeft / 1000).toFixed(1)} sn (duraklatıldı)`;
+    timerFill.style.width = `${Math.min(100, (frozenLeft / nominalMs) * 100)}%`;
+  } else if (round.deadline) {
+    const tick = () => {
+      const left = Math.max(0, round.deadline - Date.now());
+      timerLabel.textContent = `${(left / 1000).toFixed(1)} sn`;
+      timerFill.style.width = `${Math.min(100, (left / nominalMs) * 100)}%`;
+      timerWrap.classList.toggle('urgent', left <= 5000 && left > 2000);
+      timerWrap.classList.toggle('critical', left <= 2000);
+      if (left <= 0) clearInterval(timerInterval);
+    };
+    tick();
+    timerInterval = setInterval(tick, 150);
+  }
+
+  // --- Aksiyon alanı ---
+  if (myTurn && round.phase === 'awaiting_spin') {
+    wrap.appendChild(el('button', {
+      class: 'btn block wheel-spin-btn',
+      disabled: paused ? 'disabled' : undefined,
+      onclick: () => actions.spinWheel(),
+    }, [
+      el('span', { class: 'wheel-spin-btn-icon' }, '🎡'),
+      el('span', { class: 'wheel-spin-btn-label' }, 'ÇARKI ÇEVİR'),
+    ]));
+  } else if (myTurn && round.phase === 'awaiting_pick' && round.currentSpin) {
+    if (!revealReady) {
+      wrap.appendChild(el('div', { class: 'muted wheel-reveal-pending', style: 'text-align:center' }, 'Çark yavaşlıyor...'));
+    } else if (isAutoKind) {
+      wrap.appendChild(el('div', { class: 'muted wheel-reveal-pending', style: 'text-align:center' }, 'Sonuç uygulanıyor, birazdan göreceksin...'));
+    } else {
+      wrap.appendChild(renderWheelPickList({ state, actions, round }));
+    }
+  }
+
+  return wrap;
+}
+
+// [KULLANICI İSTEĞİ] "Oyuncu seçme ekranı açılacak, oradan 90+ oyuncuları seçecek" — çarktan
+// çıkan segmente (reyting bandı, efsane havuzu, lig/milliyet piyangosu ya da "rakipten çal")
+// göre uygun (henüz kimse tarafından alınmamış) adaylar, reytinge göre azalan sırada, tıklanabilir
+// kompakt bir liste olarak gösterilir (potansiyel olarak onlarca/yüzlerce aday olabileceği için
+// tam boy player-card grid'i yerine bilerek kompakt satırlar — bkz. renderPlayerDatabase'deki
+// benzer yoğun-liste deseni).
+function renderWheelPickList({ state, actions, round }) {
+  const wrap = el('div', { class: 'wheel-pick-wrap' });
+  const seg = round.currentSpin;
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "Rakipten istediğin oyuncuyu al" — aday
+  // listesi state.playerDb DEĞİL, diğer katılımcıların O AN KİDROSU (state.draft.players[].squad,
+  // zaten sunucudan geliyor) — bu turun pozisyon tipinde olan tüm rakip-sahipli oyuncular.
+  if (seg.kind === 'steal') {
+    const rows = [];
+    for (const p of state.draft.players) {
+      if (p.clientId === state.clientId) continue;
+      for (const s of p.squad) if (s.slot === round.slotType) rows.push({ owner: p, entry: s });
+    }
+    if (rows.length === 0) {
+      wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
+        'Rakiplerde bu pozisyonda oyuncu kalmadı — süre dolunca sunucu otomatik seçecek.'));
+      return wrap;
+    }
+    rows.sort((a, b) => b.entry.player.rating - a.entry.player.rating);
+    wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center;margin-bottom:8px' }, `${rows.length} aday — kimden çalacağını seç`));
+    const list = el('div', { class: 'wheel-pick-list' }, rows.map(({ owner, entry }) => {
+      const row = el('button', { type: 'button', class: 'wheel-pick-row wheel-steal-row' }, [
+        el('span', { class: `pos-badge pos-${slotGroup(entry.player.position)}` }, entry.player.position),
+        el('span', { class: 'wheel-pick-rating' }, String(entry.player.rating)),
+        el('span', { class: 'wheel-pick-name' }, entry.player.name + (entry.player.isIcon ? ' ⭐' : '')),
+        el('span', { class: 'wheel-pick-club muted' }, `🎯 ${owner.name}${owner.clientId === state.clientId ? ' (sen)' : ''}`),
+      ]);
+      row.addEventListener('click', async () => {
+        for (const r of list.querySelectorAll('.wheel-pick-row')) r.disabled = true;
+        await actions.submitWheelPick(entry.player.id, owner.clientId);
+      });
+      return row;
+    }));
+    wrap.appendChild(el('div', { class: 'wheel-pick-scroll' }, list));
+    return wrap;
+  }
+
+  if (!state.playerDb || state.playerDb.status !== 'ready') {
+    if (!state.playerDb || state.playerDb.status !== 'loading') {
+      actions.fetchPlayerDb().then(() => actions.route());
+    }
+    wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' }, 'Oyuncular yükleniyor...'));
+    return wrap;
+  }
+
+  // Havuzdan düşenleri (odadaki HERKESİN o ana kadarki kadrosu — sadece bu round değil, draftın
+  // tamamı) dışarıda bırak — state.draft.players[].squad zaten sunucudan bu bilgiyi taşıyor.
+  const takenIds = new Set();
+  for (const p of state.draft.players) for (const s of p.squad) takenIds.add(s.player.id);
+
+  let candidates = state.playerDb.all.filter((p) => !takenIds.has(p.id) && p.position === round.slotType);
+  if (seg.kind === 'icon') candidates = candidates.filter((p) => p.isIcon);
+  else if (seg.kind === 'league') candidates = candidates.filter((p) => p.league === round.revealValue);
+  else if (seg.kind === 'nation') candidates = candidates.filter((p) => p.nation === round.revealValue);
+  else candidates = candidates.filter((p) => p.rating >= seg.min && p.rating <= seg.max);
+  candidates = candidates.sort((a, b) => b.rating - a.rating);
+
+  if (candidates.length === 0) {
+    wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
+      'Bu segmentte uygun oyuncu kalmadı — süre dolunca sunucu otomatik olarak seni atayacak.'));
+    return wrap;
+  }
+
+  const headerBits = [];
+  if ((seg.kind === 'league' || seg.kind === 'nation') && round.revealValue) headerBits.push(`🎯 ${round.revealValue}`);
+  headerBits.push(`${candidates.length} aday — birini seç`);
+  wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center;margin-bottom:8px' }, headerBits.join(' — ')));
+
+  const list = el('div', { class: 'wheel-pick-list' }, candidates.map((p) => {
+    const row = el('button', { type: 'button', class: 'wheel-pick-row' }, [
+      el('span', { class: `pos-badge pos-${slotGroup(p.position)}` }, p.position),
+      el('span', { class: 'wheel-pick-rating' }, String(p.rating)),
+      el('span', { class: 'wheel-pick-name' }, p.name + (p.isIcon ? ' ⭐' : '')),
+      el('span', { class: 'wheel-pick-club muted' }, p.isIcon ? p.nation : p.club),
+    ]);
+    row.addEventListener('click', async () => {
+      for (const r of list.querySelectorAll('.wheel-pick-row')) r.disabled = true;
+      await actions.submitWheelPick(p.id);
+    });
+    return row;
+  }));
+  wrap.appendChild(el('div', { class: 'wheel-pick-scroll' }, list));
+  return wrap;
+}
+
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Teklif verdiğinde oyuncunun kimin aldığını kaç paraya
 // aldığını diğer kullanıcıların ne kadar teklif verdiğini göster her seferinde" — bir round
 // çözüldüğünde (canlı VEYA kör, ana oyuncu VEYA tek taraflı) gösterilen ortak "Tur Sonucu"
@@ -505,6 +824,47 @@ function receiptStrip({ emoji, headline, sub }) {
 function renderRoundResultPanel(event, state) {
   const nameOf = (id) => (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
   const wrap = el('div', { class: 'round-result' });
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "Çıkan sonuç ekrana gelsin" — çark
+  // modunun her turu (normal seçim, çal/ver, şanssız tur, lig/milliyet piyangosu) burada aynı
+  // "Tur Sonucu" makbuz deseniyle gösterilir, tıpkı auction/blind/one_sided gibi.
+  if (event.type === 'wheel_turn_resolved') {
+    const actor = nameOf(event.clientId) + (event.clientId === state.clientId ? ' (sen)' : '');
+    wrap.appendChild(el('h3', {}, '🎡 Çark Sonucu'));
+    if (event.segmentKind === 'steal') {
+      const victim = nameOf(event.fromClientId) + (event.fromClientId === state.clientId ? ' (sen)' : '');
+      wrap.appendChild(receiptStrip({
+        emoji: '🎁', headline: `${actor} → ${event.player.name}`,
+        sub: `${victim}'nin kadrosundan çalındı — ${victim} bu pozisyon için tekrar çark çevirecek.`,
+      }));
+    } else if (event.segmentKind === 'give_best') {
+      const receiver = nameOf(event.toClientId) + (event.toClientId === state.clientId ? ' (sen)' : '');
+      wrap.appendChild(receiptStrip({
+        emoji: '😱', headline: `${actor} → ${receiver}`,
+        sub: `En iyi oyuncusu ${event.player.name}'i vermek zorunda kaldı.`,
+      }));
+    } else if (event.segmentKind === 'forced_worst') {
+      wrap.appendChild(receiptStrip({
+        emoji: '💀', headline: `${actor} → ${event.player.name}`,
+        sub: 'Şanssız tur — bu pozisyondaki en düşük reytingli oyuncu otomatik atandı.',
+      }));
+    } else if ((event.segmentKind === 'league' || event.segmentKind === 'nation') && event.revealValue) {
+      wrap.appendChild(receiptStrip({
+        emoji: '🎡', headline: `${actor} → ${event.player.name}`,
+        sub: `${event.revealValue} piyangosu (${event.band}) — ücretsiz seçildi.`,
+      }));
+    } else {
+      wrap.appendChild(receiptStrip({
+        emoji: '🎡', headline: `${actor} → ${event.player.name}`,
+        sub: `${event.band} bandından ücretsiz seçildi.`,
+      }));
+    }
+    wrap.appendChild(el('div', { class: 'reveal-row' }, [
+      playerCard(event.player, { slot: event.slotType, extraClass: 'main', tag: `🎡 ${actor}` }),
+    ]));
+    wrap.appendChild(el('p', { class: 'muted', style: 'text-align:center;margin-top:12px' }, '⏳ Sıradaki tur birazdan başlıyor...'));
+    return wrap;
+  }
 
   if (event.type === 'one_sided_assigned') {
     const buyer = nameOf(event.clientId) + (event.clientId === state.clientId ? ' (sen)' : '');
@@ -601,7 +961,10 @@ export function renderLineup({ state, actions }) {
   const matchIAmReady = matchVotes.includes(state.clientId);
 
   root.appendChild(el('div', { class: 'panel' }, [
-    el('h3', {}, 'Durum'),
+    el('div', { style: 'display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap' }, [
+      el('h3', { style: 'margin:0' }, 'Durum'),
+      leaveGameButton(actions),
+    ]),
     el('div', { class: 'budget-row' }, room.players.map((p) =>
       statusCard(p.name + (p.clientId === state.clientId ? ' (sen)' : ''), state.lineupSubmitted[p.clientId] || {}))),
     room.status === 'match'
@@ -1308,22 +1671,31 @@ export function renderMatch({ state, actions }) {
   // gol kutlamasıyla aynı efekt, [KULLANICI İSTEĞİ] "enerjik/oyun gibi" temasını sürdürür).
   setTimeout(() => spawnConfetti(winnerBanner, 30), 0);
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — "LİG USÜLÜ"] "Her maç 3 puan, beraberlik 1 puan, n
+  // kişilik lig gibi olsun, 1. olan şampiyon olsun." — gerçek bir lig tablosu formatı: O(ynanan)/
+  // G(alibiyet)/B(eraberlik)/M(ağlubiyet) sayaçları da gösteriliyor (bkz. orchestrate.js
+  // standings.wins/draws/losses/played), sadece Puan/Averaj değil.
   root.appendChild(el('div', { class: 'panel' }, [
     el('h3', {}, 'Puan Tablosu'),
     el('div', { style: 'overflow-x:auto' }, [
       el('table', { class: 'standings-table' }, [
         el('thead', {}, el('tr', {}, [
-          el('th', {}, '#'), el('th', {}, 'Oyuncu'), el('th', {}, 'P'), el('th', {}, 'A'), el('th', {}, 'Y'), el('th', {}, 'AV'),
+          el('th', {}, '#'), el('th', {}, 'Oyuncu'), el('th', {}, 'O'), el('th', {}, 'G'), el('th', {}, 'B'), el('th', {}, 'M'),
+          el('th', {}, 'A'), el('th', {}, 'Y'), el('th', {}, 'AV'), el('th', {}, 'P'),
         ])),
         el('tbody', {}, r.standings.map((s, i) => el('tr', {
           class: [s.clientId === state.clientId ? 'me' : '', i === 0 ? 'winner' : ''].filter(Boolean).join(' ') || undefined,
         }, [
           el('td', { class: 'rank-cell' }, String(i + 1)),
           el('td', {}, s.name + (s.clientId === state.clientId ? ' (sen)' : '')),
-          el('td', {}, String(s.points)),
+          el('td', {}, String(s.played)),
+          el('td', {}, String(s.wins)),
+          el('td', {}, String(s.draws)),
+          el('td', {}, String(s.losses)),
           el('td', {}, String(s.goalsFor)),
           el('td', {}, String(s.goalsAgainst)),
           el('td', {}, (s.goalDiff > 0 ? '+' : '') + s.goalDiff),
+          el('td', { style: 'font-weight:800' }, String(s.points)),
         ]))),
       ]),
     ]),
@@ -1347,15 +1719,20 @@ export function renderMatch({ state, actions }) {
   root.appendChild(renderMatchResultCard('1. Maç', nameOf(fx.match1.homeClientId), nameOf(fx.match1.awayClientId), fx.match1));
   root.appendChild(renderMatchResultCard('2. Maç', nameOf(fx.match2.homeClientId), nameOf(fx.match2.awayClientId), fx.match2));
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — "LİG USÜLÜ"] "Ev ve deplasmanı kazanana 3 puan verme,
+  // her maç kendi başına 3 puan." — bu ikili artık kendi başına bir "galip" üretmiyor (penaltı
+  // YOK), her iki maç bağımsız puanlanıp doğrudan yukarıdaki lig tablosuna işleniyor. Burada
+  // sadece bilgi amaçlı bir özet: bu ikiliden toplamda kaç puan çıktı + toplam gol.
+  const pointsA = fx.match1.pointsHome + fx.match2.pointsAway;
+  const pointsB = fx.match1.pointsAway + fx.match2.pointsHome;
   root.appendChild(el('div', { class: 'panel' }, [
-    el('h3', {}, 'Toplam Skor (Averaj)'),
+    el('h3', {}, 'Bu İkilinin Toplamı'),
     el('div', { class: 'scoreline' }, [
-      el('div', { class: 'team' }, nameOf(fx.aClientId)),
+      el('div', { class: 'team' }, [nameOf(fx.aClientId), el('div', { class: 'xg' }, `${pointsA} puan`)]),
       el('div', { class: 'score' }, `${fx.aggregate[fx.aClientId]} - ${fx.aggregate[fx.bClientId]}`),
-      el('div', { class: 'team' }, nameOf(fx.bClientId)),
+      el('div', { class: 'team' }, [nameOf(fx.bClientId), el('div', { class: 'xg' }, `${pointsB} puan`)]),
     ]),
-    fx.wentToPenalties ? el('p', { class: 'muted', style: 'text-align:center' }, `Penaltılar: ${fx.penalties.scoreA} - ${fx.penalties.scoreB}`) : null,
-    el('p', { class: 'muted', style: 'text-align:center;margin-top:6px' }, `Bu eşleşmenin galibi: ${nameOf(fx.winnerClientId)}`),
+    el('p', { class: 'muted', style: 'text-align:center;margin-top:6px' }, 'Her maç kendi başına puanlanır (galibiyet 3, beraberlik 1) — lig usülü, yukarıdaki puan tablosuna öyle işlendi.'),
   ]));
 
   // [KULLANICI İSTEĞİ] "Maç bittikten sonra tekrar oyna butonu gelsin." — aynı rakiple, oda
@@ -1417,6 +1794,14 @@ function renderMatchLineupPitch(lineup, title) {
   ]);
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — "LİG USÜLÜ"] "Her maç kendi başına 3 puan" — bu maçın
+// KENDİ sonucuna göre hangi tarafın kaç puan kazandığını kısa bir etiketle gösterir.
+function matchPointsSummary(m) {
+  if (m.pointsHome === m.pointsAway) return 'Berabere — ikisi de 1 puan aldı';
+  const winnerSide = m.pointsHome === 3 ? 'Ev sahibi' : 'Deplasman';
+  return `${winnerSide} kazandı — 3 puan aldı, diğeri 0 puan`;
+}
+
 function renderMatchResultCard(title, homeName, awayName, m) {
   return el('div', { class: 'panel match-result-card' }, [
     el('div', { class: 'match-result-header' }, [
@@ -1428,6 +1813,7 @@ function renderMatchResultCard(title, homeName, awayName, m) {
       el('div', { class: 'score' }, `${m.goalsHome} - ${m.goalsAway}`),
       el('div', { class: 'team' }, [awayName, el('div', { class: 'xg' }, `xG ${m.xgAway.toFixed(2)}`)]),
     ]),
+    el('p', { class: 'muted', style: 'text-align:center;margin-top:2px' }, matchPointsSummary(m)),
     el('div', { class: 'scorer-columns' }, [
       scorerColumn(m.events, 'home', homeName),
       scorerColumn(m.events, 'away', awayName),

@@ -111,6 +111,76 @@ module.exports = {
 
   ROOM_TTL_MS: 6 * 60 * 60 * 1000, // 6 saat işlem görmeyen odalar temizlenir
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çark Modu — üçüncü draftMode ('live'/'blind'den
+  // bağımsız). [KULLANICI İSTEĞİ] bütçe bu modda HİÇ devreye girmiyor — tamamen ücretsiz,
+  // şans+seçim temelli bir deneyim (mevcut açık arttırma modlarının ekonomi/pazarlık
+  // gerginliğinden bilinçli olarak farklı).
+  //
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "Çarka animasyon ekle, döndüğü belli
+  // olsun, daha güzel bir çark olsun, çıkan sonuç ekrana gelsin. Her oyunda çarktaki yazılanlar
+  // değişsin. Çark havuzu yap, iyi/orta/kötü diye ayır, her oyun 3 havuzdan da belli miktarda
+  // getir. Rakipten oyuncu al, rakibe en iyi oyuncunu ver, ligden/milliyetten seç gibi şeyler de
+  // olsun. Herkes 11 olana kadar çevirmeye devam etsin — biri diğerinden çalarsa mağdur olan,
+  // diğeri 11'i tamamlasa bile kendi 11'ine ulaşana kadar çevirmeye devam etsin." — eski v1
+  // (tek düz WHEEL_SEGMENTS listesi + pozisyon bazlı SENKRON round) tamamen bırakıldı:
+  //
+  // 1) Segmentler artık İKİ havuzdan geliyor: reyting bantları (WHEEL_RATING_BANDS) + özel
+  //    aksiyon segmentleri (WHEEL_SPECIAL_SEGMENTS) — HER İKİSİ de 'iyi'/'orta'/'kötü' etiketi
+  //    taşıyor. Draft başında (bkz. pool.js buildWheelSegments) HER havuzdan rastgele
+  //    WHEEL_POOL_PICK_COUNT kadarı seçilip o draftın ÇARKINI oluşturuyor — bu yüzden hangi
+  //    yazıların çarkta olduğu (ve kaçının iyi/orta/kötü olduğu karışımı) her draftta değişiyor,
+  //    ama üç havuzdan da mutlaka bir şeyler geliyor (dengeli bir çark garantisi).
+  // 2) Tur yapısı artık pozisyon bazlı SENKRON değil — her katılımcı SIRAYLA (round-robin,
+  //    bkz. DraftEngine.nextWheelTurn) kendi turunda kendi ihtiyaç duyduğu bir pozisyon için
+  //    çevirir. Çalma/verme segmentleri bir başka katılımcının kadrosunu değiştirebildiği için
+  //    (bkz. aşağıdaki özel segmentler) artık "herkes aynı anda aynı pozisyonu doldursun" diye
+  //    bir varsayım YOK; her katılımcı kendi 11'i tamamlanana kadar (slotsNeeded toplamı 0
+  //    olana kadar) sıraya girmeye devam ediyor.
+  WHEEL_POOL_PICK_COUNT: 3,
+
+  // Reyting bandı segmentleri — v1'deki WHEEL_SEGMENTS ile birebir aynı 7 bant, sadece artık
+  // her biri bir havuza (pool) etiketli. Ağırlıklar EŞİT DEĞİL (gerçek bir çarkın "büyük ödül
+  // dilimi küçük" hissi + 90+ havuzda zaten az aday olduğu için).
+  WHEEL_RATING_BANDS: [
+    { kind: 'rating', label: '90+', min: 90, max: 99, pool: 'iyi', weight: 4 },
+    { kind: 'rating', label: '85-89', min: 85, max: 89, pool: 'iyi', weight: 9 },
+    { kind: 'rating', label: '80-84', min: 80, max: 84, pool: 'orta', weight: 14 },
+    { kind: 'rating', label: '75-79', min: 75, max: 79, pool: 'orta', weight: 18 },
+    { kind: 'rating', label: '70-74', min: 70, max: 74, pool: 'orta', weight: 20 },
+    { kind: 'rating', label: '65-69', min: 65, max: 69, pool: 'kötü', weight: 16 },
+    { kind: 'rating', label: '60 altı', min: 1, max: 64, pool: 'kötü', weight: 10 },
+  ],
+
+  // Özel aksiyon segmentleri — [KULLANICI İSTEĞİ] "rakipten istediğin oyuncuyu al, rakibine en
+  // iyi oyuncunu ver, ligden/milliyetten seç" örnekleri + kullanıcının "mantıklı bir şey
+  // düşünürsen ekle" daveti üzerine eklenen 2 ek fikir (icon havuzu, şanssız/en düşük reyting
+  // zorunlu). 'league'/'nation' segmentlerinin TAM lig/milliyet değeri sabit/hardcode DEĞİL —
+  // her çevrildiğinde o an havuzda kalan adaylar arasından rastgele seçilip round.revealValue'ya
+  // yazılır (bkz. DraftEngine.resolveSpin) — hem asla boş çıkmaz hem de tekrar tekrar farklı
+  // lig/milliyet gösterip çeşitliliği artırır (dokümandaki "her oyunda değişsin" isteğini tur
+  // bazında bile karşılar). Havuzda gerçekten uygun aday kalmadıysa (steal: rakipte o pozisyon
+  // yok, icon: o pozisyonda icon kalmadı) segment sunucuda otomatik "genel havuzdan seç"e
+  // düşürülür — draft asla tıkanmaz (bkz. DraftEngine.resolveSpin fallback mantığı).
+  WHEEL_SPECIAL_SEGMENTS: [
+    { kind: 'icon', label: '⭐ Efsaneler Havuzu', pool: 'iyi', weight: 4 },
+    { kind: 'steal', label: '🎁 Rakipten Çal', pool: 'iyi', weight: 5 },
+    { kind: 'league', label: '🌍 Lig Piyangosu', pool: 'orta', weight: 10 },
+    { kind: 'nation', label: '🏳️ Milliyet Piyangosu', pool: 'orta', weight: 10 },
+    { kind: 'forced_worst', label: '💀 Şanssız Tur', pool: 'kötü', weight: 10 },
+    { kind: 'give_best', label: '😱 En İyisini Ver', pool: 'kötü', weight: 8 },
+  ],
+
+  // Çark çevrildikten sonra oyuncu seçme ekranında karar vermek için süre (bkz.
+  // AUCTION_DURATION_SECONDS/BLIND_BID_DURATION_SECONDS ile aynı desen). Süre dolarsa o
+  // bantta/pozisyonda uygun rastgele bir oyuncu otomatik atanır (draftın tıkanmaması için).
+  WHEEL_PICK_DURATION_SECONDS: Number(process.env.DRAFT_WHEEL_SECONDS) || 20,
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "forced_worst"/"give_best" gibi seçim
+  // gerektirmeyen (otomatik uygulanan) segmentlerin, istemcideki çark döndürme animasyonu
+  // (bkz. views.js, ~2.6sn) bitmeden sonucu açığa çıkarmaması için kısa bir gecikme — animasyon
+  // süresinden biraz uzun tutuldu ki "sonuç ekrana gelmeden" round kapanmasın.
+  WHEEL_AUTO_RESOLVE_DELAY_MS: Number(process.env.DRAFT_WHEEL_AUTO_RESOLVE_MS) || 2800,
+
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — "kaç kullanıcı oynayacağını lobide
   // sorma, kaç kişi gelirse gelsin" — host'a bir hedef sayı sorulmuyor, oda sadece bu sabit
   // tavana kadar (dokümandaki N ≤ 8 sınırı) katılım kabul eder; draftı ne zaman başlatacağına

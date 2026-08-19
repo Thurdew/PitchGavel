@@ -13,10 +13,11 @@
     "test:draft": "node test/phase3-draft.test.js",
     "test:draft:blind": "node test/phase3b-blind-draft.test.js",
     "test:draft:superlig": "node test/phase3c-superlig-draft.test.js",
+    "test:draft:wheel": "node test/phase7-wheel-draft.test.js",
     "test:lineup": "node test/phase4-lineup.test.js",
     "test:match": "node test/phase5-match.test.js",
     "test:multiplayer": "node test/phase6-multiplayer.test.js",
-    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:lineup && npm run test:match && npm run test:multiplayer"
+    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:draft:wheel && npm run test:lineup && npm run test:match && npm run test:multiplayer"
   },
   "license": "UNLICENSED",
   "dependencies": {

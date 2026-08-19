@@ -36,9 +36,10 @@ class RoomManager {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       formation: null, // draft başlarken kura ile atanır (Faz 3)
-      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft modu — oda kurulurken host tarafından
-      // seçilir, oda ömrü boyunca sabit kalır (katılan taraf modu değiştiremez, sadece görür).
-      draftMode: draftMode === 'blind' ? 'blind' : 'live',
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft / Çark Modu — oda kurulurken host
+      // tarafından seçilir, oda ömrü boyunca sabit kalır (katılan taraf modu değiştiremez,
+      // sadece görür).
+      draftMode: draftMode === 'blind' ? 'blind' : draftMode === 'wheel' ? 'wheel' : 'live',
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Tek Lig Modu — draftMode'dan bağımsız ikinci bir
       // anahtar: havuzu sadece Süper Lig + Türk icon'lara daraltır (bkz. draft/pool.js).
       playerPool: playerPool === 'super-lig' ? 'super-lig' : 'all',

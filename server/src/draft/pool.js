@@ -1,7 +1,7 @@
 const { loadPlayerData } = require('../playerData');
 const {
   BACKUP_RATING_GAP, MAIN_MIN_RATING, ICON_BACKUP_RATING_GAP, MIN_BACKUP_RATING,
-  TOP_FALLBACK_POOL_SIZE,
+  TOP_FALLBACK_POOL_SIZE, WHEEL_RATING_BANDS, WHEEL_SPECIAL_SEGMENTS, WHEEL_POOL_PICK_COUNT,
 } = require('../shared/gameConfig');
 
 // poolKey -> (position -> oyuncu[]) — havuz filtresine göre ayrı ayrı önbelleklenir.
@@ -141,4 +141,94 @@ function pickSingle(slotType, takenIds, poolKey = 'all') {
   return candidates[randomInt(candidates.length)];
 }
 
-module.exports = { pickMainAndBackup, pickMainAndLadder, pickSingle, indexByPosition };
+/** Belirli bir slot tipi için (havuz filtresine göre) henüz satılmamış tüm adaylar. */
+function poolForSlot(slotType, takenIds, poolKey = 'all') {
+  const byPos = indexByPosition(poolKey);
+  return (byPos.get(slotType) || []).filter((p) => !takenIds.has(p.id));
+}
+
+/**
+ * [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Belirli bir slot tipi + çarktan çıkan reyting
+ * bandı için uygun (havuzda kalan) adayları döner. Bant+pozisyon kombinasyonunda hiç aday
+ * kalmadıysa (havuz tükenmiş — küçük bir ihtimal ama sığ pozisyonlarda/draftın sonlarına doğru
+ * olası) WHEEL_RATING_BANDS sırasına göre bir SONRAKİ (daha düşük) banda doğru genişletilir; o da
+ * boşsa nihayetinde pozisyondaki TÜM kalan adaylarla (bant sınırı olmadan) devam edilir —
+ * draftın asla tıkanmaması için (bkz. DraftEngine.submitWheelPick/otomatik atama). `segment`
+ * DraftEngine.resolveSpin'de sentetik olarak üretilmiş (min:1,max:99 gibi, steal/icon/give_best
+ * "uygun aday yok" fallback'i) bir nesne de olabilir — bu durumda WHEEL_RATING_BANDS içinde
+ * bulunamaz (`indexOf` -1 döner), doğrudan `inBand` (zaten tüm havuz) ile sonuçlanır.
+ * Dönüş: { candidates, effectiveLabel } — effectiveLabel çarkın gösterdiği bantla FARKLIYSA
+ * istemciye "bu bantta kimse kalmadı, X bandına genişletildi" bilgisini taşımak için kullanılır.
+ */
+function pickWheelRatingCandidates(slotType, takenIds, segment, poolKey = 'all') {
+  const all = poolForSlot(slotType, takenIds, poolKey);
+  if (all.length === 0) return { candidates: [], effectiveLabel: segment.label };
+
+  const inBand = all.filter((p) => p.rating >= segment.min && p.rating <= segment.max);
+  if (inBand.length > 0) return { candidates: inBand, effectiveLabel: segment.label };
+
+  const idx = WHEEL_RATING_BANDS.indexOf(segment);
+  for (let i = idx + 1; i < WHEEL_RATING_BANDS.length; i++) {
+    const s = WHEEL_RATING_BANDS[i];
+    const pool = all.filter((p) => p.rating >= s.min && p.rating <= s.max);
+    if (pool.length > 0) return { candidates: pool, effectiveLabel: s.label };
+  }
+  // En alt banda kadar hiçbiri de dolu değilse (garip ama olası) pozisyondaki tüm kalanlarla devam.
+  return { candidates: all, effectiveLabel: null };
+}
+
+/** [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "Efsaneler Havuzu" segmenti — sadece icon adaylar. */
+function pickWheelIconCandidates(slotType, takenIds, poolKey = 'all') {
+  return poolForSlot(slotType, takenIds, poolKey).filter((p) => p.isIcon);
+}
+
+/**
+ * [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "Lig Piyangosu" / "Milliyet Piyangosu" —
+ * `field` ('league' | 'nation') değeri `value`'ya eşit adaylar. `value` DraftEngine.resolveSpin
+ * tarafından o an havuzda MEVCUT olan bir değerden seçildiği için sonuç asla boş dönmez (garanti
+ * değil ama pratikte — bkz. resolveSpin'deki "values boşsa fallback" notu).
+ */
+function pickWheelFieldCandidates(slotType, takenIds, poolKey, field, value) {
+  return poolForSlot(slotType, takenIds, poolKey).filter((p) => p[field] === value);
+}
+
+/**
+ * [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "Her draftta çarktaki yazılar değişsin, çark
+ * havuzu yap, iyi/orta/kötü diye ayır, her draft 3 havuzdan da belli miktarda getir." —
+ * WHEEL_RATING_BANDS + WHEEL_SPECIAL_SEGMENTS'i `pool` alanına göre üç kovaya ayırır, HER kovadan
+ * (rastgele karıştırılmış sırayla) WHEEL_POOL_PICK_COUNT kadarını seçip birleşik bir dizi olarak
+ * döner — bu, o draftın SABİT çarkı olur (draft boyunca değişmez, spin başına yeniden çekilmez).
+ * Elemanlar spread-copy ile döndürülür ki DraftEngine.resolveSpin'in olası (sentetik segment
+ * üretimi gibi) işlemleri paylaşılan config nesnelerini mutasyona uğratmasın.
+ */
+function buildWheelSegments() {
+  const pools = { iyi: [], orta: [], kötü: [] };
+  for (const b of WHEEL_RATING_BANDS) pools[b.pool].push(b);
+  for (const s of WHEEL_SPECIAL_SEGMENTS) pools[s.pool].push(s);
+
+  const picked = [];
+  for (const key of Object.keys(pools)) {
+    const shuffled = [...pools[key]].sort(() => Math.random() - 0.5);
+    const take = shuffled.slice(0, Math.min(WHEEL_POOL_PICK_COUNT, shuffled.length));
+    picked.push(...take.map((s) => ({ ...s })));
+  }
+  return picked;
+}
+
+/** Ağırlıklı rastgele bir segment seçer — sunucu tarafında otoriter "çark çevirme". `segments`
+ * artık global bir sabit değil, çağıran tarafın kendi draftına özel listesi (bkz. buildWheelSegments). */
+function spinWheelSegment(segments) {
+  const total = segments.reduce((sum, s) => sum + s.weight, 0);
+  let r = Math.random() * total;
+  for (const s of segments) {
+    r -= s.weight;
+    if (r <= 0) return s;
+  }
+  return segments[segments.length - 1];
+}
+
+module.exports = {
+  pickMainAndBackup, pickMainAndLadder, pickSingle, indexByPosition,
+  poolForSlot, pickWheelRatingCandidates, pickWheelIconCandidates, pickWheelFieldCandidates,
+  buildWheelSegments, spinWheelSegment,
+};

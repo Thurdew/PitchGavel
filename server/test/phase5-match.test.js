@@ -89,16 +89,25 @@ async function main() {
   console.log('[test5] Maç 1:', fx.match1.homeClientId, fx.match1.goalsHome, '-', fx.match1.goalsAway, fx.match1.awayClientId, `(xG ${fx.match1.xgHome.toFixed(2)}-${fx.match1.xgAway.toFixed(2)})`);
   console.log('[test5] Maç 2:', fx.match2.homeClientId, fx.match2.goalsHome, '-', fx.match2.goalsAway, fx.match2.awayClientId, `(xG ${fx.match2.xgHome.toFixed(2)}-${fx.match2.xgAway.toFixed(2)})`);
   console.log('[test5] toplam:', fx.aggregate);
-  console.log('[test5] penaltılara gitti mi:', fx.wentToPenalties, fx.penalties ? `(${fx.penalties.scoreA}-${fx.penalties.scoreB})` : '');
-  console.log('[test5] eşleşme galibi:', fx.winnerClientId);
-  console.log('[test5] puan tablosu:', r.standings.map((s) => `${s.name}:${s.points}p(${s.goalsFor}-${s.goalsAgainst})`).join(', '));
+  console.log('[test5] maç 1 puanları: ev', fx.match1.pointsHome, '- deplasman', fx.match1.pointsAway);
+  console.log('[test5] maç 2 puanları: ev', fx.match2.pointsHome, '- deplasman', fx.match2.pointsAway);
+  console.log('[test5] puan tablosu:', r.standings.map((s) => `${s.name}:${s.points}p(${s.wins}G${s.draws}B${s.losses}M, ${s.goalsFor}-${s.goalsAgainst})`).join(', '));
   console.log('[test5] şampiyon:', r.winnerClientId);
 
-  console.assert(fx.winnerClientId === hostId || fx.winnerClientId === guestId, 'eşleşme galibi taraflardan biri olmalı');
-  console.assert(r.winnerClientId === fx.winnerClientId, 'tek eşleşmeli odada şampiyon == eşleşme galibi olmalı');
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — "LİG USÜLÜ"] Artık bir fikstürün tek bir "galibi" YOK
+  // — her maç kendi başına (3 galibiyet / 1-1 beraberlik) puanlanıyor. Tek bir eşleşmede (2 maç)
+  // olası toplam puan kombinasyonları: 3+3=6 (biri iki maçı da kazandı), 3+2=5 (biri kazandı biri
+  // berabere... aslında 3+1+1=5 olamaz çünkü her maç ya 3+0 ya 1+1 dağıtır — 2 maçın toplamı
+  // (3+0)+(3+0)=6, (3+0)+(1+1)=5, (1+1)+(1+1)=4 olabilir.
+  const isValidPointPair = (a, b) => (a === 3 && b === 3) || (a === 3 && b === 1) || (a === 1 && b === 3) || (a === 1 && b === 1) || (a === 3 && b === 0) || (a === 0 && b === 3) || (a === 0 && b === 1) || (a === 1 && b === 0) || (a === 0 && b === 0);
+  console.assert(isValidPointPair(fx.match1.pointsHome, fx.match1.pointsAway), 'maç 1 puan dağılımı geçersiz: ' + JSON.stringify(fx.match1));
+  console.assert(isValidPointPair(fx.match2.pointsHome, fx.match2.pointsAway), 'maç 2 puan dağılımı geçersiz: ' + JSON.stringify(fx.match2));
   console.assert(fx.aggregate[hostId] >= 0 && fx.aggregate[guestId] >= 0, 'toplam goller negatif olamaz');
   console.assert(r.standings.length === 2, 'puan tablosunda 2 satır olmalı');
-  console.assert(r.standings[0].points === 3 && r.standings[1].points === 0, 'galip 3 puan, mağlup 0 puan almalı: ' + JSON.stringify(r.standings));
+  const totalPoints = r.standings[0].points + r.standings[1].points;
+  console.assert(totalPoints >= 4 && totalPoints <= 6, '2 maçlık toplam puan 4-6 arası olmalı (her maç 2 ya da 3 puan dağıtır): ' + totalPoints);
+  console.assert(r.standings[0].played === 2 && r.standings[1].played === 2, 'her iki oyuncu da 2 maç oynamış olmalı');
+  console.assert(r.standings[0].points >= r.standings[1].points, 'puan tablosu puana göre azalan sıralı olmalı');
   const roomAfter = roomManager.getRoom(code);
   console.assert(roomAfter.status === 'finished', 'maç sonrası status finished olmalı');
 

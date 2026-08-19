@@ -176,8 +176,16 @@ async function main() {
   console.assert(r.fixtures.length === expectedFixtures, `${expectedFixtures} eşleşme beklenir, gelen: ${r.fixtures.length}`);
   console.assert(r.standings.length === N, `puan tablosunda ${N} satır olmalı, gelen: ${r.standings.length}`);
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — "LİG USÜLÜ"] Her fikstür artık 2 BAĞIMSIZ maç (ev +
+  // deplasman) — her biri kendi başına 3 (galibiyet) ya da 2 (1-1 beraberlik) puan dağıtır,
+  // fikstür başına toplam puan artık sabit 3 değil, 4-6 arası bir aralık.
   const totalPoints = r.standings.reduce((sum, s) => sum + s.points, 0);
-  console.assert(totalPoints === expectedFixtures * 3, `toplam puan ${expectedFixtures * 3} olmalı (her eşleşme kesin sonuçlanır), gelen: ${totalPoints}`);
+  const minPoints = expectedFixtures * 4;
+  const maxPoints = expectedFixtures * 6;
+  console.assert(totalPoints >= minPoints && totalPoints <= maxPoints,
+    `toplam puan ${minPoints}-${maxPoints} arası olmalı (her fikstür 2 bağımsız maç, maç başı 2 ya da 3 puan dağıtır), gelen: ${totalPoints}`);
+  const playedOk = r.standings.every((s) => s.played === 2 * (N - 1));
+  console.assert(playedOk, `her oyuncu ${2 * (N - 1)} maç oynamış olmalı (N-1 rakip × 2 maç): ` + JSON.stringify(r.standings.map((s) => s.played)));
 
   // Sıralama azalan olmalı (puana göre, sonra averaja göre).
   let sorted = true;
@@ -196,7 +204,7 @@ async function main() {
   console.assert(roomAfter.status === 'finished', 'maç sonrası status finished olmalı');
 
   const allOk = capacityOk && biddingErrors.length === 0 && !overlapFound && ladderRoundsSeen > 0
-    && r.fixtures.length === expectedFixtures && totalPoints === expectedFixtures * 3 && sorted;
+    && r.fixtures.length === expectedFixtures && totalPoints >= minPoints && totalPoints <= maxPoints && playedOk && sorted;
   console.log(allOk ? '[test6] TÜM TESTLER GEÇTİ ✅' : '[test6] BAZI KONTROLLER BAŞARISIZ ❌');
 
   for (const s of sockets) s.close();

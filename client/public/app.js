@@ -69,6 +69,11 @@ playersNavBtn.addEventListener('click', () => {
   state.page = state.page === 'players' ? null : 'players';
   route();
 });
+// [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton ekle" — her ekrandan erişilebilen
+// sabit bir üst bar butonu (bkz. index.html #homeNavBtn), tıklanınca actions.leaveRoom() ile
+// aynı yolu kullanır (devam eden bir oyundaysa önce onay ister — bkz. leaveRoom).
+const homeNavBtn = document.getElementById('homeNavBtn');
+homeNavBtn.addEventListener('click', () => { actions.leaveRoom(); });
 
 function setCode(code) {
   state.code = code;
@@ -131,6 +136,8 @@ function route() {
   appRoot.innerHTML = '';
   updateTopbar();
   playersNavBtn.classList.toggle('active', state.page === 'players');
+  // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
+  homeNavBtn.style.display = state.room ? '' : 'none';
 
   if (state.page === 'players') {
     appRoot.appendChild(renderPlayerDatabase({ state, actions }));
@@ -187,7 +194,23 @@ const actions = {
     setCode(res.room.code);
     route();
   },
-  leaveRoom() {
+  // [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton, oyundayken de oyundan çıkmak
+  // için bir şey ekle." — draft/dizilim/maç sırasında (henüz bitmemiş bir oyunda) çıkmak
+  // rakibi de etkileyeceği için önce onay istiyor; lobide/maç bittikten sonra (kaybedecek bir
+  // şey olmadığı için) doğrudan çıkılıyor — `room:rematch`daki "tek taraflı onay yeterli"
+  // mantığıyla aynı ayrım. Sunucuya `room:leave` gönderiyoruz ki socket o odanın broadcast
+  // grubundan gerçekten ayrılsın (bkz. roomSockets.js) — aksi halde rakip daha sonra bir şey
+  // yaptığında (ör. Tekrar Oyna) ayrılmış istemci sessizce odaya geri sürüklenebilirdi.
+  async leaveRoom() {
+    const room = state.room;
+    const isActive = room && ['draft', 'squad_select', 'match'].includes(room.status);
+    if (isActive) {
+      const ok = window.confirm('Devam eden bir oyundasın. Odadan çıkarsan rakibin oyunda kalır, sen ana sayfaya döneceksin. Emin misin?');
+      if (!ok) return false;
+    }
+    if (state.code) {
+      try { await emitAck('room:leave', { code: state.code }); } catch (e) { /* bağlantı zaten kopmuş olabilir — yok say */ }
+    }
     setCode(null);
     state.room = null;
     state.draft = null;
@@ -195,7 +218,9 @@ const actions = {
     state.matchResult = null;
     state.matchPlayback = null;
     state.matchResultUi = null;
+    state.page = null;
     route();
+    return true;
   },
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kişi gelirse gelsin, herkes hazır verdikten
   // sonra oda sahibi başlatsın" — bu artık SADECE kendi "hazırım" oyunu açıp/kapatıyor, draftı
@@ -222,6 +247,21 @@ const actions = {
   async togglePause() {
     const res = await emitAck('draft:pauseToggle', { code: state.code });
     if (res.error) toast('İşlem başarısız: ' + res.error);
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çark Modu — sonuç sunucuda belirlenir (hile önleme),
+  // istemci sadece isteği yollar (bkz. DraftEngine.spinWheel).
+  async spinWheel() {
+    const res = await emitAck('draft:spinWheel', { code: state.code });
+    if (res.error) toast('Çark çevrilemedi: ' + res.error);
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] `ownerClientId` sadece 'steal' segmentinde
+  // ("rakipten istediğin oyuncuyu al") anlamlı — diğer segment türlerinde undefined geçilir,
+  // sunucu yok sayar.
+  async submitWheelPick(playerId, ownerClientId) {
+    const res = await emitAck('draft:wheelPick', { code: state.code, playerId, ownerClientId });
+    if (res.error) toast('Seçim reddedildi: ' + res.error);
     return res;
   },
   async fetchLineupOptions() {
@@ -333,6 +373,22 @@ socket.on('draft:update', (msg) => {
       toast(`${prefix}${nameOf(msg.event.winnerClientId)} → ${msg.event.main.name} (${msg.event.price}₺)${backupsText}`);
     } else if (msg.event.type === 'one_sided_assigned') {
       toast(`${nameOf(msg.event.clientId)} rakipsiz aldı: ${msg.event.player.name}`);
+    } else if (msg.event.type === 'wheel_turn_resolved') {
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Segment türüne göre farklı toast
+      // metni — özel aksiyonlar (çal/ver/şanssız tur) normal bir "band → oyuncu" seçiminden
+      // görsel olarak da ayrışsın.
+      const ev = msg.event;
+      if (ev.segmentKind === 'steal') {
+        toast(`🎁 ${nameOf(ev.clientId)}, ${nameOf(ev.fromClientId)}'den ${ev.player.name}'i çaldı!`);
+      } else if (ev.segmentKind === 'give_best') {
+        toast(`😱 ${nameOf(ev.clientId)}, en iyisi ${ev.player.name}'i ${nameOf(ev.toClientId)}'e verdi!`);
+      } else if (ev.segmentKind === 'forced_worst') {
+        toast(`💀 ${nameOf(ev.clientId)} şanssız turda ${ev.player.name}'i aldı`);
+      } else if ((ev.segmentKind === 'league' || ev.segmentKind === 'nation') && ev.revealValue) {
+        toast(`🎡 ${nameOf(ev.clientId)}: ${ev.revealValue} → ${ev.player.name}`);
+      } else {
+        toast(`🎡 ${nameOf(ev.clientId)}: ${ev.band} → ${ev.player.name}`);
+      }
     }
   }
   route();

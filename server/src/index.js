@@ -37,6 +37,11 @@ app.get('/api/config', (req, res) => {
     MIN_RAISE: cfg.MIN_RAISE,
     AUCTION_DURATION_SECONDS: cfg.AUCTION_DURATION_SECONDS,
     BLIND_BID_DURATION_SECONDS: cfg.BLIND_BID_DURATION_SECONDS,
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Segmentler artık global bir sabit
+    // DEĞİL — her draft kendi çarkını (bkz. pool.js buildWheelSegments) draft başında kurar ve
+    // draft:update/draft:started ile odaya özel yayınlar (bkz. DraftEngine.emitDraft
+    // `wheelSegments`). Burada sadece mod-bağımsız kalan süre sabiti kalıyor.
+    WHEEL_PICK_DURATION_SECONDS: cfg.WHEEL_PICK_DURATION_SECONDS,
     FORMATIONS,
   });
 });
