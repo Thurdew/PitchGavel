@@ -136,6 +136,12 @@ function publicRoundState(round) {
     // [KULLANICI İSTEĞİ] Duraklatılmışken sunucu deadline'ı artık ilerletmiyor (donmuş
     // kalır) — istemci bunun yerine bu dondurulmuş kalan süreyi statik göstermeli.
     pausedRemainingMs: round.pausedRemainingMs != null ? round.pausedRemainingMs : null,
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kaskad açık arttırma — "N kullanıcı için N-1 açık
+    // arttırma" — bu pozisyon-turunun kaçıncı aşamasında olduğumuzu (1-based) ve toplam kaç
+    // aşama olduğunu istemciye taşır (K=2 odada 1/2 olur, istemci bunu ayrıca vurgulamaz —
+    // bkz. views.js cascadeTotal>2 kontrolü). auction/blind_auction dışında anlamsız (null).
+    cascadeStage: round.cascadeStage || null,
+    cascadeTotal: round.cascadeTotal || null,
   };
   if (round.kind === 'blind_auction') {
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft — rakibin teklif MİKTARI round çözülene
@@ -242,6 +248,10 @@ class DraftEngine {
       paused: false,
       pauseVotes: new Set(),
       pendingNextRound: false,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kaskad açık arttırma — bkz. startAuctionRound/
+      // startCascadeStage. Bir pozisyon-turu K katılımcıyı kapsıyorsa, bu turun ortasında
+      // hangi aşamada olduğumuzu (hangi aday açık arttırmada, kimler hâlâ bekliyor) taşır.
+      cascade: null,
     };
 
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Bu draftın SABİT çarkı — havuzlardan
@@ -322,6 +332,17 @@ class DraftEngine {
     }, ROUND_RESULT_DELAY_MS);
   }
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "N kadar kullanıcı olduğunda bir tur içinde N-1 kadar
+  // açık arttırma olması lazım — x için açık arttırma başlar, x'i alan bir sonraki turdan (y
+  // için) çıkar, kalan 2 kişi y için yarışır, en son kalan tek kişiye z rakipsiz gider. Bu kör
+  // ihale için de geçerli." — eskiden K katılımcı için TEK bir açık arttırma yapılıp kaybedenler
+  // kendi ORİJİNAL tekliflerine göre yedek merdivenine otomatik dağıtılıyordu (gerçek bir ikinci
+  // karar/teklif olmadan). Artık her pozisyon-turu bir KASKAD: 1 ana + (K-1) yedeklik ladder yine
+  // baştan (tek seferde) çekilir/gösterilir, ama açık arttırma sırayla ilerler — bir aday için
+  // kazanan belli olunca kaskaddan çıkar, kalan katılımcılar BİR SONRAKİ (bir alt reytingli) aday
+  // için YENİDEN, taze bir açık arttırmaya girer. Sadece 1 kişi kalınca (rekabet yok) son aday
+  // otomatik/rakipsiz gider (bkz. startCascadeStage). K=2 odada bu, eski davranışla BİREBİR aynı
+  // sonucu üretir (1 açık arttırma + 1 rakipsiz atama) — sadece K>2 odalarda gerçek fark yaratır.
   startAuctionRound(room, type, needyPlayers) {
     const isBigGap = room.draft.bigGapSlots && room.draft.bigGapSlots.has(type);
     const ratingGap = isBigGap ? BIG_GAP_RATING_GAP : BACKUP_RATING_GAP;
@@ -337,22 +358,81 @@ class DraftEngine {
     room.draft.takenIds.add(main.id);
     for (const b of backups) room.draft.takenIds.add(b.id);
 
-    const participantIds = needyPlayers.map((p) => p.clientId);
+    room.draft.cascade = {
+      slotType: type,
+      candidates: [main, ...backups], // sabit ladder — draft başında bir kez çekilir
+      bigGap: isBigGap,
+      remaining: needyPlayers.map((p) => p.clientId), // henüz bu pozisyondan almamış katılımcılar
+      stageIndex: 0, // candidates[stageIndex] şu an açık arttırmada olan aday
+    };
+    this.startCascadeStage(room);
+  }
 
-    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft modu — oda kurulurken sabitlenen mod
-    // 'blind' ise, açık arttırma yerine gizli/tek seferlik teklif turu başlatılır (bkz.
-    // submitBlindBid/resolveBlindRound). Ana+yedek reveal mantığı canlı modla birebir aynı.
+  // Kaskadın bir sonraki aşamasını açar: candidates[stageIndex] adayı, cascade.remaining'deki
+  // katılımcılar arasında (canlı ya da kör) yeni bir açık arttırmaya çıkar. Sadece 1 katılımcı
+  // kaldıysa rekabet yok — aday doğrudan (rakipsiz fiyata) atanır ve kaskad biter.
+  startCascadeStage(room) {
+    // [KULLANICI İSTEĞİ] Duraklatılmışken aşamalar arası geçiş de BAŞLATILMAZ — nextRound'daki
+    // aynı erteleme deseni (bkz. resumeDraft'ın pendingNextRound işleyişi).
+    if (room.draft.paused) {
+      room.draft.pendingNextRound = true;
+      return;
+    }
+
+    const c = room.draft.cascade;
+    const candidate = c.candidates[c.stageIndex];
+    if (!candidate) {
+      // Ladder, backupCount'tan kısa kaldı (havuz tükenmiş) — kalan katılımcıların slotsNeeded'ı
+      // düşmedi, bir sonraki turda tekrar aday olurlar (draft asla tıkanmaz).
+      room.draft.cascade = null;
+      this.nextRound(room);
+      return;
+    }
+
+    const type = c.slotType;
+    // Henüz sırası gelmemiş adaylar — reveal-row'da "sıradaki ladder" olarak gösterilmeye devam
+    // eder (bkz. views.js) — son eleman HER ZAMAN candidates'ın son elemanı, yani nihayetinde
+    // rakipsiz kalana giden aday (bkz. o dosyadaki tag mantığı).
+    const laterCandidates = c.candidates.slice(c.stageIndex + 1);
+
+    if (c.remaining.length === 1) {
+      // Rekabet yok — son kalan katılımcıya son aday rakipsiz gider (bkz. startOneSidedRound
+      // felsefesiyle aynı: BACKUP_PLAYER_PRICE, kaybettiği için değil rakibi kalmadığı için).
+      const clientId = c.remaining[0];
+      const player = findPlayer(room, clientId);
+      this.assignPlayer(room, player, candidate, type, BACKUP_PLAYER_PRICE, 'cascade_uncontested');
+      room.draft.round = { slotType: type, kind: 'one_sided', main: candidate, resolvedAt: Date.now() };
+      room.draft.cascade = null;
+      this.emitDraft(room, {
+        event: {
+          type: 'one_sided_assigned', slotType: type, clientId, player: candidate,
+          price: BACKUP_PLAYER_PRICE, cascadeFinal: true,
+        },
+      });
+      setTimeout(() => {
+        if (room.status !== STATUS.DRAFT) return;
+        room.draft.round = null;
+        this.nextRound(room);
+      }, ROUND_RESULT_DELAY_MS);
+      return;
+    }
+
+    const participantIds = [...c.remaining];
+    // [KULLANICI İSTEĞİ] "Bu kör ihale için de geçerli" — kaskad, draftMode'dan bağımsız aynı
+    // akışı izler; sadece bu tekil aşamanın canlı mı kör mü açık arttırma olacağı değişir.
     if (room.draftMode === 'blind') {
       const deadline = Date.now() + BLIND_BID_DURATION_SECONDS * 1000;
       room.draft.round = {
         slotType: type,
         kind: 'blind_auction',
-        main,
-        backups,
+        main: candidate,
+        backups: laterCandidates,
         participantIds,
-        bigGap: isBigGap,
+        bigGap: c.bigGap,
         deadline,
         bids: new Map(), // clientId -> { amount, at }
+        cascadeStage: c.stageIndex + 1,
+        cascadeTotal: c.candidates.length,
         timer: setTimeout(() => this.resolveBlindRound(room), BLIND_BID_DURATION_SECONDS * 1000),
       };
       this.emitDraft(room);
@@ -363,21 +443,18 @@ class DraftEngine {
     room.draft.round = {
       slotType: type,
       kind: 'auction',
-      main,
-      backups,
+      main: candidate,
+      backups: laterCandidates,
       participantIds,
-      bigGap: isBigGap,
+      bigGap: c.bigGap,
       deadline,
-      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — canlı modda da her katılımcının
-      // kendi teklifi ayrıca tutulur (yedek merdiveni "teklif sırasına göre" dağıtabilmek için,
-      // bkz. resolveAuctionRound/rankParticipants); highestBid/highestBidderClientId ise anlık
-      // "en yüksek teklif" göstergesi olarak aynen korunur.
       bids: new Map(),
       highestBid: 0,
       highestBidderClientId: null,
+      cascadeStage: c.stageIndex + 1,
+      cascadeTotal: c.candidates.length,
       timer: setTimeout(() => this.resolveAuctionRound(room), AUCTION_DURATION_SECONDS * 1000),
     };
-
     this.emitDraft(room);
   }
 
@@ -707,7 +784,11 @@ class DraftEngine {
     this.emitDraft(room);
     if (room.draft.pendingNextRound) {
       room.draft.pendingNextRound = false;
-      this.nextRound(room);
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kaskad ortasında (bir aşama çözülüp bir sonrakine
+      // geçilmeden önce) duraklatıldıysa, devam ederken de kaldığı aşamadan devam etmeli —
+      // baştan nextRound()'a dönüp yeni bir pozisyon-turu başlatmamalı.
+      if (room.draft.cascade) this.startCascadeStage(room);
+      else this.nextRound(room);
     }
   }
 
@@ -785,6 +866,12 @@ class DraftEngine {
     return { ok: true };
   }
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kaskad — bu artık K katılımcının TAMAMINI tek seferde
+  // ladder'a dağıtmıyor: sadece BU aşamanın adayı için kazananı belirliyor, kazananı kaskaddan
+  // düşürüyor ve (rekabet kaldıysa) bir sonraki aşamayı (bir alt reytingli aday için taze bir
+  // açık arttırma) açıyor — bkz. startCascadeStage. Kaybedenler kendi ORİJİNAL bu-aşamadaki
+  // tekliflerine göre otomatik atanmıyor; bir sonraki adayın açık arttırmasında YENİDEN, taze
+  // bir teklif vermek zorundalar (kullanıcının "en çok parayı veren y oyuncusunu alıyor" örneği).
   resolveBlindRound(room) {
     const round = room.draft.round;
     if (!round || round.kind !== 'blind_auction') return;
@@ -799,21 +886,6 @@ class DraftEngine {
 
     this.assignPlayer(room, winner, round.main, type, price, 'blind_auction_won');
 
-    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Yedek atama sırası" — anayı kazanamayan katılımcılar
-    // arasında yedekler ranking sırasına göre (en yüksek teklif -> en iyi yedek) dağıtılır.
-    // Havuz kısa kaldıysa (backups.length < K-1) sıradaki katılımcılar bu turda boş kalır,
-    // slotsNeeded'ları düşmediği için bir sonraki tur tekrar aday olurlar.
-    const backups = round.backups || [];
-    const laddered = [];
-    for (let i = 1; i < ranking.length; i++) {
-      const backupPlayer = backups[i - 1];
-      if (!backupPlayer) break;
-      const loserId = ranking[i];
-      const loser = findPlayer(room, loserId);
-      this.assignPlayer(room, loser, backupPlayer, type, BACKUP_PLAYER_PRICE, 'backup');
-      laddered.push({ clientId: loserId, player: backupPlayer, price: BACKUP_PLAYER_PRICE });
-    }
-
     this.emitDraft(room, {
       event: {
         type: 'blind_auction_resolved',
@@ -821,18 +893,28 @@ class DraftEngine {
         winnerClientId: winnerId,
         price,
         main: round.main,
-        backups: laddered,
-        // [KULLANICI İSTEĞİ] Kör Draft'ın "reveal" anı — round çözüldükten SONRA tüm
-        // katılımcıların teklifi (verdiyse) açığa çıkar; artık bilgi sızıntısı değil, bitmiş
-        // bir turun sonucu.
+        // [KULLANICI İSTEĞİ] Artık toplu bir "yedek merdiveni" atanmıyor (bkz. yukarıdaki not) —
+        // kalan katılımcılar bir sonraki aşamanın kendi sonuç panelinde ayrı ayrı görünecek.
+        backups: [],
+        cascadeStage: round.cascadeStage || null,
+        cascadeTotal: round.cascadeTotal || null,
+        // [KULLANICI İSTEĞİ] Kör Draft'ın "reveal" anı — round çözüldükten SONRA (SADECE bu
+        // aşamanın katılımcılarının) teklifi açığa çıkar; artık bilgi sızıntısı değil, bitmiş
+        // bir aşamanın sonucu.
         bids: revealBids(round),
       },
     });
 
     room.draft.round = null;
+    const c = room.draft.cascade;
+    if (c) {
+      c.remaining = c.remaining.filter((id) => id !== winnerId);
+      c.stageIndex += 1;
+    }
     setTimeout(() => {
       if (room.status !== STATUS.DRAFT) return;
-      this.nextRound(room);
+      if (room.draft.cascade) this.startCascadeStage(room);
+      else this.nextRound(room);
     }, ROUND_RESULT_DELAY_MS);
   }
 
@@ -850,21 +932,6 @@ class DraftEngine {
 
     this.assignPlayer(room, winner, round.main, type, price, 'auction_won');
 
-    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — "Yedek atama sırası": anayı
-    // kazanamayan katılımcılar arasında yedekler teklif sırasına göre (en yüksek teklif veren,
-    // ama kazanmayan, en iyi yedeği alır) dağıtılır; hiç teklif vermeyenler ranking'de zaten
-    // sona (ve aralarında rastgele) sıralanmış durumda (bkz. rankParticipants).
-    const backups = round.backups || [];
-    const laddered = [];
-    for (let i = 1; i < ranking.length; i++) {
-      const backupPlayer = backups[i - 1];
-      if (!backupPlayer) break; // havuz kısa kaldıysa kalan katılımcılar bu turda boş kalır
-      const loserId = ranking[i];
-      const loser = findPlayer(room, loserId);
-      this.assignPlayer(room, loser, backupPlayer, type, BACKUP_PLAYER_PRICE, 'backup');
-      laddered.push({ clientId: loserId, player: backupPlayer, price: BACKUP_PLAYER_PRICE });
-    }
-
     this.emitDraft(room, {
       event: {
         type: 'auction_resolved',
@@ -872,18 +939,27 @@ class DraftEngine {
         winnerClientId: winnerId,
         price,
         main: round.main,
-        backups: laddered,
+        // [KULLANICI İSTEĞİ] Artık toplu bir "yedek merdiveni" atanmıyor — kaybedenler bir
+        // sonraki aşamanın (bir alt reytingli aday için) TAZE açık arttırmasına giriyor.
+        backups: [],
+        cascadeStage: round.cascadeStage || null,
+        cascadeTotal: round.cascadeTotal || null,
         // [KULLANICI İSTEĞİ] "Teklif verdiğinde ... diğer kullanıcıların ne kadar teklif
-        // verdiğini göster her seferinde" — canlı moddaki tüm katılımcı teklifleri de blind
-        // moddakiyle aynı şekilde round sonucunda özetlenir (client sonuç panelinde gösterir).
+        // verdiğini göster her seferinde" — SADECE bu aşamanın katılımcılarının teklifi.
         bids: revealBids(round),
       },
     });
 
     room.draft.round = null;
+    const c = room.draft.cascade;
+    if (c) {
+      c.remaining = c.remaining.filter((id) => id !== winnerId);
+      c.stageIndex += 1;
+    }
     setTimeout(() => {
       if (room.status !== STATUS.DRAFT) return;
-      this.nextRound(room);
+      if (room.draft.cascade) this.startCascadeStage(room);
+      else this.nextRound(room);
     }, ROUND_RESULT_DELAY_MS);
   }
 

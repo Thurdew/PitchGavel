@@ -506,8 +506,10 @@ socket.on('draft:started', ({ formation }) => {
   pushDataLayer('draft_start', { formation, draft_mode: state.room?.draftMode, player_pool: state.room?.playerPool });
 });
 
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — round sonucu artık tek bir "loser"
-// değil, ranking sırasına göre dağıtılan bir "backups" listesi taşıyor (bkz. DraftEngine).
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kaskad açık arttırma — msg.event.backups artık her zaman
+// boş (bkz. DraftEngine): bir aşama sadece TEK bir kazananı belirler, kaybedenler bir sonraki
+// aşamanın kendi toast'unda ayrı ayrı görünür. backupsText bu yüzden fiilen hep boş string olur,
+// ama olası eski/önbelleklenmiş bir event şekliyle uyumluluk için kod aynen bırakıldı.
 function nameOf(clientId) {
   const p = state.room?.players.find((pp) => pp.clientId === clientId);
   return p ? p.name : '?';

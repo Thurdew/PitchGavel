@@ -438,16 +438,21 @@ export function renderDraft({ state, actions }) {
       timerInterval = setInterval(tick, 150);
     }
 
-    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — "yedek merdiveni": tek bir yedek
-    // yerine azalan reytingte K-1 yedek gösterilir (K = bu turdaki katılımcı sayısı). 2 kişilik
-    // odada backups tam olarak 1 eleman taşır — görünüm eskisiyle birebir aynı kalır.
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "N kullanıcı için bir turda N-1 açık arttırma olsun —
+    // x için açık arttırma, x'i alan çıkar, kalanlar y için YENİDEN açık arttırmaya girer..."
+    // — ladder artık toplu atanmıyor, KASKAD ilerliyor: round.backups şu an "sırası gelmemiş,
+    // ileride kendi açık arttırmasına çıkacak" adaylar. Bu dizinin SON elemanı HER ZAMAN
+    // ladder'ın son üyesi — yani nihayetinde rekabet kalmayınca rakipsiz gidecek aday (bkz.
+    // DraftEngine.startCascadeStage: backups = candidates.slice(stageIndex+1), ladder'ın kuyruğu
+    // stageIndex'ten bağımsız hep aynı son elemanda biter).
     const backups = round.backups || [];
     roundPanel.appendChild(el('div', { class: 'reveal-row' }, [
       playerCard(round.main, { slot: round.slotType, extraClass: 'main', tag: isBlind ? 'ANA OYUNCU — gizli teklif' : 'ANA OYUNCU — açık arttırmada' }),
       ...backups.map((b, i) => {
+        const isFinal = i === backups.length - 1;
         const card = playerCard(b, {
           slot: round.slotType, extraClass: 'backup',
-          tag: backups.length > 1 ? `${i + 2}. SIRA YEDEK` : 'YEDEK — kaybeden otomatik alır',
+          tag: isFinal ? 'SON SIRA — rakipsiz kalana otomatik gider' : `${i + 2}. SIRA — sırası gelince açık arttırmaya çıkacak`,
         });
         if (backups.length > 1) card.appendChild(el('div', { class: 'ladder-rank-badge' }, String(i + 2)));
         return card;
@@ -462,6 +467,13 @@ export function renderDraft({ state, actions }) {
     if (participants.length > 2) {
       roundPanel.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
         `Bu turda yarışanlar: ${participants.map((p) => p.name + (p.clientId === state.clientId ? ' (sen)' : '')).join(', ')}`));
+    }
+    // [KULLANICI İSTEĞİ] Kaskadın kaçıncı aşamasında olduğumuzu göster — SADECE gerçekten
+    // birden fazla aşamalı (K>2) turlarda anlamlı; 2 kişilik odalarda (her zaman 1/2) yeni bir
+    // bilgi taşımadığı için gösterilmiyor.
+    if (round.cascadeTotal > 2) {
+      roundPanel.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
+        `Bu pozisyon için ${round.cascadeStage}/${round.cascadeTotal}. açık arttırma`));
     }
 
     const me = d.players.find((p) => p.clientId === state.clientId);
@@ -876,10 +888,14 @@ function renderRoundResultPanel(event, state) {
   if (event.type === 'one_sided_assigned') {
     const buyer = nameOf(event.clientId) + (event.clientId === state.clientId ? ' (sen)' : '');
     wrap.appendChild(el('h3', {}, `Sonuç — ${event.slotType} pozisyonu`));
-    wrap.appendChild(receiptStrip({
-      emoji: '🤝', headline: `${buyer} → ${event.player.name}`,
-      sub: `Rakipsiz, ${fmtMoney(event.price)} — bu pozisyona sadece bu oyuncunun ihtiyacı vardı.`,
-    }));
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "N kullanıcı için N-1 açık arttırma" — bu event artık
+    // iki farklı durumu paylaşıyor: (1) gerçek tek taraflı ihtiyaç (bu pozisyona hiç kimse başka
+    // ihtiyaç duymuyordu, cascadeFinal yok), (2) bir kaskadın son aşaması (herkes sırasıyla açık
+    // arttırmayla kendi oyuncusunu aldı, en son bu kişi kaldı — bkz. DraftEngine.startCascadeStage).
+    const sub = event.cascadeFinal
+      ? `Rakipsiz, ${fmtMoney(event.price)} — bu pozisyon için sıradaki herkes kendi açık arttırmasını kazandı, sen son kalan kişiydin.`
+      : `Rakipsiz, ${fmtMoney(event.price)} — bu pozisyona sadece bu oyuncunun ihtiyacı vardı.`;
+    wrap.appendChild(receiptStrip({ emoji: '🤝', headline: `${buyer} → ${event.player.name}`, sub }));
     wrap.appendChild(el('div', { class: 'reveal-row' }, [
       playerCard(event.player, { slot: event.slotType, extraClass: 'main' }),
     ]));
@@ -889,9 +905,13 @@ function renderRoundResultPanel(event, state) {
   const isBlind = event.type === 'blind_auction_resolved';
   const winner = nameOf(event.winnerClientId) + (event.winnerClientId === state.clientId ? ' (sen)' : '');
   wrap.appendChild(el('h3', {}, isBlind ? '🔓 Kör Teklif Sonucu' : '📢 Açık Arttırma Sonucu'));
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kaskad — bu artık bir "ladder"ın parçası değil, bu
+  // aşamanın TEK sonucu; kaybedenler bir sonraki (bir alt reytingli) aday için AYRI, taze bir
+  // açık arttırmaya girecek (bkz. o sonraki round-result panelinde ayrı ayrı görünecekler).
+  const progressSub = event.cascadeTotal > 2 ? ` — ${event.cascadeStage}/${event.cascadeTotal}. açık arttırma` : '';
   wrap.appendChild(receiptStrip({
     emoji: '🏆', headline: `${winner} → ${event.main.name}`,
-    sub: `${fmtMoney(event.price)} karşılığında kadroya kattı`,
+    sub: `${fmtMoney(event.price)} karşılığında kadroya kattı${progressSub}`,
   }));
   wrap.appendChild(el('div', { class: 'reveal-row' }, [
     // .sold-wrap: saf CSS'te (bkz. styles.css) dönen bir "SATILDI" damgası basar — bu turun
@@ -900,14 +920,6 @@ function renderRoundResultPanel(event, state) {
       slot: event.slotType, extraClass: 'main',
       tag: `🏆 ${winner} — ${fmtMoney(event.price)}`,
     })]),
-    ...(event.backups || []).map((b, i) => {
-      const card = playerCard(b.player, {
-        slot: event.slotType, extraClass: 'backup',
-        tag: `${nameOf(b.clientId)}${b.clientId === state.clientId ? ' (sen)' : ''} — ${fmtMoney(b.price)}`,
-      });
-      if ((event.backups || []).length > 1) card.appendChild(el('div', { class: 'ladder-rank-badge' }, String(i + 2)));
-      return card;
-    }),
   ]));
 
   // Herkesin teklif dökümü — kör modda bu, round bitene kadar hiç görünmeyen bilginin
