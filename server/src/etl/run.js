@@ -17,7 +17,7 @@ const MANUAL_POSITIONS = require('./manualPositionOverrides');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — EA POLİTİKASI BİLEREK GERİ ALINDI] bkz. fc26RatingOverrides.js
 // dosya başı notu — 2026-27 için EA FC26 reytingleri (Süper Lig + büyük 5 Avrupa ligi) kullanıcı
 // onayıyla DOĞRUDAN uygulanıyor.
-const { resolveFc26Overrides } = require('./fc26RatingOverrides');
+const { resolveFc26Overrides, normName } = require('./fc26RatingOverrides');
 
 const RAW_DIR = path.join(__dirname, '..', '..', 'data', 'raw');
 const OUT_DIR = path.join(__dirname, '..', '..', 'data', 'processed');
@@ -911,34 +911,41 @@ async function main() {
     'aaron': 'aaron escandell',
   };
   const FC26_RATING_FILES = [
-    { file: 'super_lig_2026_2027_fc26_reytingleri.md', label: 'Süper Lig', clubAliases: SUPER_LIG_CLUB_ALIASES, nameAliases: SUPER_LIG_NAME_ALIASES },
-    { file: 'premier_league_2026_2027_fc26_reytingleri.md', label: 'Premier League' },
-    { file: 'la_liga_2026_2027_fc26_reytingleri.md', label: 'La Liga', nameAliases: LA_LIGA_NAME_ALIASES },
-    { file: 'bundesliga_2026_2027_fc26_reytingleri.md', label: 'Bundesliga' },
-    { file: 'serie_a_2026_2027_fc26_reytingleri.md', label: 'Serie A' },
-    { file: 'ligue_1_2026_2027_fc26_reytingleri.md', label: 'Ligue 1' },
+    { file: 'super_lig_2026_2027_fc26_reytingleri.md', label: 'Süper Lig', leagueCode: 'TR1', clubAliases: SUPER_LIG_CLUB_ALIASES, nameAliases: SUPER_LIG_NAME_ALIASES },
+    { file: 'premier_league_2026_2027_fc26_reytingleri.md', label: 'Premier League', leagueCode: 'GB1' },
+    { file: 'la_liga_2026_2027_fc26_reytingleri.md', label: 'La Liga', leagueCode: 'ES1', nameAliases: LA_LIGA_NAME_ALIASES },
+    { file: 'bundesliga_2026_2027_fc26_reytingleri.md', label: 'Bundesliga', leagueCode: 'L1' },
+    { file: 'serie_a_2026_2027_fc26_reytingleri.md', label: 'Serie A', leagueCode: 'IT1' },
+    { file: 'ligue_1_2026_2027_fc26_reytingleri.md', label: 'Ligue 1', leagueCode: 'FR1' },
   ];
 
-  // [KULLANICI İSTEĞİ, "2026-2027 yılında yapılan transferleri uygula"] Önceki turlarda (v11)
-  // sadece appearances.csv'den çıkarılan GERÇEK son maç verisi kulüp/lig alanını güncelliyordu —
-  // bu, henüz yeni kulübü için hiç maça çıkmamış TAZE transferleri (ör. Ağustos 2026'da Beşiktaş'a
-  // giden Trossard/Vlahovic/Nübel) yakalayamıyordu. Süper Lig FC26 dosyasındaki "Durum"/"Not"
-  // kolonları (bkz. parseSuperLigOverrides.js) bu taze transferleri "🆕 Yeni transfer" + kaynak
-  // kulüp olarak zaten taşıyor — burada bu bilgi SADECE reyting için değil, `club`/`league`/
-  // `leagueCode`/`country` için de kullanılıyor. `transferLockedIds`: bir oyuncu Süper Lig
-  // dosyasında (FC26_RATING_FILES sırasında hep İLK işlenen dosya) taze transfer olarak
-  // işaretlenince, SONRAKİ dosyalarda (ör. Nübel'in eski kulübü Bayern'in bulunduğu Bundesliga
-  // dosyası) o oyuncunun rating'i/kulübü ARTIK ezilmesin diye kilitleniyor — aksi halde "son
-  // dosya kazanır" kuralı yeni transferin üstüne eski liginin verisini yazardı.
+  // [KULLANICI İSTEĞİ, "2026-2027 yılında yapılan transferleri uygula" + "diğer ligler içinde
+  // yap, bütün transferleri tamamla"] Önceki turlarda (v11) sadece appearances.csv'den çıkarılan
+  // GERÇEK son maç verisi kulüp/lig alanını güncelliyordu — bu, henüz yeni kulübü için hiç maça
+  // çıkmamış TAZE transferleri (ör. Ağustos 2026'da Beşiktaş'a giden Trossard/Vlahovic/Nübel)
+  // yakalayamıyordu. Süper Lig FC26 dosyası bunu "🆕 Yeni transfer" + kaynak kulüp olarak açıkça
+  // taşıyor, ama diğer 5 büyük Avrupa ligi dosyasında böyle bir kolon YOK — sadece "19 Ağustos
+  // 2026 itibarıyla bu oyuncu bu takımda" bilgisi var. Yine de dosyanın kendisi appearances.csv'den
+  // DAHA GÜNCEL olabileceği için (bkz. o dosyaların kendi başlığındaki not) artık HER 6 dosyadaki
+  // HER eşleşme için club/league/country güncelleniyor — sadece Süper Lig'in "Yeni transfer"
+  // işaretli satırları için değil (bkz. fc26RatingOverrides.js `resolvedClub`).
+  // `transferLockedIds`: bir oyuncu Süper Lig dosyasında (FC26_RATING_FILES sırasında hep İLK
+  // işlenen dosya) AÇIKÇA "🆕 Yeni transfer" olarak işaretlenmişse, SONRAKİ dosyalarda (ör.
+  // Nübel'in eski kulübü Bayern'in bulunduğu Bundesliga dosyası) o oyuncunun rating'i/kulübü ARTIK
+  // ezilmesin diye kilitleniyor — bu AÇIK işaret her zaman en güncel bilgi sayılıyor. Diğer
+  // (işaretsiz) eşleşmelerde önceki "son dosya kazanır" davranışı aynen korunuyor.
   let fc26TotalApplied = 0;
   let fc26TotalRows = 0;
   let fc26TransfersApplied = 0;
+  let fc26ClubUpdatesApplied = 0;
   const transferLockedIds = new Set();
   for (const cfg of FC26_RATING_FILES) {
     const mdPath = path.join(OUT_DIR, cfg.file);
     if (!fs.existsSync(mdPath)) { console.log(`[etl] FC26 override — ${cfg.label}: dosya bulunamadı (${cfg.file}), atlanıyor`); continue; }
+    const leagueInfoForFile = TARGET_LEAGUES[cfg.leagueCode];
     const { overrides, unmatched } = resolveFc26Overrides(allPlayers, mdPath, {
       clubAliases: cfg.clubAliases, nameAliases: cfg.nameAliases,
+      leagueName: leagueInfoForFile.name, leagueCode: cfg.leagueCode, country: leagueInfoForFile.country,
     });
     let applied = 0;
     for (const p of allPlayers) {
@@ -949,16 +956,22 @@ async function main() {
       p.ratingOverrideSource = 'fc26-2026-27'; // şeffaflık: bu reytingin kendi formülümüzden DEĞİL EA FC26'dan geldiğini işaretler
       applied++;
 
-      const isNewTransfer = /Yeni transfer/.test(ov.durum || ''); // sadece Süper Lig dosyasında dolu olabilir, diğer 5 ligin dosyasında ov.durum hep '' — bu blok orada hiç tetiklenmez
+      const clubChanged = ov.resolvedClub && ov.resolvedClub !== p.club;
+      if (clubChanged) fc26ClubUpdatesApplied++;
+      if (ov.resolvedClub) {
+        p.club = ov.resolvedClub;
+        p.league = ov.leagueName;
+        p.leagueCode = ov.leagueCode;
+        p.country = ov.country;
+      }
+
+      const isNewTransfer = /Yeni transfer/.test(ov.durum || ''); // sadece Süper Lig dosyasında dolu olabilir, diğer 5 ligin dosyasında ov.durum hep ''
       if (isNewTransfer) {
-        const destClubName = (cfg.clubAliases && cfg.clubAliases[ov.team] && cfg.clubAliases[ov.team][0]) || ov.team;
-        p.club = destClubName;
-        p.league = 'Süper Lig';
-        p.leagueCode = 'TR1';
-        p.country = 'Türkiye';
         transferLockedIds.add(p.id);
         fc26TransfersApplied++;
         console.log(`[etl]   transfer uygulandı: ${p.name} -> ${ov.team}${(ov.not || '').trim() ? ` (${ov.not.trim()})` : ''}`);
+      } else if (clubChanged) {
+        console.log(`[etl]   kulüp güncellendi (${cfg.label} dosyası daha güncel): ${p.name} -> ${ov.resolvedClub}`);
       }
     }
     fc26TotalApplied += applied;
@@ -971,6 +984,39 @@ async function main() {
   }
   console.log(`[etl] FC26 override TOPLAM: ${fc26TotalApplied}/${fc26TotalRows} oyuncu eşleşti (6 dosya)`);
   console.log(`[etl] FC26 transfer TOPLAM: ${fc26TransfersApplied} oyuncunun kulüp/lig bilgisi "🆕 Yeni transfer" işaretine göre güncellendi`);
+  console.log(`[etl] FC26 kulüp senkronu TOPLAM: ${fc26ClubUpdatesApplied} oyuncunun kulüp bilgisi (transfer işareti olmadan, sadece dosya daha güncel olduğu için) düzeltildi`);
+
+  // [KULLANICI İSTEĞİ, "Greenwood/Aké/Vedat Muriqi de Fenerbahçe'ye geldi"] Bu üç transfer FC26
+  // dosyalarının hiçbirinde işaretli değildi (Greenwood hâlâ Marseille, Aké hâlâ Man City, Muriqi
+  // hâlâ Mallorca bölümünde listeleniyordu — bkz. bir önceki tur) — kullanıcı bunu doğrudan
+  // bildirdi, yukarıdaki FC26-kaynaklı akıştan AYRI, küçük elle bir tabloyla uygulanıyor. Rating'e
+  // DOKUNULMUYOR (kaynakta bu oyuncular için Süper Lig'e özel bir FC26 reytingi yok, kendi
+  // formülümüzün ürettiği değer korunuyor) — sadece club/league/country güncelleniyor, tıpkı FC26
+  // transfer bloğundaki gibi `SUPER_LIG_CLUB_ALIASES` üzerinden gerçek Transfermarkt kulüp adına
+  // (`Fenerbahce`) eşleniyor ki players.json'daki diğer Fenerbahçe oyuncularıyla tutarlı olsun.
+  const MANUAL_TRANSFERS_2026_27 = [
+    { name: 'Mason Greenwood', toTeam: 'Fenerbahçe', note: "Olympique Marseille'den" },
+    { name: 'Nathan Aké', toTeam: 'Fenerbahçe', note: "Manchester City'den" },
+    { name: 'Vedat Muriqi', toTeam: 'Fenerbahçe', note: "RCD Mallorca'dan" },
+  ];
+  let manualTransfersApplied = 0;
+  for (const mt of MANUAL_TRANSFERS_2026_27) {
+    const key = normName(mt.name);
+    const candidates = allPlayers.filter((p) => normName(p.name) === key);
+    if (candidates.length !== 1) {
+      console.warn(`[etl] manuel transfer uygulanamadı (${candidates.length} aday bulundu): ${mt.name}`);
+      continue;
+    }
+    const p = candidates[0];
+    const destClubName = (SUPER_LIG_CLUB_ALIASES[mt.toTeam] && SUPER_LIG_CLUB_ALIASES[mt.toTeam][0]) || mt.toTeam;
+    p.club = destClubName;
+    p.league = 'Süper Lig';
+    p.leagueCode = 'TR1';
+    p.country = 'Türkiye';
+    manualTransfersApplied++;
+    console.log(`[etl]   manuel transfer uygulandı: ${p.name} -> ${mt.toTeam} (${mt.note})`);
+  }
+  console.log(`[etl] Manuel transfer TOPLAM: ${manualTransfersApplied}/${MANUAL_TRANSFERS_2026_27.length}`);
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(OUT_FILE, JSON.stringify({
