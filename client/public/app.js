@@ -48,6 +48,7 @@ const state = {
 function applyMatchResult(result) {
   state.matchResult = result;
   if (!state.matchPlayback) {
+    pushDataLayer('match_result', { fixtures_count: (result.fixtures || []).length });
     state.matchPlayback = {
       fixtureIndex: 0,
       matchIndex: 0,
@@ -59,6 +60,18 @@ function applyMatchResult(result) {
       pendingReveal: null, // [KULLANICI İSTEĞİ] gerilim akışı — bkz. views.js renderMatchPlayback
     };
   }
+}
+
+// [KULLANICI İSTEĞİ] "GTM'de nasıl etiketler kurmam lazım, güzel bir analiz yapabilmek için" —
+// GA4/GTM'in kendiliğinden yakalayamayacağı oyuna özgü aksiyonları (oda kurma, teklif verme,
+// draft/maç tamamlanması vb.) dataLayer'a itiyor; GTM tarafında bunlara karşılık gelen "Custom
+// Event" trigger'ları + GA4 Event tag'leri kurulabilir (bkz. sohbetteki kurulum rehberi).
+// SPA sayfa geçişleri (/ ↔ /players) de burada elle itiliyor — GA4'ün otomatik page_view'i
+// SADECE ilk yüklemede (gtag.js config çağrısıyla) tetiklenir, pushState ile değişen sonraki
+// URL'leri kendiliğinden YAKALAMAZ.
+function pushDataLayer(event, params = {}) {
+  window.dataLayer = window.dataLayer || [];
+  window.dataLayer.push({ event, ...params });
 }
 
 const socket = io();
@@ -114,6 +127,7 @@ function navigateToPage(page) {
   state.page = page;
   const path = pathForPage(page);
   if (location.pathname !== path) history.pushState({ page }, '', path);
+  pushDataLayer('page_view', { page_path: path, page_title: (page === 'players' ? PAGE_META.players : PAGE_META.default).title });
   route();
 }
 
@@ -124,6 +138,7 @@ playersNavBtn.addEventListener('click', () => {
 // zaten tarayıcı geçmişte gezindi).
 window.addEventListener('popstate', () => {
   state.page = location.pathname === '/players' ? 'players' : null;
+  pushDataLayer('page_view', { page_path: location.pathname, page_title: (state.page === 'players' ? PAGE_META.players : PAGE_META.default).title });
   route();
 });
 // [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton ekle" — her ekrandan erişilebilen
@@ -241,6 +256,7 @@ const actions = {
     if (res.error) return toast('Oda oluşturulamadı: ' + res.error);
     state.room = res.room;
     setCode(res.room.code);
+    pushDataLayer('room_create', { draft_mode: draftMode, player_pool: playerPool });
     route();
   },
   async joinRoom(name, code) {
@@ -250,6 +266,7 @@ const actions = {
     if (res.error) return toast('Odaya katılınamadı: ' + res.error);
     state.room = res.room;
     setCode(res.room.code);
+    pushDataLayer('room_join');
     route();
   },
   // [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton, oyundayken de oyundan çıkmak
@@ -269,6 +286,7 @@ const actions = {
     if (state.code) {
       try { await emitAck('room:leave', { code: state.code }); } catch (e) { /* bağlantı zaten kopmuş olabilir — yok say */ }
     }
+    pushDataLayer('leave_room', { was_active: !!isActive });
     setCode(null);
     state.room = null;
     state.draft = null;
@@ -299,6 +317,7 @@ const actions = {
   async submitBid(amount) {
     const res = await emitAck('draft:bid', { code: state.code, amount });
     if (res.error) toast('Teklif reddedildi: ' + res.error);
+    else pushDataLayer('bid_placed', { amount });
     return res;
   },
   // [KULLANICI İSTEĞİ] "Açık arttırmada durdurma gelsin, iki oyuncu da onayladığında oyun
@@ -313,6 +332,7 @@ const actions = {
   async spinWheel() {
     const res = await emitAck('draft:spinWheel', { code: state.code });
     if (res.error) toast('Çark çevrilemedi: ' + res.error);
+    else pushDataLayer('wheel_spin');
     return res;
   },
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] `ownerClientId` sadece 'steal' segmentinde
@@ -334,6 +354,7 @@ const actions = {
   async submitLineup(matchSide, formation, assignment, style, tactic) {
     const res = await emitAck('lineup:submit', { code: state.code, matchSide, formation, assignment, style, tactic });
     if (res.error) toast('Dizilim reddedildi: ' + JSON.stringify(res.detail || res.error));
+    else pushDataLayer('lineup_submit', { match_side: matchSide, formation, tactic });
     return res;
   },
   // [KULLANICI İSTEĞİ] "Maç başlarken de iki oyuncuda hazır versin." — tek tık artık maçı
@@ -349,6 +370,7 @@ const actions = {
   async rematch() {
     const res = await emitAck('room:rematch', { code: state.code });
     if (res.error) { toast('Tekrar oyna başarısız: ' + res.error); return; }
+    pushDataLayer('rematch');
     resetMatchLocalState();
     state.room = res.room;
     route();
@@ -414,7 +436,10 @@ socket.on('room:rematch', () => {
   route();
 });
 
-socket.on('draft:started', ({ formation }) => { toast(`Kura: ${formation} formasyonu ile draft başlıyor!`); });
+socket.on('draft:started', ({ formation }) => {
+  toast(`Kura: ${formation} formasyonu ile draft başlıyor!`);
+  pushDataLayer('draft_start', { formation, draft_mode: state.room?.draftMode, player_pool: state.room?.playerPool });
+});
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — round sonucu artık tek bir "loser"
 // değil, ranking sırasına göre dağıtılan bir "backups" listesi taşıyor (bkz. DraftEngine).
@@ -454,7 +479,10 @@ socket.on('draft:update', (msg) => {
   route();
 });
 
-socket.on('draft:complete', () => { toast('Draft tamamlandı! Dizilim seçim aşamasına geçiliyor.'); });
+socket.on('draft:complete', () => {
+  toast('Draft tamamlandı! Dizilim seçim aşamasına geçiliyor.');
+  pushDataLayer('draft_complete');
+});
 
 socket.on('lineup:update', (msg) => {
   state.lineupSubmitted = msg.submitted || state.lineupSubmitted;

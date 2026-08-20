@@ -1,15 +1,10 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-HFXJF7G9JL"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-HFXJF7G9JL');
-</script>
+<!-- [KULLANICI İSTEĞİ, "GTM'de nasıl etiket kurmalıyım"] GA4'ü artık burada DOĞRUDAN değil,
+     GTM (GTM-P7W3XKVP) içinden bir "GA4 Configuration" tag'iyle yönetiyoruz — hem gtag.js hem
+     GTM aynı anda GA4'ü yapılandırırsa page_view ÇİFT sayılır. Measurement ID (G-HFXJF7G9JL)
+     GTM tarafında Constant değişkeni olarak tutulmalı. -->
 <!-- Google Tag Manager -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
