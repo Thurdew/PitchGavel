@@ -104,7 +104,12 @@ function resolveFc26Overrides(allPlayers, mdPath, opts = {}) {
         unmatched.push(`${t.team} | ${entry.name} (${entry.rating})${candidates.length > 1 ? ` [BELİRSİZ — ${candidates.length} aday]` : ''}`);
         continue;
       }
-      overrides.set(candidates[0].id, { rating: entry.rating, mdName: entry.name, team: t.team });
+      // [KULLANICI İSTEĞİ, "2026-2027 transferlerini uygula"] `durum`/`not` de taşınıyor — Süper
+      // Lig dosyasındaki "🆕 Yeni transfer" satırları için run.js bunu kullanıp oyuncunun kulüp/
+      // lig alanını da (sadece reytingi değil) yeni takıma göre günceller. Diğer 5 ligin
+      // dosyasında bu kolonlar hiç yok, entry.durum/entry.not orada hep '' — o dosyalarda bu blok
+      // hiçbir zaman tetiklenmez, davranış öncekiyle birebir aynı kalır.
+      overrides.set(candidates[0].id, { rating: entry.rating, mdName: entry.name, team: t.team, durum: entry.durum, not: entry.not });
     }
   }
 

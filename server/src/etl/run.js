@@ -919,8 +919,21 @@ async function main() {
     { file: 'ligue_1_2026_2027_fc26_reytingleri.md', label: 'Ligue 1' },
   ];
 
+  // [KULLANICI İSTEĞİ, "2026-2027 yılında yapılan transferleri uygula"] Önceki turlarda (v11)
+  // sadece appearances.csv'den çıkarılan GERÇEK son maç verisi kulüp/lig alanını güncelliyordu —
+  // bu, henüz yeni kulübü için hiç maça çıkmamış TAZE transferleri (ör. Ağustos 2026'da Beşiktaş'a
+  // giden Trossard/Vlahovic/Nübel) yakalayamıyordu. Süper Lig FC26 dosyasındaki "Durum"/"Not"
+  // kolonları (bkz. parseSuperLigOverrides.js) bu taze transferleri "🆕 Yeni transfer" + kaynak
+  // kulüp olarak zaten taşıyor — burada bu bilgi SADECE reyting için değil, `club`/`league`/
+  // `leagueCode`/`country` için de kullanılıyor. `transferLockedIds`: bir oyuncu Süper Lig
+  // dosyasında (FC26_RATING_FILES sırasında hep İLK işlenen dosya) taze transfer olarak
+  // işaretlenince, SONRAKİ dosyalarda (ör. Nübel'in eski kulübü Bayern'in bulunduğu Bundesliga
+  // dosyası) o oyuncunun rating'i/kulübü ARTIK ezilmesin diye kilitleniyor — aksi halde "son
+  // dosya kazanır" kuralı yeni transferin üstüne eski liginin verisini yazardı.
   let fc26TotalApplied = 0;
   let fc26TotalRows = 0;
+  let fc26TransfersApplied = 0;
+  const transferLockedIds = new Set();
   for (const cfg of FC26_RATING_FILES) {
     const mdPath = path.join(OUT_DIR, cfg.file);
     if (!fs.existsSync(mdPath)) { console.log(`[etl] FC26 override — ${cfg.label}: dosya bulunamadı (${cfg.file}), atlanıyor`); continue; }
@@ -931,9 +944,22 @@ async function main() {
     for (const p of allPlayers) {
       const ov = overrides.get(p.id);
       if (!ov) continue;
+      if (transferLockedIds.has(p.id)) continue; // zaten Süper Lig'e taze transfer olarak işaretlendi, eski liginin dosyası artık dokunmasın
       p.rating = Math.max(1, Math.min(99, Math.round(ov.rating)));
       p.ratingOverrideSource = 'fc26-2026-27'; // şeffaflık: bu reytingin kendi formülümüzden DEĞİL EA FC26'dan geldiğini işaretler
       applied++;
+
+      const isNewTransfer = /Yeni transfer/.test(ov.durum || ''); // sadece Süper Lig dosyasında dolu olabilir, diğer 5 ligin dosyasında ov.durum hep '' — bu blok orada hiç tetiklenmez
+      if (isNewTransfer) {
+        const destClubName = (cfg.clubAliases && cfg.clubAliases[ov.team] && cfg.clubAliases[ov.team][0]) || ov.team;
+        p.club = destClubName;
+        p.league = 'Süper Lig';
+        p.leagueCode = 'TR1';
+        p.country = 'Türkiye';
+        transferLockedIds.add(p.id);
+        fc26TransfersApplied++;
+        console.log(`[etl]   transfer uygulandı: ${p.name} -> ${ov.team}${(ov.not || '').trim() ? ` (${ov.not.trim()})` : ''}`);
+      }
     }
     fc26TotalApplied += applied;
     fc26TotalRows += applied + unmatched.length;
@@ -944,6 +970,7 @@ async function main() {
     }
   }
   console.log(`[etl] FC26 override TOPLAM: ${fc26TotalApplied}/${fc26TotalRows} oyuncu eşleşti (6 dosya)`);
+  console.log(`[etl] FC26 transfer TOPLAM: ${fc26TransfersApplied} oyuncunun kulüp/lig bilgisi "🆕 Yeni transfer" işaretine göre güncellendi`);
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(OUT_FILE, JSON.stringify({
