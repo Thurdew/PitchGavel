@@ -89,7 +89,26 @@ const playersNavBtn = document.getElementById('playersNavBtn');
 // sitemap.xml sadece bu iki yolu listeliyor). Sunucu tarafında zaten TÜM /api ve /socket.io
 // dışı yollar index.html'e düşüyor (bkz. server/src/index.js) — bu yüzden "/players"e doğrudan
 // girmek ya da sayfayı yenilemek de çalışıyor.
-function pathForPage(page) { return page === 'players' ? '/players' : '/'; }
+// [KULLANICI İSTEĞİ] "URL'leri her sayfa için farklı yap. Analizlerde hangi oyun daha fazla
+// oynanmış görmek istiyorum, mesela çark modunda pitchgavel/çark gibi" — GTM/GA4 sayfa yolu
+// (page_path) kırılımından "hangi draft modu daha çok seçiliyor" görülebilsin diye, lobide
+// "Oda Kur" akışında seçilen draft modu artık KENDİ URL'ine sahip. Slug'lar bilerek ASCII
+// (çark → /cark) — paylaşılan linkte %-encoding'e düşmesin diye. `players` sayfasıyla AYNI
+// pathForPage/navigateToPage/popstate deseni genelleştirildi.
+const PAGE_PATHS = {
+  players: '/players',
+  'mode-live': '/canli-arttirma',
+  'mode-blind': '/kor-draft',
+  'mode-wheel': '/cark',
+};
+const PATH_TO_PAGE = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page]));
+// draftMode ('live'/'blind'/'wheel') <-> ilgili lobi sayfası arasında çift yönlü eşleme —
+// URL'den lobiye (doğrudan /cark'a girmek) ve lobiden URL'e (pill'e tıklamak) ikisi de bunu kullanır.
+const DRAFT_MODE_BY_PAGE = { 'mode-live': 'live', 'mode-blind': 'blind', 'mode-wheel': 'wheel' };
+const PAGE_BY_DRAFT_MODE = { live: 'mode-live', blind: 'mode-blind', wheel: 'mode-wheel' };
+
+function pathForPage(page) { return PAGE_PATHS[page] || '/'; }
+function pageForPath(pathname) { return PATH_TO_PAGE[pathname] || null; }
 
 const PAGE_META = {
   default: {
@@ -100,15 +119,28 @@ const PAGE_META = {
     title: 'Oyuncu Veritabanı — PitchGavel',
     description: '3.500+ aktif futbolcu ve 38 efsane oyuncunun PitchGavel reytinglerini kulüp, lig ve milliyete göre filtrele, sırala, keşfet.',
   },
+  'mode-live': {
+    title: 'Canlı Açık Arttırma — PitchGavel',
+    description: 'Rakibinle eş zamanlı, süreli açık arttırmayla 11 kişilik kadro topla — teklifler anlık görünür, en yüksek teklif kazanır.',
+  },
+  'mode-blind': {
+    title: 'Kör Draft — PitchGavel',
+    description: 'Tek seferlik gizli teklif ver, rakibinkini göremezsin — en yüksek teklif oyuncuyu kazanır.',
+  },
+  'mode-wheel': {
+    title: 'Çark Modu — PitchGavel',
+    description: 'Bütçe yok! Sırayla çarkı çevir, çıkan reyting bandından (ya da rakipten çal, en iyini ver gibi özel dilimlerden) ücretsiz oyuncu seç.',
+  },
 };
+function metaFor(page) { return PAGE_META[page] || PAGE_META.default; }
 
 // document.title + meta description/canonical/OG/Twitter etiketlerini o an gösterilen sayfaya
 // göre günceller. Bu SPA'da tek statik index.html tüm yollara servis edildiği için (bkz. yukarı)
 // statik meta etiketler sadece "/" için doğru olurdu — Googlebot JS çalıştırdığı için (ve link
-// paylaşım botlarının bir kısmı da) bu çalışma-anı güncellemesi /players'ın kendi başlık/
+// paylaşım botlarının bir kısmı da) bu çalışma-anı güncellemesi her sayfanın kendi başlık/
 // açıklamasıyla indexlenmesini sağlıyor.
 function updateHead() {
-  const meta = state.page === 'players' ? PAGE_META.players : PAGE_META.default;
+  const meta = metaFor(state.page);
   const url = `https://pitchgavel.com${pathForPage(state.page)}`;
   document.title = meta.title;
   document.querySelector('meta[name="description"]')?.setAttribute('content', meta.description);
@@ -120,25 +152,57 @@ function updateHead() {
   document.getElementById('twitterDescription')?.setAttribute('content', meta.description);
 }
 
-// Tek bir yerden state.page + URL'i birlikte değiştiren ortak fonksiyon — hem üst bardaki
-// #playersNavBtn hem de oyuncu veritabanı içindeki "← Geri dön" butonu (bkz. views.js
-// renderPlayerDatabase) bunu kullanır ki hiçbir geçiş URL'i state'in gerisinde bırakmasın.
+// Bir mod sayfasına (mode-live/mode-blind/mode-wheel) girildiğinde lobi state'ini o moda göre
+// önceden kurar — hem "Oda Kur" akışındaki pill'e tıklayınca (navigateToPage üzerinden) hem
+// doğrudan /cark gibi bir URL'e girilince (popstate/ilk yükleme) AYNI senkronu sağlar.
+function syncLobbyUiForPage(page) {
+  const draftMode = DRAFT_MODE_BY_PAGE[page];
+  if (!draftMode) return;
+  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all' };
+  state.lobbyUi.mode = 'create';
+  state.lobbyUi.draftMode = draftMode;
+}
+
+// Tek bir yerden state.page + URL'i birlikte değiştiren ortak fonksiyon — üst bardaki
+// #playersNavBtn, oyuncu veritabanı içindeki "← Geri dön" butonu ve lobideki draft modu
+// pill'leri (bkz. views.js) bunu kullanır ki hiçbir geçiş URL'i state'in gerisinde bırakmasın.
 function navigateToPage(page) {
   state.page = page;
+  syncLobbyUiForPage(page);
   const path = pathForPage(page);
   if (location.pathname !== path) history.pushState({ page }, '', path);
-  pushDataLayer('page_view', { page_path: path, page_title: (page === 'players' ? PAGE_META.players : PAGE_META.default).title });
+  pushDataLayer('page_view', { page_path: path, page_title: metaFor(page).title });
   route();
+}
+
+// Lobide "Oda Kur"/"Odaya Katıl"/"← Geri" seçimini URL ile senkron tutan ortak fonksiyon (bkz.
+// views.js renderLobby). "create" seçilince o an seçili draft moduna karşılık gelen URL'e gider
+// (varsayılan 'live'); "join"/null (geri) seçilince, EĞER o an bir mod-URL'indeysek "/"e döner —
+// "Odaya Katıl" ayrı bir URL almıyor (bilerek — bkz. claude.md SEO notu, sadece kalıcı/paylaşılan
+// sayfalar yol alıyor), sadece mod-URL'lerinden çıkışı temizliyor.
+function selectLobbyMode(mode) {
+  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all' };
+  if (mode === 'create') {
+    navigateToPage(PAGE_BY_DRAFT_MODE[state.lobbyUi.draftMode] || 'mode-live');
+    return;
+  }
+  state.lobbyUi.mode = mode;
+  if (DRAFT_MODE_BY_PAGE[state.page]) {
+    navigateToPage(null);
+  } else {
+    route();
+  }
 }
 
 playersNavBtn.addEventListener('click', () => {
   navigateToPage(state.page === 'players' ? null : 'players');
 });
-// Tarayıcının geri/ileri tuşları — URL'e göre state.page'i senkronlar (pushState çağırmadan,
-// zaten tarayıcı geçmişte gezindi).
+// Tarayıcının geri/ileri tuşları — URL'e göre state.page'i (ve mod-URL'iyse lobi state'ini)
+// senkronlar (pushState çağırmadan, zaten tarayıcı geçmişte gezindi).
 window.addEventListener('popstate', () => {
-  state.page = location.pathname === '/players' ? 'players' : null;
-  pushDataLayer('page_view', { page_path: location.pathname, page_title: (state.page === 'players' ? PAGE_META.players : PAGE_META.default).title });
+  state.page = pageForPath(location.pathname);
+  syncLobbyUiForPage(state.page);
+  pushDataLayer('page_view', { page_path: location.pathname, page_title: metaFor(state.page).title });
   route();
 });
 // [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton ekle" — her ekrandan erişilebilen
@@ -391,6 +455,7 @@ const actions = {
     return state.playerDb;
   },
   navigateToPage,
+  selectLobbyMode,
   route,
 };
 
@@ -493,7 +558,9 @@ socket.on('match:ready', () => { toast('İki taraf da hazır — maç simüle ed
 
 socket.on('match:result', (result) => { applyMatchResult(result); route(); });
 
-// İlk yüklemede state.page'i URL'den başlat ki "/players"e doğrudan girmek ya da sayfayı
-// yenilemek doğru sayfayı göstersin (bkz. yukarıdaki pathForPage/popstate notu).
-state.page = location.pathname === '/players' ? 'players' : null;
+// İlk yüklemede state.page'i URL'den başlat ki "/players" ya da "/cark" gibi bir yola doğrudan
+// girmek ya da sayfayı yenilemek doğru sayfayı (ve mod-URL'iyse önceden seçili draft modunu)
+// göstersin (bkz. yukarıdaki pathForPage/popstate notu).
+state.page = pageForPath(location.pathname);
+syncLobbyUiForPage(state.page);
 route();

@@ -41,8 +41,15 @@ export function renderLobby({ state, actions }) {
   nameInput.addEventListener('keydown', submitOnEnter);
   codeInput.addEventListener('keydown', submitOnEnter);
 
-  function selectMode(mode) { ui.mode = mode; actions.route(); }
-  function selectDraftMode(draftMode) { ui.draftMode = draftMode; actions.route(); }
+  // [KULLANICI İSTEĞİ] "URL'leri her sayfa için farklı yap... çark modunda pitchgavel/çark
+  // gibi" — mod seçimi artık URL ile senkron (bkz. app.js selectLobbyMode/navigateToPage);
+  // Oyuncu Havuzu (Tek Lig Modu) bu kapsamın dışında bırakıldı, sadece draft modu (Canlı/Kör/
+  // Çark) ayrı bir URL alıyor — istenen "hangi oyun modu daha çok oynanıyor" ölçümü için yeterli.
+  function selectMode(mode) { actions.selectLobbyMode(mode); }
+  function selectDraftMode(draftMode) {
+    ui.draftMode = draftMode;
+    actions.navigateToPage(draftMode === 'wheel' ? 'mode-wheel' : draftMode === 'blind' ? 'mode-blind' : 'mode-live');
+  }
   function selectPlayerPool(playerPool) { ui.playerPool = playerPool; actions.route(); }
 
   // [KULLANICI İSTEĞİ] "Oda kur/katıl ekranları güzel gözükmüyor, çok kalabalık duruyor" —
@@ -119,7 +126,7 @@ export function renderLobby({ state, actions }) {
     draftModePicker,
     playerPoolPicker,
     el('button', { class: 'btn block', onclick: submit }, ui.mode === 'create' ? 'Oda Kur' : 'Katıl'),
-    el('button', { class: 'lobby-back', onclick: () => { ui.mode = null; actions.route(); } }, '← Geri'),
+    el('button', { class: 'lobby-back', onclick: () => actions.selectLobbyMode(null) }, '← Geri'),
   ]) : null;
 
   // [KULLANICI İSTEĞİ] Bir mod seçilince (form açılınca) eski dar/kompakt düzen aynen kalıyor —
