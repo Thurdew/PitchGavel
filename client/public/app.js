@@ -65,8 +65,65 @@ const socket = io();
 const appRoot = document.getElementById('app');
 const topbarStatus = document.getElementById('topbarStatus');
 const playersNavBtn = document.getElementById('playersNavBtn');
+
+// [KULLANICI İSTEĞİ, "SEO uyumlu yap, URL'leri ayarla"] Bu SPA hiç URL değiştirmiyordu — oyuncu
+// veritabanı sayfası da dahil her şey "/" üzerinde sadece `state.page` ile ayrışıyordu. Bu hem
+// arama motorları için (paylaşılabilir/indexlenebilir tek bir URL yok) hem de kullanıcı için
+// (geri/ileri tuşu, sayfayı yenileme, linki paylaşma çalışmıyordu) sorunluydu. Sadece HERKESE
+// AÇIK/kalıcı iki sayfa gerçek bir yol alıyor: "/" (lobi) ve "/players" (oyuncu veritabanı) —
+// oda/draft/maç ekranları BİLEREK yol DEĞİŞTİRMİYOR: bunlar oda koduyla girilen özel/geçici
+// oturumlar, indexlenmesi ya da doğrudan URL ile paylaşılması anlamlı değil (bkz. robots.txt/
+// sitemap.xml sadece bu iki yolu listeliyor). Sunucu tarafında zaten TÜM /api ve /socket.io
+// dışı yollar index.html'e düşüyor (bkz. server/src/index.js) — bu yüzden "/players"e doğrudan
+// girmek ya da sayfayı yenilemek de çalışıyor.
+function pathForPage(page) { return page === 'players' ? '/players' : '/'; }
+
+const PAGE_META = {
+  default: {
+    title: 'PitchGavel — Açık Arttırmalı Kadro Kurma',
+    description: 'Rakibinle canlı açık arttırmada 11 kişilik kadro topla, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla.',
+  },
+  players: {
+    title: 'Oyuncu Veritabanı — PitchGavel',
+    description: '3.500+ aktif futbolcu ve 38 efsane oyuncunun PitchGavel reytinglerini kulüp, lig ve milliyete göre filtrele, sırala, keşfet.',
+  },
+};
+
+// document.title + meta description/canonical/OG/Twitter etiketlerini o an gösterilen sayfaya
+// göre günceller. Bu SPA'da tek statik index.html tüm yollara servis edildiği için (bkz. yukarı)
+// statik meta etiketler sadece "/" için doğru olurdu — Googlebot JS çalıştırdığı için (ve link
+// paylaşım botlarının bir kısmı da) bu çalışma-anı güncellemesi /players'ın kendi başlık/
+// açıklamasıyla indexlenmesini sağlıyor.
+function updateHead() {
+  const meta = state.page === 'players' ? PAGE_META.players : PAGE_META.default;
+  const url = `https://pitchgavel.com${pathForPage(state.page)}`;
+  document.title = meta.title;
+  document.querySelector('meta[name="description"]')?.setAttribute('content', meta.description);
+  document.getElementById('canonicalLink')?.setAttribute('href', url);
+  document.getElementById('ogTitle')?.setAttribute('content', meta.title);
+  document.getElementById('ogDescription')?.setAttribute('content', meta.description);
+  document.getElementById('ogUrl')?.setAttribute('content', url);
+  document.getElementById('twitterTitle')?.setAttribute('content', meta.title);
+  document.getElementById('twitterDescription')?.setAttribute('content', meta.description);
+}
+
+// Tek bir yerden state.page + URL'i birlikte değiştiren ortak fonksiyon — hem üst bardaki
+// #playersNavBtn hem de oyuncu veritabanı içindeki "← Geri dön" butonu (bkz. views.js
+// renderPlayerDatabase) bunu kullanır ki hiçbir geçiş URL'i state'in gerisinde bırakmasın.
+function navigateToPage(page) {
+  state.page = page;
+  const path = pathForPage(page);
+  if (location.pathname !== path) history.pushState({ page }, '', path);
+  route();
+}
+
 playersNavBtn.addEventListener('click', () => {
-  state.page = state.page === 'players' ? null : 'players';
+  navigateToPage(state.page === 'players' ? null : 'players');
+});
+// Tarayıcının geri/ileri tuşları — URL'e göre state.page'i senkronlar (pushState çağırmadan,
+// zaten tarayıcı geçmişte gezindi).
+window.addEventListener('popstate', () => {
+  state.page = location.pathname === '/players' ? 'players' : null;
   route();
 });
 // [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton ekle" — her ekrandan erişilebilen
@@ -135,6 +192,7 @@ function route() {
   const savedFocus = captureFocus();
   appRoot.innerHTML = '';
   updateTopbar();
+  updateHead();
   playersNavBtn.classList.toggle('active', state.page === 'players');
   // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
   homeNavBtn.style.display = state.room ? '' : 'none';
@@ -219,6 +277,7 @@ const actions = {
     state.matchPlayback = null;
     state.matchResultUi = null;
     state.page = null;
+    if (location.pathname !== '/') history.pushState({ page: null }, '', '/');
     route();
     return true;
   },
@@ -309,6 +368,7 @@ const actions = {
     }
     return state.playerDb;
   },
+  navigateToPage,
   route,
 };
 
@@ -405,4 +465,7 @@ socket.on('match:ready', () => { toast('İki taraf da hazır — maç simüle ed
 
 socket.on('match:result', (result) => { applyMatchResult(result); route(); });
 
+// İlk yüklemede state.page'i URL'den başlat ki "/players"e doğrudan girmek ya da sayfayı
+// yenilemek doğru sayfayı göstersin (bkz. yukarıdaki pathForPage/popstate notu).
+state.page = location.pathname === '/players' ? 'players' : null;
 route();

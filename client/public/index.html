@@ -1,19 +1,62 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-P7W3XKVP');</script>
+<!-- End Google Tag Manager -->
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PitchGavel — Açık Arttırmalı Kadro Kurma</title>
 <meta name="description" content="Rakibinle canlı açık arttırmada 11 kişilik kadro topla, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" id="canonicalLink" href="https://pitchgavel.com/" />
 <meta name="theme-color" content="#070c14" />
 <link rel="icon" type="image/png" href="/assets/icon.png" />
 <link rel="apple-touch-icon" href="/assets/icon.png" />
+
+<!-- [KULLANICI İSTEĞİ, "SEO uyumlu yap"] Open Graph / Twitter Card — link paylaşıldığında
+     (WhatsApp, Discord, X vb.) önizleme kartı gösterebilsin diye. Bu SPA'da tek statik
+     index.html tüm rotalara servis edildiği için buradaki değerler VARSAYILAN (lobi) sayfaya
+     ait; /players gibi ayrı rotalarda app.js `updateHead()` bunları çalışma anında (Googlebot
+     dahil JS çalıştıran crawler'lar için) günceller — bkz. app.js. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="PitchGavel" />
+<meta property="og:locale" content="tr_TR" />
+<meta property="og:title" id="ogTitle" content="PitchGavel — Açık Arttırmalı Kadro Kurma" />
+<meta property="og:description" id="ogDescription" content="Rakibinle canlı açık arttırmada 11 kişilik kadro topla, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla." />
+<meta property="og:url" id="ogUrl" content="https://pitchgavel.com/" />
+<meta property="og:image" content="https://pitchgavel.com/assets/logo-dark.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" id="twitterTitle" content="PitchGavel — Açık Arttırmalı Kadro Kurma" />
+<meta name="twitter:description" id="twitterDescription" content="Rakibinle canlı açık arttırmada 11 kişilik kadro topla, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla." />
+<meta name="twitter:image" content="https://pitchgavel.com/assets/logo-dark.png" />
+
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/styles.css" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "PitchGavel",
+  "url": "https://pitchgavel.com/",
+  "description": "Açık arttırmalı kadro kurma ve maç simülasyonu oyunu — canlı draft ile 11 kişilik kadro topla, rakibinle ev sahibi + deplasman iki maçlık seride karşılaş.",
+  "applicationCategory": "GameApplication",
+  "operatingSystem": "Web",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "TRY" }
+}
+</script>
 </head>
 <body>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-P7W3XKVP"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
   <header class="topbar">
     <div class="brand"><img class="brand-icon" src="/assets/icon.png" alt="" /><span>PitchGavel</span></div>
     <div class="topbar-right">

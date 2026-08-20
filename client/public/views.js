@@ -1883,7 +1883,7 @@ export function renderPlayerDatabase({ state, actions }) {
 
   root.appendChild(el('button', {
     class: 'btn small secondary', style: 'align-self:flex-start',
-    onclick: () => { state.page = null; actions.route(); },
+    onclick: () => actions.navigateToPage(null),
   }, '← Geri dön'));
 
   if (!state.playerDb || state.playerDb.status === 'idle') {
