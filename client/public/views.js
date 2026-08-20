@@ -186,6 +186,101 @@ export function renderLobby({ state, actions }) {
   ]);
 }
 
+// ============================== NASIL OYNANIR ==============================
+// [KULLANICI İSTEĞİ] "Son rötuşlar — Nasıl Oynanır içeriği" — kendi URL'i olan (bkz. app.js
+// 'how-to-play' → /nasil-oynanir), her ekrandan üst bardaki ❓ butonuyla erişilebilen, saf
+// içerik/kural sayfası. Yeni bir ziyaretçinin ilk gördüğü ekran (Oda Kur/Katıl) hiçbir kural
+// anlatmıyordu; bu hem onboarding hem SEO açısından bir boşluktu (SPA'nın ilk HTML'i neredeyse
+// boş — Google'ın indexleyebileceği gerçek metin içeriği artık burada). Yeni CSS gerektirmiyor —
+// mevcut `.panel`/`.lobby-feature`/`.lobby-title` sözlüğü yeniden kullanılıyor.
+function howToStep(code, title, desc) {
+  return el('div', { class: 'lobby-feature' }, [
+    el('div', { class: 'lobby-feature-code' }, code),
+    el('div', {}, [
+      el('div', { class: 'lobby-feature-title' }, title),
+      el('div', { class: 'lobby-feature-desc' }, desc),
+    ]),
+  ]);
+}
+
+export function renderHowToPlay({ state, actions }) {
+  const root = el('div', { class: 'view' });
+
+  root.appendChild(el('button', {
+    class: 'btn small secondary', style: 'align-self:flex-start',
+    onclick: () => actions.navigateToPage(null),
+  }, '← Geri dön'));
+
+  root.appendChild(el('div', { class: 'lobby-hero', style: 'margin-top:0' }, [
+    el('h1', { class: 'lobby-title compact' }, 'Nasıl Oynanır?'),
+    el('p', { class: 'lobby-sub', style: 'margin-top:10px' },
+      'PitchGavel, iki ya da daha fazla kullanıcının canlı bir açık arttırmayla 11 kişilik futbol kadrosu kurup birbirine karşı simüle edilmiş maçlarda yarıştığı bir oyun. Aşağıda tüm akış adım adım.'),
+  ]));
+
+  root.appendChild(el('div', { class: 'panel' }, [
+    el('h3', {}, 'Oyun Akışı'),
+    howToStep('01', 'Oda Kur ya da Katıl', 'Bir oda açıp kısa kodu arkadaşlarına gönder, ya da aldığın kodla mevcut bir odaya katıl. 2-8 kişi aynı odada oynayabilir.'),
+    howToStep('02', 'Kura — Ortak Formasyon', 'Draft başlamadan önce herkes için AYNI formasyon (ör. 4-4-2, 4-3-3) rastgele belirlenir — böylece pozisyon ihtiyacı draft boyunca adil kalır.'),
+    howToStep('03', 'Draft', 'Sistem sırayla pozisyon getirir, sen (seçtiğiniz moda göre) açık arttırma, gizli teklif ya da çark ile o pozisyonu doldurursun. 11 kişi tamamlanınca draft biter.'),
+    howToStep('04', 'Dizilim', 'Elindeki oyuncuların pozisyon uygunluğuna göre, kurulabilir bir formasyon seç ve kadronu sahaya diz — ev sahibi ve deplasman maçı için ayrı ayrı.'),
+    howToStep('05', 'Maç Simülasyonu', 'Kadrolar hücum/orta saha/defans/kaleci güçlerine göre dakika dakika simüle edilir — sonuç önceden bilinmez, sen de anlatımı izlersin.'),
+    howToStep('06', 'Puan Tablosu', 'Her maç kendi başına 3/1/0 puan dağıtır (gerçek lig usülü) — birden fazla kullanıcılı odada round-robin sonunda 1. sırada olan şampiyon olur.'),
+  ]));
+
+  root.appendChild(el('div', { class: 'panel' }, [
+    el('h3', {}, 'Draft Modları — birini oda kurarken seçersin'),
+    el('div', { class: 'lobby-mode-picker' }, [
+      lobbyModeCardLink(actions, '⏱️', 'Canlı Açık Arttırma', 'Teklifler anlık görünür, süre bitene kadar yükselir. En yüksek teklifi veren kazanır.', 'mode-live'),
+      lobbyModeCardLink(actions, '🙈', 'Kör Draft', 'Herkes tek seferlik, gizli bir teklif verir — rakibinkini göremezsin. En yüksek teklif kazanır.', 'mode-blind'),
+      lobbyModeCardLink(actions, '🎡', 'Çark Modu', 'Bütçe yok! Sırayla çarkı çevirip çıkan reyting bandından (ya da rakipten çal, en iyisini ver gibi özel dilimlerden) ücretsiz oyuncu seçersin.', 'mode-wheel'),
+    ]),
+  ]));
+
+  root.appendChild(el('div', { class: 'panel' }, [
+    el('h3', {}, 'Açık Arttırma Nasıl İşliyor'),
+    howToStep('👥', 'Ana oyuncu + yedek merdiveni', 'Her pozisyon turunda, o pozisyona ihtiyacı olan kişi sayısı kadar aday gösterilir: en güçlüsünden en zayıfına doğru bir "merdiven".'),
+    howToStep('🔁', 'Kaskad açık arttırma', 'N kişi bir pozisyona ihtiyaç duyuyorsa, N-1 gerçek açık arttırma olur: en güçlü aday için herkes yarışır, kazanan çıkar, kalanlar bir sonraki (biraz daha zayıf) aday için YENİDEN açık arttırmaya girer. En son kalan tek kişiye son aday rakipsiz gider.'),
+    howToStep('🛡️', 'Bütçe güvenliği', 'Bir teklifin üst sınırı otomatik hesaplanır: kalan bütçen, kalan boş slotların için gereken minimum tutarı hiç aşmaz. "Param bitti, kadrom eksik kaldı" diye bir durum yaşanmaz.'),
+    howToStep('⚡', 'Sürpriz pozisyonlar', 'Her draftta rastgele 2 pozisyon "büyük fark" olarak işaretlenir — o pozisyonlarda ana oyuncu ile yedek arasındaki reyting farkı normalden çok daha büyük olur.'),
+  ]));
+
+  root.appendChild(el('div', { class: 'panel' }, [
+    el('h3', {}, 'Reyting Sistemi & Oyuncu Havuzu'),
+    el('p', { class: 'muted', style: 'line-height:1.6' },
+      'Süper Lig + Avrupa\'nın büyük 5 ligindeki 3.500+ aktif futbolcu ve 38 efsane (icon) oyuncudan oluşan bağımsız bir reyting sistemi (1-99 ölçek) kullanıyoruz. Oda kurarken havuzu "Tüm Ligler" ya da sadece "Süper Lig + Türk icon\'lar" ile sınırlayabilirsin.'),
+    el('button', {
+      class: 'btn small secondary', style: 'margin-top:10px',
+      onclick: () => actions.navigateToPage('players'),
+    }, '📊 Oyuncu Veritabanına Bak'),
+  ]));
+
+  root.appendChild(el('div', { style: 'text-align:center;margin-top:6px' }, [
+    el('button', {
+      class: 'btn', onclick: () => actions.navigateToPage(null),
+    }, 'Hemen Oyna →'),
+  ]));
+
+  return root;
+}
+
+// Draft modu kartlarını tıklanabilir yapar — direkt o modun URL'ine (bkz. app.js
+// navigateToPage/DRAFT_MODE_BY_PAGE) götürüp Oda Kur formunu o mod seçiliyken açar.
+function lobbyModeCardLink(actions, emoji, title, desc, page) {
+  return el('button', {
+    class: 'lobby-mode-btn', type: 'button',
+    onclick: () => actions.navigateToPage(page),
+  }, [
+    el('div', { class: 'lobby-mode-num' }, emoji),
+    el('div', { class: 'lobby-mode-body' }, [
+      el('div', { class: 'lobby-mode-label-row' }, [
+        el('div', { class: 'lobby-mode-label' }, title),
+        el('div', { class: 'lobby-mode-arrow' }, '→'),
+      ]),
+      el('div', { class: 'lobby-mode-desc' }, desc),
+    ]),
+  ]);
+}
+
 // ============================== WAITING ROOM ==============================
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kişi gelirse gelsin, herkes hazır verdikten sonra
 // oda sahibi başlatsın" — sabit bir hedefe göre boş slot göstermek yerine, o an odada kim varsa

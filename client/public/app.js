@@ -1,5 +1,5 @@
 import { el, toast } from './helpers.js';
-import { renderLobby, renderWaitingRoom, renderDraft, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase } from './views.js';
+import { renderLobby, renderWaitingRoom, renderDraft, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay } from './views.js';
 
 const LS_CLIENT_ID = 'kk_clientId';
 const LS_NAME = 'kk_name';
@@ -78,6 +78,7 @@ const socket = io();
 const appRoot = document.getElementById('app');
 const topbarStatus = document.getElementById('topbarStatus');
 const playersNavBtn = document.getElementById('playersNavBtn');
+const howToPlayNavBtn = document.getElementById('howToPlayNavBtn');
 
 // [KULLANICI İSTEĞİ, "SEO uyumlu yap, URL'leri ayarla"] Bu SPA hiç URL değiştirmiyordu — oyuncu
 // veritabanı sayfası da dahil her şey "/" üzerinde sadece `state.page` ile ayrışıyordu. Bu hem
@@ -100,6 +101,11 @@ const PAGE_PATHS = {
   'mode-live': '/canli-arttirma',
   'mode-blind': '/kor-draft',
   'mode-wheel': '/cark',
+  // [KULLANICI İSTEĞİ] "Son rötuşlar — Nasıl Oynanır içeriği" — yeni ziyaretçi direkt Oda Kur/
+  // Katıl ekranıyla karşılaşıyordu, kuralları hiçbir yerde anlatmıyorduk. Kendi URL'i olan ayrı
+  // bir sayfa: hem onboarding hem SEO (SPA'nın ilk HTML'i neredeyse boş — Google'ın bulacağı
+  // gerçek metin içeriği burada).
+  'how-to-play': '/nasil-oynanir',
 };
 const PATH_TO_PAGE = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page]));
 // draftMode ('live'/'blind'/'wheel') <-> ilgili lobi sayfası arasında çift yönlü eşleme —
@@ -130,6 +136,10 @@ const PAGE_META = {
   'mode-wheel': {
     title: 'Çark Modu — PitchGavel',
     description: 'Bütçe yok! Sırayla çarkı çevir, çıkan reyting bandından (ya da rakipten çal, en iyini ver gibi özel dilimlerden) ücretsiz oyuncu seç.',
+  },
+  'how-to-play': {
+    title: 'Nasıl Oynanır? — PitchGavel',
+    description: 'Oda kurmadan kura, draft modları, kaskad açık arttırma ve maç simülasyonuna kadar PitchGavel\'in tüm kurallarını adım adım öğren.',
   },
 };
 function metaFor(page) { return PAGE_META[page] || PAGE_META.default; }
@@ -196,6 +206,9 @@ function selectLobbyMode(mode) {
 
 playersNavBtn.addEventListener('click', () => {
   navigateToPage(state.page === 'players' ? null : 'players');
+});
+howToPlayNavBtn.addEventListener('click', () => {
+  navigateToPage(state.page === 'how-to-play' ? null : 'how-to-play');
 });
 // Tarayıcının geri/ileri tuşları — URL'e göre state.page'i (ve mod-URL'iyse lobi state'ini)
 // senkronlar (pushState çağırmadan, zaten tarayıcı geçmişte gezindi).
@@ -273,11 +286,18 @@ function route() {
   updateTopbar();
   updateHead();
   playersNavBtn.classList.toggle('active', state.page === 'players');
+  howToPlayNavBtn.classList.toggle('active', state.page === 'how-to-play');
   // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
   homeNavBtn.style.display = state.room ? '' : 'none';
 
   if (state.page === 'players') {
     appRoot.appendChild(renderPlayerDatabase({ state, actions }));
+    restoreFocus(savedFocus);
+    return;
+  }
+
+  if (state.page === 'how-to-play') {
+    appRoot.appendChild(renderHowToPlay({ state, actions }));
     restoreFocus(savedFocus);
     return;
   }
