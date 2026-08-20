@@ -204,6 +204,20 @@ function selectLobbyMode(mode) {
   }
 }
 
+// [KULLANICI İSTEĞİ, BUG FIX] "Sadece odayı kuranda açık arttırma yazıyor URL'de, diğerlerinde
+// sadece pitchgavel yazıyor" — host'un URL'i doğru çıkıyordu çünkü "Oda Kur" formunda draft modu
+// pill'ine tıklarken zaten navigateToPage üzerinden geçiyordu (bkz. selectLobbyMode/
+// draftModePicker). Ama "Odaya Katıl" akışı bu formdan HİÇ geçmiyordu — joinRoom sonrası
+// state.page hiç değişmiyordu, URL "/"te kalıyordu. Kök neden: URL, "kim hangi formu doldurdu"ya
+// bağlıydı; oysa "bu odanın GERÇEK draftMode'u ne"ye bağlı olmalıydı. Artık oda bilgisi elimize
+// HANGİ yoldan geçerse geçsin (kurma, katılma, ya da sayfa yenileyip yeniden bağlanma) URL o
+// odanın gerçek draftMode'una göre senkronlanıyor — host/misafir farkı olmadan herkes aynı URL'i
+// görür (bkz. createRoom/joinRoom/socket 'connect' handler'ındaki çağrılar).
+function syncUrlToRoomMode(room) {
+  const page = room && PAGE_BY_DRAFT_MODE[room.draftMode];
+  if (page) navigateToPage(page);
+}
+
 playersNavBtn.addEventListener('click', () => {
   navigateToPage(state.page === 'players' ? null : 'players');
 });
@@ -341,6 +355,7 @@ const actions = {
     state.room = res.room;
     setCode(res.room.code);
     pushDataLayer('room_create', { draft_mode: draftMode, player_pool: playerPool });
+    syncUrlToRoomMode(res.room);
     route();
   },
   async joinRoom(name, code) {
@@ -351,6 +366,7 @@ const actions = {
     state.room = res.room;
     setCode(res.room.code);
     pushDataLayer('room_join');
+    syncUrlToRoomMode(res.room);
     route();
   },
   // [KULLANICI İSTEĞİ] "Header'a ana sayfaya dönmek için buton, oyundayken de oyundan çıkmak
@@ -378,9 +394,7 @@ const actions = {
     state.matchResult = null;
     state.matchPlayback = null;
     state.matchResultUi = null;
-    state.page = null;
-    if (location.pathname !== '/') history.pushState({ page: null }, '', '/');
-    route();
+    navigateToPage(null);
     return true;
   },
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kişi gelirse gelsin, herkes hazır verdikten
@@ -504,6 +518,9 @@ socket.on('connect', async () => {
       setCode(null);
     } else {
       state.room = res.room;
+      // [KULLANICI İSTEĞİ, BUG FIX] Sayfa yenilenince (reconnect) URL de odanın gerçek
+      // draftMode'una göre senkronlansın — bkz. syncUrlToRoomMode.
+      syncUrlToRoomMode(res.room);
     }
   }
   route();
