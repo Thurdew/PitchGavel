@@ -126,7 +126,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  /* [DÜZELTİLDİ — BUG, KULLANICI GERİ BİLDİRİMİ] "Çark dönmüyor, direkt sonuç çıkıyor" — kök
+     neden burasıydı: bu genel kural .wheel-disk'in JS'in inline verdiği dönüş transition'ını da
+     (bkz. views.js WHEEL_SPIN_DURATION_MS) 0.001ms'ye indirip anlık sıçramaya çeviriyordu, ve bu
+     tarayıcı/OS ayarı (prefers-reduced-motion) sanıldığından yaygın açık çıkabiliyor. Çarkın
+     dönüşü dekoratif değil — sonucun NE ZAMAN açığa çıkacağı da buna göre ayarlı (bkz.
+     WHEEL_REVEAL_DELAY_MS), bu yüzden .wheel-disk kuraldan muaf tutuluyor; nabız/sıçrama gibi
+     gerçekten dekoratif animasyonlar (.wheel-stage::before, .wheel-pointer.landed) kısıtlı
+     kalmaya devam ediyor. */
+  *:not(.wheel-disk), *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
 
 /* ---------- Topbar ---------- */
@@ -660,10 +668,13 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   will-change: transform;
 }
 .wheel-slice-label {
+  /* Genişlik/font-size artık JS'ten inline geliyor (bkz. renderWheelRound — her dilimin kendi
+     yay genişliğine göre hesaplanıyor); buradaki width sadece inline stil gelmezse diye bir
+     güvenlik ağı. */
   position: absolute; top: 50%; left: 50%; width: 64px; margin-left: -32px; height: 1px;
   text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 11.5px;
-  color: #12140f; text-shadow: 0 1px 2px rgba(255,255,255,0.35); transform-origin: center top;
-  line-height: 1.15;
+  color: #12140f; text-shadow: 0 1px 3px rgba(255,255,255,0.55), 0 0 1px rgba(255,255,255,0.4);
+  transform-origin: center top; line-height: 1.12; overflow-wrap: break-word; hyphens: auto;
 }
 .wheel-spin-btn {
   max-width: 300px; padding: 0; overflow: hidden; display: flex; align-items: stretch;
@@ -745,6 +756,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
    seçicileri etkilemiyor. */
 .field .formation-pick { margin-bottom: 6px; }
 .pill-hint { font-size: 11.5px; color: var(--text-faint); line-height: 1.4; min-height: 15px; }
+
+/* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Oda kurma formundaki çark segmenti
+   checklist'i (bkz. views.js wheelSegmentPicker) — .formation-option'ı ÇOKLU SEÇİM (checkbox
+   gibi) olarak yeniden kullanıyor, tek eklenen: havuz başlıkları + biraz daha kompakt chip'ler
+   (13 segmentlik bir liste tam-boy formasyon pilleri kadar geniş olamaz). */
+.wheel-seg-group { margin-bottom: 8px; }
+.wheel-seg-group-label { font-size: 11px; font-weight: 700; color: var(--text-faint); margin-bottom: 6px; }
+.wheel-seg-group .formation-pick { margin-bottom: 4px; }
+.wheel-seg-group .formation-option { padding: 7px 12px; font-size: 12px; }
 
 .tactic-panel { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; padding: 14px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); }
 .tactic-row .tactic-label { font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }

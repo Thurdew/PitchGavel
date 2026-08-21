@@ -39,19 +39,39 @@ const state = {
   playerDb: null,
 };
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "İlk maç x-y oluyor sonra y-x oluyor sonra diğer maçlara
+// geçiyor — öyle yapma, karışık şekilde oynat, hep değiştir." — N>2 odada anlatım eskiden her
+// eşleşmeyi (fixture) sırayla, kendi içinde match1->match2 oynatıyordu (x-y, y-x, x-z, z-x, ...).
+// Artık TÜM eşleşmelerin TÜM maçları (2 * fixtures.length tanesi) tek düz bir listede toplanıp
+// draft/round-robin sırasından bağımsız rastgele karıştırılıyor — hangi ikilinin maçının ne zaman
+// geleceği önceden tahmin edilemiyor. Fikstür özet ekranı (renderMatch/matchResultUi) BİLEREK
+// değişmedi — orası hâlâ ikili bazlı gruplanmış bir SONUÇ tablosu, bu sadece anlatım SIRASI.
+function buildMatchOrder(fixtureCount) {
+  const order = [];
+  for (let i = 0; i < fixtureCount; i++) {
+    order.push({ fixtureIndex: i, matchIndex: 0 });
+    order.push({ fixtureIndex: i, matchIndex: 1 });
+  }
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
 // Sonuç sunucudan geldiğinde direkt göstermek yerine anlatım oynatmasını başlatır.
 // İki kez tetiklenebilir (ack cevabı + broadcast) — ikinci seferde playback zaten
 // kurulu olduğu için (state.matchPlayback dolu) elden geçirilmez, kullanıcı akışı bozulmaz.
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — sonuç artık {fixtures, standings}
-// şeklinde (N>2 odada birden fazla eşleşme oynanır); anlatım tüm fixtures[] listesini sırayla
-// (her biri kendi match1 -> match2 sırasıyla) oynatır.
+// şeklinde (N>2 odada birden fazla eşleşme oynanır); anlatım artık pb.order'daki karışık sırayı
+// (bkz. buildMatchOrder) tek tek izler.
 function applyMatchResult(result) {
   state.matchResult = result;
   if (!state.matchPlayback) {
     pushDataLayer('match_result', { fixtures_count: (result.fixtures || []).length });
     state.matchPlayback = {
-      fixtureIndex: 0,
-      matchIndex: 0,
+      order: buildMatchOrder((result.fixtures || []).length),
+      pos: 0,
       clock: 0,
       shown: [],
       score: { home: 0, away: 0 },
@@ -347,10 +367,13 @@ function route() {
 }
 
 const actions = {
-  async createRoom(name, draftMode, playerPool) {
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] wheelSegmentLabels: host'un elle
+  // işaretlediği tam WHEEL_CUSTOM_PICK_COUNT etiket (bkz. views.js renderLobby wheel checklist'i)
+  // ya da boş dizi/undefined (işaretlemediyse — sunucu auto-balance'a düşer).
+  async createRoom(name, draftMode, playerPool, wheelSegmentLabels) {
     state.name = name;
     sessionStorage.setItem(LS_NAME, name);
-    const res = await emitAck('room:create', { clientId: state.clientId, name, draftMode, playerPool });
+    const res = await emitAck('room:create', { clientId: state.clientId, name, draftMode, playerPool, wheelSegmentLabels });
     if (res.error) return toast('Oda oluşturulamadı: ' + res.error);
     state.room = res.room;
     setCode(res.room.code);

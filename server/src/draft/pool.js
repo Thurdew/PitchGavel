@@ -201,7 +201,21 @@ function pickWheelFieldCandidates(slotType, takenIds, poolKey, field, value) {
  * Elemanlar spread-copy ile döndürülür ki DraftEngine.resolveSpin'in olası (sentetik segment
  * üretimi gibi) işlemleri paylaşılan config nesnelerini mutasyona uğratmasın.
  */
-function buildWheelSegments() {
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] `customLabels` doluysa (host oda
+// kurarken WHEEL_SEGMENT_CATALOG'dan tam WHEEL_CUSTOM_PICK_COUNT tanesini elle işaretlediyse,
+// bkz. RoomManager.createRoom) o SABİT liste aynen kullanılır — istediği kadar iyi/kötü/karışık,
+// pool zorunluluğu YOK. Host hiç işaretlemediyse (customLabels boş/undefined) eski
+// dengeli-rastgele (her pooldan WHEEL_POOL_PICK_COUNT) davranış DEĞİŞMEDEN sürer.
+function buildWheelSegments(customLabels) {
+  if (Array.isArray(customLabels) && customLabels.length > 0) {
+    const catalog = [...WHEEL_RATING_BANDS, ...WHEEL_SPECIAL_SEGMENTS];
+    const picked = customLabels
+      .map((label) => catalog.find((s) => s.label === label))
+      .filter(Boolean)
+      .map((s) => ({ ...s }));
+    if (picked.length > 0) return picked;
+  }
+
   const pools = { iyi: [], orta: [], kötü: [] };
   for (const b of WHEEL_RATING_BANDS) pools[b.pool].push(b);
   for (const s of WHEEL_SPECIAL_SEGMENTS) pools[s.pool].push(s);

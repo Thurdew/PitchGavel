@@ -1,5 +1,8 @@
 const { generateRoomCode } = require('../utils/ids');
-const { STARTING_BUDGET, ROOM_TTL_MS, MAX_ROOM_PLAYERS } = require('../shared/gameConfig');
+const {
+  STARTING_BUDGET, ROOM_TTL_MS, MAX_ROOM_PLAYERS,
+  WHEEL_SEGMENT_CATALOG, WHEEL_CUSTOM_PICK_COUNT,
+} = require('../shared/gameConfig');
 
 // Oda durum makinesi: lobby -> draft -> squad_select -> match -> finished
 const STATUS = {
@@ -26,7 +29,7 @@ class RoomManager {
   // gelirse gelsin" — host'a hedef bir sayı SORULMUYOR. Oda sadece dokümandaki N ≤ 8 sınırına
   // kadar (MAX_ROOM_PLAYERS) katılım kabul eder; draftı ne zaman/kaç kişiyle başlatacağına
   // (herkes hazır olduktan sonra) oda sahibi (hostClientId) kendisi karar verir.
-  createRoom(hostClientId, hostName, draftMode, playerPool) {
+  createRoom(hostClientId, hostName, draftMode, playerPool, wheelSegmentLabels) {
     let code;
     do { code = generateRoomCode(); } while (this.rooms.has(code));
 
@@ -43,6 +46,13 @@ class RoomManager {
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Tek Lig Modu — draftMode'dan bağımsız ikinci bir
       // anahtar: havuzu sadece Süper Lig + Türk icon'lara daraltır (bkz. draft/pool.js).
       playerPool: playerPool === 'super-lig' ? 'super-lig' : 'all',
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Host'un elle işaretlediği çark
+      // segmentleri (bkz. gameConfig.js WHEEL_SEGMENT_CATALOG/WHEEL_CUSTOM_PICK_COUNT) — TAM 10
+      // geçerli/benzersiz `label` verilmediyse (istemci bunu zaten önden engelliyor, ama sunucu
+      // asıl otorite olduğu için burada da doğrulanıyor) sessizce null'a düşülür; null ise
+      // pool.js buildWheelSegments eski dengeli-rastgele davranışına döner — draft asla
+      // hatayla durmaz, sadece host'un seçimi yoksayılmış olur.
+      wheelSegmentLabels: this._sanitizeWheelSegmentLabels(wheelSegmentLabels),
       // Katılım tavanı — hedef DEĞİL, sadece bir üst sınır (bkz. yukarıdaki not).
       maxPlayers: MAX_ROOM_PLAYERS,
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Odayı kuran kişi — draftı fiilen BAŞLATMA yetkisi
@@ -63,6 +73,17 @@ class RoomManager {
     this.rooms.set(code, room);
     this.clientRoomIndex.set(hostClientId, code);
     return room;
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Host'un gönderdiği etiket listesini
+  // WHEEL_SEGMENT_CATALOG'a göre doğrular: TAM WHEEL_CUSTOM_PICK_COUNT tane, katalogda gerçekten
+  // var olan, benzersiz `label` değilse geçersiz sayılır ve null döner (auto-balance'a düşer).
+  _sanitizeWheelSegmentLabels(labels) {
+    if (!Array.isArray(labels) || labels.length === 0) return null;
+    const validLabels = new Set(WHEEL_SEGMENT_CATALOG.map((s) => s.label));
+    const unique = [...new Set(labels)].filter((l) => validLabels.has(l));
+    if (unique.length !== WHEEL_CUSTOM_PICK_COUNT) return null;
+    return unique;
   }
 
   _makePlayer(clientId, name) {
@@ -185,6 +206,10 @@ class RoomManager {
       formation: room.formation,
       draftMode: room.draftMode || 'live',
       playerPool: room.playerPool || 'all',
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Bekleme odasında/draft
+      // başlığında "bu odanın çarkı host tarafından özelleştirildi" rozeti gösterebilmek için —
+      // asıl segment listesi (bkz. yukarıdaki not) draft başlayınca zaten draft:update ile geliyor.
+      wheelCustomized: !!room.wheelSegmentLabels,
       maxPlayers: room.maxPlayers || MAX_ROOM_PLAYERS,
       hostClientId: room.hostClientId,
       // [KULLANICI İSTEĞİ] "Açık artırma/maç başlarken iki oyuncudan da onay al" — o anki
