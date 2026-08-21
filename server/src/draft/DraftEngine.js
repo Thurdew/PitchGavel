@@ -18,10 +18,12 @@ const {
 } = require('./pool');
 const { STATUS } = require('../rooms/RoomManager');
 
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Bu iki segment "seçim gerektirmiyor" —
-// sonuç spin sonrası otomatik uygulanır (bkz. DraftEngine.resolveAutoWheelOutcome). İkisi de
-// çarkın 'kötü' havuzundan (bkz. gameConfig.js WHEEL_SPECIAL_SEGMENTS).
-const AUTO_RESOLVE_KINDS = new Set(['forced_worst', 'give_best']);
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Bu segmentler "seçim gerektirmiyor" —
+// sonuç spin sonrası otomatik uygulanır (bkz. DraftEngine.resolveAutoWheelOutcome).
+// forced_worst/give_best çarkın 'kötü' havuzundan; respin ("Daha fazla çark özelliği gelsin"
+// isteğiyle eklendi) 'iyi' havuzdan (bkz. gameConfig.js WHEEL_SPECIAL_SEGMENTS) — üçü de bir
+// oyuncu SEÇİMİ değil, otomatik bir SONUÇ üretir.
+const AUTO_RESOLVE_KINDS = new Set(['forced_worst', 'give_best', 'respin']);
 
 // Test ortamında turları hızlandırmak için env ile ezilebilir (bkz. gameConfig.js
 // AUCTION_DURATION_SECONDS'daki aynı desen).
@@ -552,8 +554,10 @@ class DraftEngine {
       if (pickWheelIconCandidates(type, room.draft.takenIds, room.playerPool).length === 0) {
         segment = { kind: 'rating', label: `${raw.label} (efsane kalmadı — havuzdan seç)`, min: 1, max: 99 };
       }
-    } else if (raw.kind === 'league' || raw.kind === 'nation') {
-      const field = raw.kind === 'league' ? 'league' : 'nation';
+    } else if (raw.kind === 'league' || raw.kind === 'nation' || raw.kind === 'club') {
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kulüp Piyangosu" — league/nation ile BİREBİR aynı
+      // mekanizma, sadece alan 'club'.
+      const field = raw.kind === 'league' ? 'league' : raw.kind === 'nation' ? 'nation' : 'club';
       const all = poolForSlot(type, room.draft.takenIds, room.playerPool);
       const values = [...new Set(all.map((p) => p[field]).filter(Boolean))];
       if (values.length === 0) {
@@ -593,6 +597,7 @@ class DraftEngine {
     if (seg.kind === 'icon') return pickWheelIconCandidates(round.slotType, room.draft.takenIds, room.playerPool);
     if (seg.kind === 'league') return pickWheelFieldCandidates(round.slotType, room.draft.takenIds, room.playerPool, 'league', round.revealValue);
     if (seg.kind === 'nation') return pickWheelFieldCandidates(round.slotType, room.draft.takenIds, room.playerPool, 'nation', round.revealValue);
+    if (seg.kind === 'club') return pickWheelFieldCandidates(round.slotType, room.draft.takenIds, room.playerPool, 'club', round.revealValue);
     return pickWheelRatingCandidates(round.slotType, room.draft.takenIds, seg, room.playerPool).candidates;
   }
 
@@ -664,10 +669,27 @@ class DraftEngine {
     this.finishWheelTurn(room, round, clientId, chosen, { kind: seg.kind });
   }
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın." —
+  // `autoPickWheel` süre dolunca sunucunun KENDİSİ tetiklediği bir kenar durum çözümüydü; bu,
+  // sırası gelen OYUNCUNUN kendi isteğiyle (bkz. sockets/draftSockets.js `draft:wheelAutoPick`,
+  // client'ta "🤖 Bilgisayar Seçsin" düğmesi) süre dolmadan AYNI mantığı hemen tetiklemesini
+  // sağlıyor — 20 saniye beklemek zorunda kalmadan. Sadece o turun sahibi çağırabilir; otomatik
+  // uygulanan segmentlerde (forced_worst/give_best/respin) zaten seçim YOK, bu yüzden reddedilir.
+  requestAutoPick(room, clientId) {
+    const round = room.draft && room.draft.round;
+    if (room.draft.paused) return { error: 'DRAFT_PAUSED' };
+    if (!round || round.kind !== 'wheel') return { error: 'NO_ACTIVE_WHEEL' };
+    if (round.clientId !== clientId) return { error: 'NOT_YOUR_TURN' };
+    if (!round.currentSpin || round.phase !== 'awaiting_pick') return { error: 'SPIN_FIRST' };
+    if (AUTO_RESOLVE_KINDS.has(round.currentSpin.kind)) return { error: 'AUTO_RESOLVED' };
+    this.autoPickWheel(room);
+    return { ok: true };
+  }
+
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] forced_worst ("şanssız tur" — o
-  // pozisyondaki en düşük reytingli oyuncu otomatik atanır) ve give_best ("en iyisini ver" —
+  // pozisyondaki en düşük reytingli oyuncu otomatik atanır), give_best ("en iyisini ver" —
   // kendi kadrondaki, bir rakibin ihtiyaç duyduğu bir slotta en yüksek reytingli oyuncu o rakibe
-  // verilir) burada, seçim beklemeden otomatik uygulanır.
+  // verilir) ve respin ("şanslı tekrar") burada, seçim beklemeden otomatik uygulanır.
   resolveAutoWheelOutcome(room, round) {
     if (room.status !== STATUS.DRAFT) return;
     const seg = round.currentSpin;
@@ -679,6 +701,21 @@ class DraftEngine {
       room.draft.takenIds.add(worst.id);
       this.assignPlayer(room, findPlayer(room, round.clientId), worst, round.slotType, 0, 'wheel_forced_worst');
       this.finishWheelTurn(room, round, round.clientId, worst, { kind: 'forced_worst' });
+      return;
+    }
+
+    if (seg.kind === 'respin') {
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Daha fazla çark özelliği gelsin" — turu KAYBETMEDEN
+      // (finishWheelTurn ÇAĞRILMIYOR, sıra aynı kişide kalıyor) round baştan 'awaiting_spin'e
+      // dönüyor — aynı kişi aynı pozisyon için TAZE bir çark daha çevirir. resolveSpin'deki
+      // ilk-tur açılışıyla (openWheelTurn) BİREBİR aynı state şekli.
+      round.currentSpin = null;
+      round.revealValue = null;
+      round.phase = 'awaiting_spin';
+      round.deadline = Date.now() + WHEEL_PICK_DURATION_SECONDS * 1000;
+      clearTimeout(round.timer);
+      round.timer = setTimeout(() => this.autoSpinWheel(room), WHEEL_PICK_DURATION_SECONDS * 1000);
+      this.emitDraft(room);
       return;
     }
 

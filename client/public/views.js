@@ -485,7 +485,7 @@ const wheelSpinAnimated = new Map(); // spinKey -> final rotation (deg)
 // yeniden 3.2sn'lik bir bekleme başlardı).
 const wheelRevealReady = new Map(); // spinKey -> true (animasyon bitti, sonuç gösterilebilir)
 const wheelRevealScheduled = new Set(); // spinKey -> zamanlayıcı zaten kuruldu mu
-const WHEEL_AUTO_KINDS = new Set(['forced_worst', 'give_best']); // sunucudaki AUTO_RESOLVE_KINDS ile aynı
+const WHEEL_AUTO_KINDS = new Set(['forced_worst', 'give_best', 'respin']); // sunucudaki AUTO_RESOLVE_KINDS ile aynı
 
 export function renderDraft({ state, actions }) {
   const d = state.draft;
@@ -914,6 +914,18 @@ function renderWheelRound({ state, actions, round, paused }) {
 // kompakt bir liste olarak gösterilir (potansiyel olarak onlarca/yüzlerce aday olabileceği için
 // tam boy player-card grid'i yerine bilerek kompakt satırlar — bkz. renderPlayerDatabase'deki
 // benzer yoğun-liste deseni).
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın." —
+// seçim ekranının HER varyantına (steal/rating/icon/league/nation/club, aday var/yok) eklenen
+// ortak bir "kararsızım" çıkışı — süre dolmasını (WHEEL_PICK_DURATION_SECONDS) beklemeden sunucuya
+// AYNI otomatik-seçim mantığını (bkz. DraftEngine.requestAutoPick/autoPickWheel) hemen çalıştırtır.
+function autoPickButton(actions) {
+  const btn = el('button', {
+    type: 'button', class: 'btn secondary block wheel-autopick-btn',
+    onclick: async () => { btn.disabled = true; await actions.requestWheelAutoPick(); },
+  }, '🤖 Kararsızım, Bilgisayar Seçsin');
+  return btn;
+}
+
 function renderWheelPickList({ state, actions, round }) {
   const wrap = el('div', { class: 'wheel-pick-wrap' });
   const seg = round.currentSpin;
@@ -930,6 +942,7 @@ function renderWheelPickList({ state, actions, round }) {
     if (rows.length === 0) {
       wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
         'Rakiplerde bu pozisyonda oyuncu kalmadı — süre dolunca sunucu otomatik seçecek.'));
+      wrap.appendChild(autoPickButton(actions));
       return wrap;
     }
     rows.sort((a, b) => b.entry.player.rating - a.entry.player.rating);
@@ -948,6 +961,7 @@ function renderWheelPickList({ state, actions, round }) {
       return row;
     }));
     wrap.appendChild(el('div', { class: 'wheel-pick-scroll' }, list));
+    wrap.appendChild(autoPickButton(actions));
     return wrap;
   }
 
@@ -968,17 +982,19 @@ function renderWheelPickList({ state, actions, round }) {
   if (seg.kind === 'icon') candidates = candidates.filter((p) => p.isIcon);
   else if (seg.kind === 'league') candidates = candidates.filter((p) => p.league === round.revealValue);
   else if (seg.kind === 'nation') candidates = candidates.filter((p) => p.nation === round.revealValue);
+  else if (seg.kind === 'club') candidates = candidates.filter((p) => p.club === round.revealValue);
   else candidates = candidates.filter((p) => p.rating >= seg.min && p.rating <= seg.max);
   candidates = candidates.sort((a, b) => b.rating - a.rating);
 
   if (candidates.length === 0) {
     wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
       'Bu segmentte uygun oyuncu kalmadı — süre dolunca sunucu otomatik olarak seni atayacak.'));
+    wrap.appendChild(autoPickButton(actions));
     return wrap;
   }
 
   const headerBits = [];
-  if ((seg.kind === 'league' || seg.kind === 'nation') && round.revealValue) headerBits.push(`🎯 ${round.revealValue}`);
+  if ((seg.kind === 'league' || seg.kind === 'nation' || seg.kind === 'club') && round.revealValue) headerBits.push(`🎯 ${round.revealValue}`);
   headerBits.push(`${candidates.length} aday — birini seç`);
   wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center;margin-bottom:8px' }, headerBits.join(' — ')));
 
@@ -996,6 +1012,7 @@ function renderWheelPickList({ state, actions, round }) {
     return row;
   }));
   wrap.appendChild(el('div', { class: 'wheel-pick-scroll' }, list));
+  wrap.appendChild(autoPickButton(actions));
   return wrap;
 }
 
@@ -1045,7 +1062,7 @@ function renderRoundResultPanel(event, state) {
         emoji: '💀', headline: `${actor} → ${event.player.name}`,
         sub: 'Şanssız tur — bu pozisyondaki en düşük reytingli oyuncu otomatik atandı.',
       }));
-    } else if ((event.segmentKind === 'league' || event.segmentKind === 'nation') && event.revealValue) {
+    } else if ((event.segmentKind === 'league' || event.segmentKind === 'nation' || event.segmentKind === 'club') && event.revealValue) {
       wrap.appendChild(receiptStrip({
         emoji: '🎡', headline: `${actor} → ${event.player.name}`,
         sub: `${event.revealValue} piyangosu (${event.band}) — ücretsiz seçildi.`,

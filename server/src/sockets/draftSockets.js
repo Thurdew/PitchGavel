@@ -69,6 +69,17 @@ function registerDraftSockets(io, socket, ctx) {
     cb?.(result);
   });
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın." —
+  // sırası gelen oyuncu, 20 saniyelik süreyi beklemeden "Bilgisayar Seçsin" diyebilir (bkz.
+  // DraftEngine.requestAutoPick — süre dolunca zaten çalışan autoPickWheel'in aynısı, sadece
+  // isteğe bağlı/anında).
+  socket.on('draft:wheelAutoPick', ({ code } = {}, cb) => {
+    const room = getRoom(code);
+    if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
+    const result = draftEngine.requestAutoPick(room, socket.data.clientId);
+    cb?.(result);
+  });
+
   // [KULLANICI İSTEĞİ] "Açık arttırmada durdurma gelsin, iki oyuncu da onayladığında oyun
   // duraklatılsın" — bkz. DraftEngine.togglePauseVote.
   socket.on('draft:pauseToggle', ({ code } = {}, cb) => {

@@ -33,6 +33,18 @@ const WHEEL_SPECIAL_SEGMENTS = [
   { kind: 'nation', label: '🏳️ Milliyet Piyangosu', pool: 'orta', weight: 10 },
   { kind: 'forced_worst', label: '💀 Şanssız Tur', pool: 'kötü', weight: 10 },
   { kind: 'give_best', label: '😱 En İyisini Ver', pool: 'kötü', weight: 8 },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Daha fazla çark özelliği gelsin." — league/nation
+  // segmentiyle AYNI mekanizma (bkz. DraftEngine.resolveSpin/candidatesForSegment), sadece
+  // alan `club` — o an havuzda kalan bir kulüp rastgele seçilip revealValue'ya yazılır, o
+  // kulüpten (bu pozisyonda) uygun adaylar arasından seçim yapılır.
+  { kind: 'club', label: '🏟️ Kulüp Piyangosu', pool: 'orta', weight: 8 },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Şanslı Tekrar" — forced_worst/give_best gibi seçim
+  // gerektirmeden otomatik uygulanan bir segment, ama sonucu bir oyuncu ATAMAK değil: turu
+  // KAYBETMEDEN aynı kişiye/pozisyona TAZE bir çark daha vermek (bkz. DraftEngine
+  // resolveAutoWheelOutcome 'respin' dalı) — round awaiting_spin'e sıfırlanır, oyuncu tekrar
+  // çevirir. 'iyi' havuzda (kazanç hissi taşıyan bir sonuç) ve düşük ağırlıkta (nadir/heyecanlı
+  // kalsın diye, icon/steal ile aynı seviye).
+  { kind: 'respin', label: '🍀 Şanslı Tekrar', pool: 'iyi', weight: 4 },
 ];
 
 module.exports = {

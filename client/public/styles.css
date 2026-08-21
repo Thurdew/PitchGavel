@@ -696,6 +696,9 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
 
 .wheel-pick-wrap { width: 100%; max-width: 440px; }
 .wheel-pick-scroll { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+/* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın" —
+   seçim listesinin altındaki çıkış düğmesi (bkz. views.js autoPickButton). */
+.wheel-autopick-btn { margin-top: 10px; }
 .wheel-pick-list { display: flex; flex-direction: column; }
 .wheel-pick-row {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px;

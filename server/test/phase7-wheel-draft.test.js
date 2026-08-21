@@ -70,6 +70,7 @@ async function main() {
 
   const socketByClientId = { [hostId]: host, [guestId]: guest };
   let lastActedKey = null;
+  let autoPickTested = false;
 
   function takenIdSet() {
     const ids = new Set();
@@ -97,10 +98,11 @@ async function main() {
     if (round.phase !== 'awaiting_pick' || !round.currentSpin) return;
 
     const seg = round.currentSpin;
-    // forced_worst/give_best seçim GEREKTİRMEZ — sunucu kendi otomatik-çözüm zamanlayıcısıyla
-    // (bkz. WHEEL_AUTO_RESOLVE_DELAY_MS) uygular, test hiçbir aksiyon göndermemeli (göndermeye
-    // çalışsa AUTO_RESOLVED hatası alır).
-    if (seg.kind === 'forced_worst' || seg.kind === 'give_best') return;
+    // forced_worst/give_best/respin seçim GEREKTİRMEZ — sunucu kendi otomatik-çözüm
+    // zamanlayıcısıyla (bkz. WHEEL_AUTO_RESOLVE_DELAY_MS) uygular, test hiçbir aksiyon
+    // göndermemeli (göndermeye çalışsa AUTO_RESOLVED hatası alır). respin sonrası round
+    // 'awaiting_spin'e döndüğünde bot zaten yukarıdaki genel spin dalıyla otomatik devam eder.
+    if (seg.kind === 'forced_worst' || seg.kind === 'give_best' || seg.kind === 'respin') return;
 
     if (seg.kind === 'steal') {
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Rakipten istediğin oyuncuyu al" — adaylar
@@ -118,7 +120,17 @@ async function main() {
       return;
     }
 
-    // rating / icon / league / nation — hepsi gerçek havuzdan (allPlayers, sunucudaki
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın" —
+    // gerçek bir manuel-seçim turunda BİR KEZ, elle bir aday aramak yerine yeni
+    // draft:wheelAutoPick endpoint'ini deneyip süre dolmadan hemen bir sonuç doğduğunu doğrula.
+    if (!autoPickTested && seg.kind === 'rating') {
+      autoPickTested = true;
+      const res = await emitAck(sock, 'draft:wheelAutoPick', { code });
+      if (res.error) errors.push('wheelAutoPick: ' + res.error);
+      return;
+    }
+
+    // rating / icon / league / nation / club — hepsi gerçek havuzdan (allPlayers, sunucudaki
     // draft:update.players[].squad ile kesişimi hesaplanmış "alınmamış" alt kümesi) filtrelenir.
     const taken = takenIdSet();
     let candidate = null;
@@ -128,6 +140,8 @@ async function main() {
       candidate = allPlayers.find((p) => !taken.has(p.id) && p.position === round.slotType && p.league === round.revealValue);
     } else if (seg.kind === 'nation') {
       candidate = allPlayers.find((p) => !taken.has(p.id) && p.position === round.slotType && p.nation === round.revealValue);
+    } else if (seg.kind === 'club') {
+      candidate = allPlayers.find((p) => !taken.has(p.id) && p.position === round.slotType && p.club === round.revealValue);
     } else {
       const { min, max } = seg;
       candidate = allPlayers.find((p) => !taken.has(p.id) && p.position === round.slotType && p.rating >= min && p.rating <= max);
@@ -167,6 +181,7 @@ async function main() {
   console.log('[test7] draft tamamlandı, complete event sayısı:', completeEvents);
   console.log('[test7] beklenmeyen hatalar:', errors);
   console.log('[test7] görülen segment türleri:', [...kindsSeen].sort());
+  console.log('[test7] draft:wheelAutoPick denendi mi:', autoPickTested);
 
   const room = roomManager.getRoom(code);
   console.log('[test7] formasyon:', room.formation, 'status:', room.status);

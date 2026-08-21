@@ -464,6 +464,15 @@ const actions = {
     if (res.error) toast('Seçim reddedildi: ' + res.error);
     return res;
   },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın." —
+  // sırası gelen oyuncu süre dolmasını beklemeden aynı otomatik-seçim mantığını hemen tetikler
+  // (bkz. DraftEngine.requestAutoPick). Sonuç zaten normal `draft:update` broadcast'iyle gelir,
+  // burada ayrıca bir şey yapmaya gerek yok — sadece hata varsa haber ver.
+  async requestWheelAutoPick() {
+    const res = await emitAck('draft:wheelAutoPick', { code: state.code });
+    if (res.error) toast('Otomatik seçim yapılamadı: ' + res.error);
+    return res;
+  },
   async fetchLineupOptions() {
     const res = await emitAck('lineup:options', { code: state.code });
     if (res.error) { toast('Dizilim seçenekleri alınamadı: ' + res.error); return null; }
@@ -596,7 +605,7 @@ socket.on('draft:update', (msg) => {
         toast(`😱 ${nameOf(ev.clientId)}, en iyisi ${ev.player.name}'i ${nameOf(ev.toClientId)}'e verdi!`);
       } else if (ev.segmentKind === 'forced_worst') {
         toast(`💀 ${nameOf(ev.clientId)} şanssız turda ${ev.player.name}'i aldı`);
-      } else if ((ev.segmentKind === 'league' || ev.segmentKind === 'nation') && ev.revealValue) {
+      } else if ((ev.segmentKind === 'league' || ev.segmentKind === 'nation' || ev.segmentKind === 'club') && ev.revealValue) {
         toast(`🎡 ${nameOf(ev.clientId)}: ${ev.revealValue} → ${ev.player.name}`);
       } else {
         toast(`🎡 ${nameOf(ev.clientId)}: ${ev.band} → ${ev.player.name}`);
