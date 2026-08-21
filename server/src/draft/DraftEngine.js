@@ -26,8 +26,11 @@ const AUTO_RESOLVE_KINDS = new Set(['forced_worst', 'give_best']);
 // Test ortamında turları hızlandırmak için env ile ezilebilir (bkz. gameConfig.js
 // AUCTION_DURATION_SECONDS'daki aynı desen).
 const ROUND_RESULT_DELAY_MS = Number(process.env.DRAFT_ROUND_DELAY_MS) || 4000; // sonucu göstermek için oyuncular arası kısa bekleme
-const ANTI_SNIPE_WINDOW_MS = Number(process.env.DRAFT_ANTI_SNIPE_WINDOW_MS) || 3000; // son X sn içinde teklif gelirse süre uzatılır
-const ANTI_SNIPE_EXTENSION_MS = Number(process.env.DRAFT_ANTI_SNIPE_EXTENSION_MS) || 3000;
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Son 5 saniye içinde biri teklifi arttırdığında süreye
+// 5 sn daha eklensin — 1 sn kaldığında teklif verilince hemen kazanmasın." Önceki varsayılan
+// 3000/3000'den 5000/5000'e çıkarıldı.
+const ANTI_SNIPE_WINDOW_MS = Number(process.env.DRAFT_ANTI_SNIPE_WINDOW_MS) || 5000; // son X sn içinde teklif gelirse süre uzatılır
+const ANTI_SNIPE_EXTENSION_MS = Number(process.env.DRAFT_ANTI_SNIPE_EXTENSION_MS) || 5000;
 
 function slotCounts(formationKey) {
   const slots = FORMATIONS[formationKey];
@@ -259,7 +262,10 @@ class DraftEngine {
     // katılımcıların çevirme sırası (round-robin, sıra sabit; kim aktif oynayacağı cursor'la
     // ilerler — bkz. nextWheelTurn).
     if (room.draftMode === 'wheel') {
-      room.draft.wheelSegments = buildWheelSegments();
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Host oda kurarken kendi 10
+      // segmentini işaretlediyse (bkz. RoomManager.createRoom) o SABİT liste kullanılır; yoksa
+      // (room.wheelSegmentLabels null) eski dengeli-rastgele davranış aynen sürer.
+      room.draft.wheelSegments = buildWheelSegments(room.wheelSegmentLabels);
       room.draft.wheelOrder = shuffleInPlace(room.players.map((p) => p.clientId));
       room.draft.wheelCursor = 0;
     }

@@ -42,6 +42,11 @@ app.get('/api/config', (req, res) => {
     // draft:update/draft:started ile odaya özel yayınlar (bkz. DraftEngine.emitDraft
     // `wheelSegments`). Burada sadece mod-bağımsız kalan süre sabiti kalıyor.
     WHEEL_PICK_DURATION_SECONDS: cfg.WHEEL_PICK_DURATION_SECONDS,
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Bu ikisi mod-bağımsız/statik
+    // (draft başlamadan, oda kurma formunda gerekiyor) — o YÜZDEN per-draft wheelSegments'in
+    // aksine burada, /api/config'te kalıyor. Bkz. client renderLobby wheel segment checklist'i.
+    WHEEL_SEGMENT_CATALOG: cfg.WHEEL_SEGMENT_CATALOG,
+    WHEEL_CUSTOM_PICK_COUNT: cfg.WHEEL_CUSTOM_PICK_COUNT,
     FORMATIONS,
   });
 });

@@ -1,6 +1,40 @@
 // Oyun dengesi sabitleri. AUCTION-GAME-CLAUDE.md'de rakam olarak netleşmemiş noktalar
 // ([AÇIK KARAR]) burada, dokümandaki önerilen varsayımlarla çözülüp tek yerde toplandı.
 
+// Reyting bandı segmentleri — v1'deki WHEEL_SEGMENTS ile birebir aynı 7 bant, sadece artık her
+// biri bir havuza (pool) etiketli. Ağırlıklar EŞİT DEĞİL (gerçek bir çarkın "büyük ödül dilimi
+// küçük" hissi + 90+ havuzda zaten az aday olduğu için). module.exports'un DIŞINDA tanımlandı ki
+// hem kendi anahtarına hem de aşağıdaki WHEEL_SEGMENT_CATALOG'a (bkz. "Çark Özelleştirme")
+// bare identifier olarak referans verilebilsin — bir obje literal'i kendi property'sine ismiyle
+// erişemiyor.
+const WHEEL_RATING_BANDS = [
+  { kind: 'rating', label: '90+', min: 90, max: 99, pool: 'iyi', weight: 4 },
+  { kind: 'rating', label: '85-89', min: 85, max: 89, pool: 'iyi', weight: 9 },
+  { kind: 'rating', label: '80-84', min: 80, max: 84, pool: 'orta', weight: 14 },
+  { kind: 'rating', label: '75-79', min: 75, max: 79, pool: 'orta', weight: 18 },
+  { kind: 'rating', label: '70-74', min: 70, max: 74, pool: 'orta', weight: 20 },
+  { kind: 'rating', label: '65-69', min: 65, max: 69, pool: 'kötü', weight: 16 },
+  { kind: 'rating', label: '60 altı', min: 1, max: 64, pool: 'kötü', weight: 10 },
+];
+
+// Özel aksiyon segmentleri — [KULLANICI İSTEĞİ] "rakipten istediğin oyuncuyu al, rakibine en iyi
+// oyuncunu ver, ligden/milliyetten seç" örnekleri + kullanıcının "mantıklı bir şey düşünürsen
+// ekle" daveti üzerine eklenen 2 ek fikir (icon havuzu, şanssız/en düşük reyting zorunlu).
+// 'league'/'nation' segmentlerinin TAM lig/milliyet değeri sabit/hardcode DEĞİL — her
+// çevrildiğinde o an havuzda kalan adaylar arasından rastgele seçilip round.revealValue'ya
+// yazılır (bkz. DraftEngine.resolveSpin) — hem asla boş çıkmaz hem de tekrar tekrar farklı
+// lig/milliyet gösterip çeşitliliği artırır. Havuzda gerçekten uygun aday kalmadıysa (steal:
+// rakipte o pozisyon yok, icon: o pozisyonda icon kalmadı) segment sunucuda otomatik "genel
+// havuzdan seç"e düşürülür — draft asla tıkanmaz (bkz. DraftEngine.resolveSpin fallback mantığı).
+const WHEEL_SPECIAL_SEGMENTS = [
+  { kind: 'icon', label: '⭐ Efsaneler Havuzu', pool: 'iyi', weight: 4 },
+  { kind: 'steal', label: '🎁 Rakipten Çal', pool: 'iyi', weight: 5 },
+  { kind: 'league', label: '🌍 Lig Piyangosu', pool: 'orta', weight: 10 },
+  { kind: 'nation', label: '🏳️ Milliyet Piyangosu', pool: 'orta', weight: 10 },
+  { kind: 'forced_worst', label: '💀 Şanssız Tur', pool: 'kötü', weight: 10 },
+  { kind: 'give_best', label: '😱 En İyisini Ver', pool: 'kötü', weight: 8 },
+];
+
 module.exports = {
   SQUAD_SIZE: 11,
 
@@ -138,37 +172,19 @@ module.exports = {
   //    olana kadar) sıraya girmeye devam ediyor.
   WHEEL_POOL_PICK_COUNT: 3,
 
-  // Reyting bandı segmentleri — v1'deki WHEEL_SEGMENTS ile birebir aynı 7 bant, sadece artık
-  // her biri bir havuza (pool) etiketli. Ağırlıklar EŞİT DEĞİL (gerçek bir çarkın "büyük ödül
-  // dilimi küçük" hissi + 90+ havuzda zaten az aday olduğu için).
-  WHEEL_RATING_BANDS: [
-    { kind: 'rating', label: '90+', min: 90, max: 99, pool: 'iyi', weight: 4 },
-    { kind: 'rating', label: '85-89', min: 85, max: 89, pool: 'iyi', weight: 9 },
-    { kind: 'rating', label: '80-84', min: 80, max: 84, pool: 'orta', weight: 14 },
-    { kind: 'rating', label: '75-79', min: 75, max: 79, pool: 'orta', weight: 18 },
-    { kind: 'rating', label: '70-74', min: 70, max: 74, pool: 'orta', weight: 20 },
-    { kind: 'rating', label: '65-69', min: 65, max: 69, pool: 'kötü', weight: 16 },
-    { kind: 'rating', label: '60 altı', min: 1, max: 64, pool: 'kötü', weight: 10 },
-  ],
+  WHEEL_RATING_BANDS,
+  WHEEL_SPECIAL_SEGMENTS,
 
-  // Özel aksiyon segmentleri — [KULLANICI İSTEĞİ] "rakipten istediğin oyuncuyu al, rakibine en
-  // iyi oyuncunu ver, ligden/milliyetten seç" örnekleri + kullanıcının "mantıklı bir şey
-  // düşünürsen ekle" daveti üzerine eklenen 2 ek fikir (icon havuzu, şanssız/en düşük reyting
-  // zorunlu). 'league'/'nation' segmentlerinin TAM lig/milliyet değeri sabit/hardcode DEĞİL —
-  // her çevrildiğinde o an havuzda kalan adaylar arasından rastgele seçilip round.revealValue'ya
-  // yazılır (bkz. DraftEngine.resolveSpin) — hem asla boş çıkmaz hem de tekrar tekrar farklı
-  // lig/milliyet gösterip çeşitliliği artırır (dokümandaki "her oyunda değişsin" isteğini tur
-  // bazında bile karşılar). Havuzda gerçekten uygun aday kalmadıysa (steal: rakipte o pozisyon
-  // yok, icon: o pozisyonda icon kalmadı) segment sunucuda otomatik "genel havuzdan seç"e
-  // düşürülür — draft asla tıkanmaz (bkz. DraftEngine.resolveSpin fallback mantığı).
-  WHEEL_SPECIAL_SEGMENTS: [
-    { kind: 'icon', label: '⭐ Efsaneler Havuzu', pool: 'iyi', weight: 4 },
-    { kind: 'steal', label: '🎁 Rakipten Çal', pool: 'iyi', weight: 5 },
-    { kind: 'league', label: '🌍 Lig Piyangosu', pool: 'orta', weight: 10 },
-    { kind: 'nation', label: '🏳️ Milliyet Piyangosu', pool: 'orta', weight: 10 },
-    { kind: 'forced_worst', label: '💀 Şanssız Tur', pool: 'kötü', weight: 10 },
-    { kind: 'give_best', label: '😱 En İyisini Ver', pool: 'kötü', weight: 8 },
-  ],
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] "10 zorunlu seçim olacak, hepsini
+  // iyi/kötü/karışık seçmek kullanıcının bileceği iş, bir havuz olacak, kullanıcının tıkladıkları
+  // çarkta olacak, seçmek istemezse bilgisayar dengeli bir şekilde atar." — host oda kurarken bu
+  // 13 olası segmentin (7 reyting bandı + 6 özel aksiyon) TAM WHEEL_CUSTOM_PICK_COUNT tanesini
+  // serbestçe (istediği kombinasyonda, pool zorunluluğu YOK) işaretleyebilir; hiç işaretlemezse
+  // (bkz. RoomManager.createRoom/pool.js buildWheelSegments) eski dengeli-rastgele (her pooldan
+  // WHEEL_POOL_PICK_COUNT) davranış aynen sürer. Katalog `label` alanına göre benzersiz — hem
+  // istemcinin checklist'i hem sunucunun doğrulaması bu alanı anahtar olarak kullanıyor.
+  WHEEL_SEGMENT_CATALOG: [...WHEEL_RATING_BANDS, ...WHEEL_SPECIAL_SEGMENTS],
+  WHEEL_CUSTOM_PICK_COUNT: 10,
 
   // Çark çevrildikten sonra oyuncu seçme ekranında karar vermek için süre (bkz.
   // AUCTION_DURATION_SECONDS/BLIND_BID_DURATION_SECONDS ile aynı desen). Süre dolarsa o

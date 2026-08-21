@@ -12,7 +12,7 @@ process.env.DRAFT_ROUND_DELAY_MS = process.env.DRAFT_ROUND_DELAY_MS || '300';
 
 const { server, io, roomManager } = require('../src/index');
 const { io: ioClient } = require('socket.io-client');
-const { SQUAD_SIZE, STARTING_BUDGET } = require('../src/shared/gameConfig');
+const { SQUAD_SIZE, STARTING_BUDGET, WHEEL_SEGMENT_CATALOG, WHEEL_CUSTOM_PICK_COUNT } = require('../src/shared/gameConfig');
 
 const PORT = 3994;
 
@@ -199,7 +199,51 @@ async function main() {
   const budgetsUnchanged = room.players.every((p) => p.budget === STARTING_BUDGET);
   console.assert(budgetsUnchanged, 'çark modunda bütçe hiç düşmemeli');
 
-  const allOk = errors.length === 0 && overlap.length === 0 && allFree && allExactlyOneGk && budgetsUnchanged && completeEvents >= 1;
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Host'un elle işaretlediği TAM
+  // WHEEL_CUSTOM_PICK_COUNT etiket, draftın SABİT çarkına birebir (sırasız) yansımalı; geçersiz
+  // bir sayı (ör. 3) gönderilirse sunucu sessizce eski dengeli-rastgele davranışa düşmeli.
+  const host2 = connect();
+  const guest2 = connect();
+  await Promise.all([once(host2, 'connect'), once(guest2, 'connect')]);
+  const customLabels = WHEEL_SEGMENT_CATALOG.slice(0, WHEEL_CUSTOM_PICK_COUNT).map((s) => s.label);
+  const created2 = await emitAck(host2, 'room:create', {
+    clientId: 'wheel-host-2', name: 'Host2', draftMode: 'wheel', wheelSegmentLabels: customLabels,
+  });
+  const code2 = created2.room.code;
+  await emitAck(guest2, 'room:join', { clientId: 'wheel-guest-2', name: 'Guest2', code: code2 });
+  let draftUpdate2 = null;
+  host2.on('draft:update', (msg) => { if (!draftUpdate2) draftUpdate2 = msg; });
+  await emitAck(host2, 'draft:readyToggle', { code: code2 });
+  await emitAck(guest2, 'draft:readyToggle', { code: code2 });
+  await emitAck(host2, 'draft:start', { code: code2 });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const gotLabels = new Set((draftUpdate2?.wheelSegments || []).map((s) => s.label));
+  const customApplied = gotLabels.size === WHEEL_CUSTOM_PICK_COUNT && customLabels.every((l) => gotLabels.has(l));
+  console.log('[test7] özelleştirilmiş çark uygulandı mı:', customApplied, '— seçilen:', [...gotLabels].join(', '));
+  console.assert(customApplied, 'host\'un işaretlediği 10 etiket draftın çarkına birebir yansımalı');
+  host2.close(); guest2.close();
+
+  const host3 = connect();
+  const guest3 = connect();
+  await Promise.all([once(host3, 'connect'), once(guest3, 'connect')]);
+  const created3 = await emitAck(host3, 'room:create', {
+    clientId: 'wheel-host-3', name: 'Host3', draftMode: 'wheel', wheelSegmentLabels: customLabels.slice(0, 3),
+  });
+  const code3 = created3.room.code;
+  await emitAck(guest3, 'room:join', { clientId: 'wheel-guest-3', name: 'Guest3', code: code3 });
+  let draftUpdate3 = null;
+  host3.on('draft:update', (msg) => { if (!draftUpdate3) draftUpdate3 = msg; });
+  await emitAck(host3, 'draft:readyToggle', { code: code3 });
+  await emitAck(guest3, 'draft:readyToggle', { code: code3 });
+  await emitAck(host3, 'draft:start', { code: code3 });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const invalidFellBackToAuto = (draftUpdate3?.wheelSegments || []).length === 9; // eski 3+3+3 davranışı
+  console.log('[test7] geçersiz sayı (3) auto-balance\'a düştü mü:', invalidFellBackToAuto, '— segment sayısı:', draftUpdate3?.wheelSegments?.length);
+  console.assert(invalidFellBackToAuto, 'geçersiz (10 olmayan) sayıda etiket sessizce auto-balance\'a düşmeli');
+  host3.close(); guest3.close();
+
+  const allOk = errors.length === 0 && overlap.length === 0 && allFree && allExactlyOneGk && budgetsUnchanged
+    && completeEvents >= 1 && customApplied && invalidFellBackToAuto;
   console.log(allOk ? '[test7] TÜM TESTLER GEÇTİ ✅' : '[test7] BAZI KONTROLLER BAŞARISIZ ❌');
 
   host.close(); guest.close(); io.close(); server.close();

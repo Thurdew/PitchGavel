@@ -16,7 +16,7 @@ function leaveGameButton(actions) {
 // seçeneği koy. Değer seçildikten sonra ad ve kod yazma yeri gelsin." — önce tek bir kartta
 // mod seçimi (Oda Kur / Odaya Katıl), seçim yapılınca altında ilgili alanlar açılıyor.
 export function renderLobby({ state, actions }) {
-  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all' };
+  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all', wheelSegments: [] };
   const ui = state.lobbyUi;
 
   const nameInput = el('input', {
@@ -31,7 +31,16 @@ export function renderLobby({ state, actions }) {
   function submit() {
     if (!nameInput.value.trim()) return toast('Önce adını yaz.');
     if (ui.mode === 'create') {
-      actions.createRoom(nameInput.value.trim(), ui.draftMode, ui.playerPool);
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Ya hiç seçilmemiş (auto-balance)
+      // ya da TAM WHEEL_CUSTOM_PICK_COUNT seçilmiş olmalı — arada bir sayı gönderirsek sunucu
+      // zaten sessizce auto-balance'a düşer (bkz. RoomManager._sanitizeWheelSegmentLabels), ama
+      // kullanıcıya "yarım bıraktın" diye burada erken haber vermek daha iyi bir deneyim.
+      const need = state.config?.WHEEL_CUSTOM_PICK_COUNT || 10;
+      const picked = ui.wheelSegments || [];
+      if (ui.draftMode === 'wheel' && picked.length > 0 && picked.length !== need) {
+        return toast(`Çark segmentlerinde ya tam ${need} tane seç ya da hiç seçme (sistem dengeli bir çark kursun).`);
+      }
+      actions.createRoom(nameInput.value.trim(), ui.draftMode, ui.playerPool, picked);
     } else {
       if (!codeInput.value.trim()) return toast('Oda kodunu gir.');
       actions.joinRoom(nameInput.value.trim(), codeInput.value.trim());
@@ -116,6 +125,56 @@ export function renderLobby({ state, actions }) {
     ['super-lig', '🇹🇷 Süper Lig', 'Sadece Süper Lig kadroları + Türk icon\'lar'],
   ], ui.playerPool, selectPlayerPool) : null;
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] "10 zorunlu seçim olacak, hepsini
+  // iyi seçer ister kötü seçer ister karışık yapar, o kullanıcının bileceği iş... kullanıcı
+  // seçmek istemezse bilgisayar dengeli bir şekilde atama yapar." — Çark Modu seçiliyken, host
+  // WHEEL_SEGMENT_CATALOG'daki 13 olası segmentten (7 reyting bandı + 6 özel aksiyon) istediği
+  // TAM WHEEL_CUSTOM_PICK_COUNT tanesini serbestçe işaretleyebilir (pool zorunluluğu YOK); hiç
+  // işaretlemezse sunucu eski dengeli-rastgele çarkı kurar (bkz. pool.js buildWheelSegments).
+  function wheelSegmentPicker() {
+    if (ui.mode !== 'create' || ui.draftMode !== 'wheel') return null;
+    const catalog = state.config?.WHEEL_SEGMENT_CATALOG || [];
+    const need = state.config?.WHEEL_CUSTOM_PICK_COUNT || 10;
+    if (catalog.length === 0) return null; // config henüz yüklenmediyse checklist'i gösterme — auto-balance zaten çalışır
+    if (!ui.wheelSegments) ui.wheelSegments = [];
+    const picked = ui.wheelSegments;
+
+    const poolMeta = { iyi: '🟢 İyi', orta: '🟠 Orta', kötü: '🔴 Kötü' };
+    const groups = ['iyi', 'orta', 'kötü'].map((poolKey) => el('div', { class: 'wheel-seg-group' }, [
+      el('div', { class: 'wheel-seg-group-label' }, poolMeta[poolKey]),
+      el('div', { class: 'formation-pick' }, catalog.filter((s) => s.pool === poolKey).map((s) => {
+        const isOn = picked.includes(s.label);
+        return el('button', {
+          type: 'button',
+          class: `formation-option ${isOn ? 'selected' : ''}`,
+          onclick: () => {
+            if (isOn) {
+              ui.wheelSegments = picked.filter((l) => l !== s.label);
+            } else {
+              if (picked.length >= need) { toast(`En fazla ${need} tane seçebilirsin.`); return; }
+              ui.wheelSegments = [...picked, s.label];
+            }
+            actions.route();
+          },
+        }, s.label);
+      })),
+    ]));
+
+    const count = picked.length;
+    const hint = count === 0
+      ? `İstersen tam ${need} tanesini kendin seç (hepsi iyi, hepsi kötü ya da karışık — sen bilirsin) — hiç seçmezsen sistem dengeli bir çark kurar.`
+      : count === need
+        ? `✅ ${count}/${need} seçildi — bu odanın çarkı bu ${need} dilimden oluşacak.`
+        : `${count}/${need} seçildi — devam etmek için ya tam ${need} tane seç ya da hepsini kaldır (sistem seçsin).`;
+
+    return el('div', { class: 'field' }, [
+      el('label', {}, `Çark Segmentleri (isteğe bağlı — ${count}/${need})`),
+      ...groups,
+      el('div', { class: 'pill-hint' }, hint),
+    ]);
+  }
+  const wheelSegmentPickerEl = wheelSegmentPicker();
+
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kullanıcı oynayacağını lobide sorma" — oda
   // kurulurken bir hedef oyuncu sayısı SORULMUYOR; oda kaç kişi gelirse gelsin (2-8) katılım
   // kabul eder, host odadaki herkes hazır olunca kendisi başlatır (bkz. renderWaitingRoom).
@@ -125,6 +184,7 @@ export function renderLobby({ state, actions }) {
     ui.mode === 'join' ? el('div', { class: 'field' }, [el('label', {}, 'Oda Kodu'), codeInput]) : null,
     draftModePicker,
     playerPoolPicker,
+    wheelSegmentPickerEl,
     el('button', { class: 'btn block', onclick: submit }, ui.mode === 'create' ? 'Oda Kur' : 'Katıl'),
     el('button', { class: 'lobby-back', onclick: () => actions.selectLobbyMode(null) }, '← Geri'),
   ]) : null;
@@ -369,6 +429,10 @@ const POOL_COLORS = {
   kötü: ['#fb4155', '#c81e37', '#ff6b81'],
 };
 
+// Çark grafiğindeki dilim etiketlerinin merkezden uzaklığı (bkz. renderWheelRound'daki
+// translateY kullanımı) — hem konumlama hem de her etiketin yay genişliğini hesaplamak için.
+const LABEL_RADIUS = 78;
+
 function wheelGeometry(segments) {
   const total = segments.reduce((s, x) => s + x.weight, 0);
   let acc = 0;
@@ -444,13 +508,19 @@ export function renderDraft({ state, actions }) {
   else pauseLabel = `⏸ Durdur (${pauseVotes.length}/${totalPlayers})`;
 
   const isBlindMode = state.room.draftMode === 'blind';
+  const isWheelMode = state.room.draftMode === 'wheel';
   const isSuperLigMode = state.room.playerPool === 'super-lig';
+
+  // [DÜZELTİLDİ — BUG] Bu açıklama Çark Modu'nu hiç hesaba katmıyordu — "Kör Draft" değilse hep
+  // "Canlı açık arttırma" yazıyordu, Çark Modu'nda oynarken bile.
+  let modeDescription;
+  if (isBlindMode) modeDescription = '🙈 Kör Draft — sistem rastgele pozisyon getirir, teklifler gizli';
+  else if (isWheelMode) modeDescription = '🎡 Çark Modu — bütçe yok, sırayla çark çevirip çıkan banttan ücretsiz seç';
+  else modeDescription = 'Canlı açık arttırma — sistem rastgele pozisyon getirir';
 
   root.appendChild(el('div', { class: 'draft-header' }, [
     el('div', { class: 'formation-badge' }, `Formasyon: ${d.formation}`),
-    el('div', { class: 'muted' }, isBlindMode
-      ? '🙈 Kör Draft — sistem rastgele pozisyon getirir, teklifler gizli'
-      : 'Canlı açık arttırma — sistem rastgele pozisyon getirir'),
+    el('div', { class: 'muted' }, modeDescription),
     isSuperLigMode ? el('div', { class: 'muted' }, '🇹🇷 Tek Lig Modu — havuz Süper Lig + Türk icon\'larla sınırlı') : null,
     el('button', {
       class: `btn small ${d.paused || iVotedPause ? 'danger' : 'secondary'}`,
@@ -737,11 +807,24 @@ function renderWheelRound({ state, actions, round, paused }) {
 
   const disk = el('div', { class: 'wheel-disk' });
   disk.style.background = `conic-gradient(${geo.map((s) => `${s.color} ${s.startPct}% ${s.endPct}%`).join(', ')})`;
+  // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Çarktaki yazılar güzel gözükmüyor" — kök neden:
+  // her dilime SABİT 64px'lik bir etiket kutusu veriliyordu, ama ağırlıklı çark yüzünden dilimler
+  // eşit genişlikte DEĞİL (bkz. gameConfig.js WHEEL_RATING_BANDS/WHEEL_SPECIAL_SEGMENTS weight
+  // farkları) — dar bir dilime uzun bir etiket ("💀 Şanssız Tur", "🏳️ Milliyet Piyangosu") denk
+  // gelince metin komşu dilime taşıyordu. Artık her etiketin genişliği/font boyutu KENDİ diliminin
+  // gerçek yay genişliğine göre hesaplanıyor; ayrıca emoji önekini (banner/toast'ta zaten var, bkz.
+  // renderWheelRound bannerText) çarkın ÜZERİNDE göstermiyoruz — dar dilimlerde en kıymetli alanı
+  // asıl kelimeye ayırmak için.
   for (const s of geo) {
+    const angleDeg = s.endDeg - s.startDeg;
+    const arcWidth = 2 * LABEL_RADIUS * Math.sin((angleDeg / 2) * (Math.PI / 180));
+    const labelWidth = Math.max(30, Math.min(70, Math.round(arcWidth * 0.86)));
+    const fontSize = labelWidth < 38 ? 9 : labelWidth < 50 ? 10 : 11.5;
+    const displayLabel = s.label.replace(/^\p{Extended_Pictographic}️?\s*/u, '');
     disk.appendChild(el('div', {
       class: 'wheel-slice-label',
-      style: `transform: rotate(${s.centerDeg}deg) translateY(-78px) rotate(${-(s.centerDeg + (wheelSpinAnimated.get(spinKey) || 0))}deg);`,
-    }, s.label));
+      style: `transform: rotate(${s.centerDeg}deg) translateY(-${LABEL_RADIUS}px) rotate(${-(s.centerDeg + (wheelSpinAnimated.get(spinKey) || 0))}deg); width:${labelWidth}px; margin-left:${-labelWidth / 2}px; font-size:${fontSize}px;`,
+    }, displayLabel));
   }
 
   if (round.currentSpin) {
@@ -1586,24 +1669,27 @@ export function renderMatchPlayback({ state, actions }) {
   clearPlaybackTimer();
   const pb = state.matchPlayback;
   const r = state.matchResult;
-  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — sonuç artık {fixtures, standings}
-  // (N>2 odada birden fazla eşleşme oynanır); anlatım tüm fixtures[] listesini sırayla, her
-  // biri kendi match1 -> match2 sırasıyla oynatır. 2 kişilik odada fixtures tek elemanlıdır —
-  // davranış eskisiyle birebir aynı kalır.
-  const fixture = r.fixtures[pb.fixtureIndex];
-  const isFirst = pb.matchIndex === 0;
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "İlk maç x-y, sonra y-x, sonra diğer eşleşmelere geçme —
+  // karışık oynat, sırayı hep değiştir." — N>2 odada anlatım artık fixture'ları sırayla DEĞİL,
+  // pb.order'daki (bkz. app.js buildMatchOrder) rastgele karıştırılmış düz maç listesini tek tek
+  // izler. 2 kişilik odada order iki elemanlıdır (fixture 0'ın 2 maçı) — davranış eskisiyle
+  // birebir aynı kalır (sıra %50 ihtimalle ters de gelebilir, sonucu etkilemez).
+  const step = pb.order[pb.pos];
+  const fixture = r.fixtures[step.fixtureIndex];
+  const isFirst = step.matchIndex === 0;
   const m = isFirst ? fixture.match1 : fixture.match2;
   const events = m.events || [];
   const nameOf = (id) => (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
   const homeName = nameOf(m.homeClientId);
   const awayName = nameOf(m.awayClientId);
-  const fixtureTag = r.fixtures.length > 1 ? `Eşleşme ${pb.fixtureIndex + 1}/${r.fixtures.length} — ` : '';
+  const fixtureTag = r.fixtures.length > 1 ? `Eşleşme ${step.fixtureIndex + 1}/${r.fixtures.length} — ` : '';
+  const progressTag = pb.order.length > 2 ? ` (Maç ${pb.pos + 1}/${pb.order.length})` : '';
 
   const root = el('div', { class: 'view' });
 
   root.appendChild(el('div', { class: 'panel' }, [
     el('div', { class: 'draft-header' }, [
-      el('h3', {}, `${fixtureTag}${isFirst ? '1. Maç' : '2. Maç'} — ${homeName} vs ${awayName}`),
+      el('h3', {}, `${fixtureTag}${isFirst ? '1. Maç' : '2. Maç'}${progressTag} — ${homeName} vs ${awayName}`),
       el('div', { class: 'playback-controls' }, [
         el('button', {
           class: `btn small ${pb.speed === 'slow' ? '' : 'secondary'}`,
@@ -1681,12 +1767,10 @@ export function renderMatchPlayback({ state, actions }) {
       logEl.scrollTop = logEl.scrollHeight;
       setTimeout(() => {
         if (pb.done) return; // bu arada kullanıcı "Sonuca Geç" ile atladıysa tekrar route etme
-        if (isFirst) {
-          pb.matchIndex = 1; pb.clock = 0; pb.shown = []; pb.score = { home: 0, away: 0 };
-        } else if (pb.fixtureIndex + 1 < r.fixtures.length) {
-          // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — bu eşleşmenin 2. maçı da
-          // bitti, sırada bir sonraki eşleşme varsa ona geç.
-          pb.fixtureIndex += 1; pb.matchIndex = 0; pb.clock = 0; pb.shown = []; pb.score = { home: 0, away: 0 };
+        // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Karışık sıra — bir sonraki maç artık aynı
+        // eşleşmenin 2. maçı olmak ZORUNDA değil, pb.order'daki bir sonraki (karışık) adım.
+        if (pb.pos + 1 < pb.order.length) {
+          pb.pos += 1; pb.clock = 0; pb.shown = []; pb.score = { home: 0, away: 0 };
         } else {
           pb.done = true;
         }

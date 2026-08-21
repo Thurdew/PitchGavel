@@ -7,9 +7,9 @@ function registerRoomSockets(io, socket, ctx) {
     io.to(room.code).emit('room:state', roomManager.toPublicState(room));
   }
 
-  socket.on('room:create', ({ clientId, name, draftMode, playerPool } = {}, cb) => {
+  socket.on('room:create', ({ clientId, name, draftMode, playerPool, wheelSegmentLabels } = {}, cb) => {
     if (!clientId) return cb?.({ error: 'CLIENT_ID_REQUIRED' });
-    const room = roomManager.createRoom(clientId, name, draftMode, playerPool);
+    const room = roomManager.createRoom(clientId, name, draftMode, playerPool, wheelSegmentLabels);
     roomManager.bindSocket(room.code, clientId, socket.id);
     socket.join(room.code);
     socket.data.clientId = clientId;
