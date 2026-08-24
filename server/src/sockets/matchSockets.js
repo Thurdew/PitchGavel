@@ -1,6 +1,27 @@
 const { STATUS } = require('../rooms/RoomManager');
 const { playRoundRobin } = require('../match/orchestrate');
 
+// [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "3 arkadaş oynuyoruz, herkesin ekranında o sırada
+// FARKLI maç oynanıyor, spoiler yiyoruz — herkesin ekranında aynı anda aynı maç olması lazım."
+// Kök neden: anlatım SIRASI (bkz. client app.js buildMatchOrder) her istemcide KENDİ
+// Math.random()'ıyla, BİRBİRİNDEN BAĞIMSIZ karıştırılıyordu — aynı sonuç verisine (fixtures)
+// rağmen her ekran farklı bir sırayla oynatıyordu. Artık sıra SADECE BURADA, sunucuda, TEK
+// SEFERDE belirlenip result.matchOrder olarak TÜM istemcilere (hem ack cevabıyla hem
+// broadcast'le) AYNI dizi gönderiliyor — client artık kendi sırasını üretmiyor, sunucununkini
+// oynatıyor (bkz. app.js applyMatchResult).
+function buildMatchOrder(fixtureCount) {
+  const order = [];
+  for (let i = 0; i < fixtureCount; i++) {
+    order.push({ fixtureIndex: i, matchIndex: 0 });
+    order.push({ fixtureIndex: i, matchIndex: 1 });
+  }
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
 function registerMatchSockets(io, socket, ctx) {
   const { roomManager } = ctx;
 
@@ -33,6 +54,7 @@ function registerMatchSockets(io, socket, ctx) {
 
     const result = playRoundRobin(room);
     if (result.error) return cb?.({ error: result.error });
+    result.matchOrder = buildMatchOrder((result.fixtures || []).length);
 
     room.matchState = result;
     room.status = STATUS.FINISHED;

@@ -376,7 +376,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
 .tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 
 /* ---------- Room code ---------- */
+/* [KULLANICI İSTEĞİ] "Oda/lobi ekranı düz bir kart — ana sayfadaki güçlü görsel kimlik burada
+   zayıflıyor" — bekleme odası artık homepage'in kendi bileşenlerini (pulsing badge, diyagonal
+   etiket) yeniden kullanıyor, bkz. views.js renderWaitingRoom. `.waiting-room-hero` sadece
+   `.lobby-hero-badge`nin (aksi halde sadece `.lobby-hero` içinde ortalanan) bu bağlamda da
+   düzgün görünmesi için küçük bir konumlama düzeltmesi. */
+.waiting-room-hero .lobby-hero-badge { margin-bottom: 16px; }
+.room-code-row { display: flex; align-items: stretch; gap: 10px; }
 .room-code {
+  flex: 1;
   font-family: var(--font-mono);
   font-size: 38px;
   font-weight: 700;
@@ -387,6 +395,22 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   border: 1px dashed var(--accent);
   border-radius: var(--radius-sm);
   padding: 18px 14px;
+}
+.copy-code-btn { flex-shrink: 0; align-self: center; }
+.room-info-badges { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.room-info-badges .formation-badge { padding: 6px 14px; font-size: 11.5px; }
+
+.player-slot-num {
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 800;
+  background: var(--bg); color: var(--text-faint); border: 1px solid var(--border);
+}
+.player-slot-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.host-badge {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent);
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap;
 }
 
 /* [KULLANICI İSTEĞİ] Lobi CTA'ları düz dikdörtgen buton yerine "bilet koçanı" diliyle: solda
@@ -696,6 +720,9 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
 
 .wheel-pick-wrap { width: 100%; max-width: 440px; }
 .wheel-pick-scroll { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+/* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın" —
+   seçim listesinin altındaki çıkış düğmesi (bkz. views.js autoPickButton). */
+.wheel-autopick-btn { margin-top: 10px; }
 .wheel-pick-list { display: flex; flex-direction: column; }
 .wheel-pick-row {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px;
@@ -937,6 +964,12 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
 .match-result-title { font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--text-muted); letter-spacing: 1px; }
 .match-result-tag { font-size: 11px; color: var(--text-faint); }
 
+/* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Salt skor yeterli değil, kısa bir anlatı/flavor-text
+   üretilebilir" — bkz. views.js STORY_TEMPLATES/renderMatchResultCard. Skorun hemen altında,
+   diğer muted metinlerden ayrışsın diye hafif bir vurgu şeridi. */
+.match-story { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.match-story-line { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+
 .scorer-columns { display: flex; gap: 16px; }
 .scorer-list { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .scorer-list-team { font-size: 12px; font-weight: 800; color: var(--text-muted); margin-bottom: 2px; }
@@ -1135,6 +1168,10 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   .lobby-mode-picker { grid-template-columns: 1fr; }
   .lobby-features { grid-template-columns: 1fr; }
   .player-slots { grid-template-columns: 1fr; }
+  /* Oda kodu + kopyala butonu yan yana (~5 karakter × geniş harf aralığı + buton) dar ekranda
+     (320-360px) panel içine sığmıyor — dikey istifleniyor. */
+  .room-code-row { flex-direction: column; }
+  .room-code { font-size: 30px; letter-spacing: 7px; }
   .player-db-toolbar { flex-direction: column; }
   .player-db-toolbar input, .player-db-toolbar select { width: 100%; }
   .topbar-link { padding: 6px 9px; font-size: 11px; }

@@ -346,6 +346,16 @@ function lobbyModeCardLink(actions, emoji, title, desc, page) {
 // oda sahibi başlatsın" — sabit bir hedefe göre boş slot göstermek yerine, o an odada kim varsa
 // (2-8 kişi) sadece onlar listelenir. Herkes kendi "hazırım" oyunu verir; draftı fiilen
 // başlatan ayrı ve host'a özel bir buton (bkz. draftSockets.js `draft:start`).
+// [KULLANICI İSTEĞİ] "Oda/lobi ekranı düz bir kart — ana sayfadaki güçlü görsel kimlik burada
+// zayıflıyor. DESIGN.md'nin skorbord/yayın grafiği enerjisi sadece ana sayfada kalmış, oyunun
+// her ekranına henüz yayılmamış." — bu ekran eskiden iki düz `.panel` (kod + 3 satır muted metin,
+// sonra bir oyuncu listesi) idi, homepage'in "canlı yayın" enerjisinden (pulsing badge, diyagonal
+// etiketler, bilet motifi) hiçbirini taşımıyordu. Artık AYNI bileşenleri (yeni CSS icat etmeden)
+// yeniden kullanıyor: `.lobby-hero-badge` (homepage'teki pulsing "CANLI" rozeti), `.formation-badge`
+// (draft ekranındaki diyagonal-kesikli etiket — mod/havuz/kapasite artık muted metin değil,
+// gerçek bir "yayın grafiği" etiketi), ve `.player-slot.empty` (v1'de tanımlanmış ama hiç
+// kullanılmayan dashed "boş slot" stili — artık odada yer varken gerçekten bir amaca hizmet
+// ediyor, bkz. design.md "Boş/Yükleniyor Durumları").
 export function renderWaitingRoom({ state, actions }) {
   const { room } = state;
   const votes = room.readyVotes || [];
@@ -353,26 +363,55 @@ export function renderWaitingRoom({ state, actions }) {
   const amIHost = room.hostClientId === state.clientId;
   const allReady = room.players.length >= 2 && room.players.every((p) => p.connected)
     && votes.length === room.players.length;
+  const maxPlayers = room.maxPlayers || 8;
+
+  const modeBadge = room.draftMode === 'blind' ? '🙈 Kör Draft — teklifler gizli'
+    : room.draftMode === 'wheel' ? '🎡 Çark Modu — bütçe yok, ücretsiz seç'
+    : '⏱️ Canlı Açık Arttırma';
+  const poolBadge = room.playerPool === 'super-lig' ? '🇹🇷 Tek Lig — Süper Lig + Türk icon\'lar' : '🌍 Tüm Ligler';
 
   return el('div', { class: 'view' }, [
-    el('div', { class: 'panel' }, [
+    el('div', { class: 'panel waiting-room-hero' }, [
+      el('div', { class: 'lobby-hero-badge' }, 'CANLI BEKLEME ODASI'),
       el('h3', {}, 'Oda Kodu — rakibine/gruba gönder'),
-      el('div', { class: 'room-code' }, room.code),
-      el('div', { class: 'muted', style: 'margin-top:8px' },
-        room.draftMode === 'blind' ? '🙈 Kör Draft modu — teklifler gizli'
-          : room.draftMode === 'wheel' ? '🎡 Çark Modu — bütçe yok, çarktan çıkan bantla ücretsiz seç'
-          : '⏱️ Canlı Açık Arttırma modu'),
-      el('div', { class: 'muted', style: 'margin-top:4px' },
-        room.playerPool === 'super-lig' ? '🇹🇷 Tek Lig Modu — sadece Süper Lig + Türk icon\'lar' : '🌍 Tüm ligler'),
-      el('div', { class: 'muted', style: 'margin-top:4px' }, `👥 En fazla ${room.maxPlayers || 8} kişi katılabilir`),
+      el('div', { class: 'room-code-row' }, [
+        el('div', { class: 'room-code' }, room.code),
+        el('button', {
+          type: 'button', class: 'btn secondary copy-code-btn',
+          onclick: async () => {
+            try {
+              await navigator.clipboard.writeText(room.code);
+              toast('Oda kodu kopyalandı 📋');
+            } catch (e) {
+              toast('Kopyalanamadı — kodu elle seçip kopyalayabilirsin');
+            }
+          },
+        }, '📋 Kopyala'),
+      ]),
+      el('div', { class: 'room-info-badges' }, [
+        el('div', { class: 'formation-badge' }, modeBadge),
+        el('div', { class: 'formation-badge' }, poolBadge),
+        el('div', { class: 'formation-badge' }, `👥 En fazla ${maxPlayers} kişi`),
+      ]),
     ]),
     el('div', { class: 'panel' }, [
-      el('h3', {}, `Oyuncular (${room.players.length})`),
-      el('div', { class: 'player-slots' }, room.players.map((p) => el('div', { class: 'player-slot' }, [
-        el('span', { class: `dot ${p.connected ? 'on' : 'off'}` }),
-        el('span', {}, p.name + (p.clientId === state.clientId ? ' (sen)' : '') + (p.clientId === room.hostClientId ? ' 👑' : '')),
-        votes.includes(p.clientId) ? el('span', { class: 'status-pill done' }, 'Hazır') : null,
-      ]))),
+      el('h3', {}, `Kadro Listesi (${room.players.length}/${maxPlayers})`),
+      el('div', { class: 'player-slots' }, [
+        ...room.players.map((p, i) => el('div', { class: 'player-slot' }, [
+          el('span', { class: 'player-slot-num' }, String(i + 1)),
+          el('span', { class: `dot ${p.connected ? 'on' : 'off'}` }),
+          el('span', { class: 'player-slot-name' }, [
+            p.name + (p.clientId === state.clientId ? ' (sen)' : ''),
+            p.clientId === room.hostClientId ? el('span', { class: 'host-badge' }, '👑 Kaptan') : null,
+          ]),
+          votes.includes(p.clientId) ? el('span', { class: 'status-pill done' }, 'Hazır') : null,
+        ])),
+        room.players.length < maxPlayers ? el('div', { class: 'player-slot empty' }, [
+          el('span', { class: 'player-slot-num' }, String(room.players.length + 1)),
+          el('span', { class: 'dot' }),
+          el('span', { class: 'player-slot-name' }, `Katılım bekleniyor... (${maxPlayers - room.players.length} yer daha var)`),
+        ]) : null,
+      ]),
       el('button', {
         class: `btn block ticket-btn ${iAmReady ? 'secondary' : ''}`,
         style: 'margin-top:16px',
@@ -485,7 +524,7 @@ const wheelSpinAnimated = new Map(); // spinKey -> final rotation (deg)
 // yeniden 3.2sn'lik bir bekleme başlardı).
 const wheelRevealReady = new Map(); // spinKey -> true (animasyon bitti, sonuç gösterilebilir)
 const wheelRevealScheduled = new Set(); // spinKey -> zamanlayıcı zaten kuruldu mu
-const WHEEL_AUTO_KINDS = new Set(['forced_worst', 'give_best']); // sunucudaki AUTO_RESOLVE_KINDS ile aynı
+const WHEEL_AUTO_KINDS = new Set(['forced_worst', 'give_best', 'respin']); // sunucudaki AUTO_RESOLVE_KINDS ile aynı
 
 export function renderDraft({ state, actions }) {
   const d = state.draft;
@@ -654,9 +693,17 @@ export function renderDraft({ state, actions }) {
         state.blindBidUi = { roundKey, myAmount: null };
       }
       const minAmount = state.config?.MIN_PLAYER_PRICE || 10;
+      // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Biri teklif verirken diğerinin yazdığı teklif
+      // kayboluyor, tekrar yazması gerekiyor" — bu input kontrolsüzdü (değeri sadece DOM'da
+      // yaşıyordu); rakibin bir hamlesi bile (draft:update broadcast) route()'u tetikleyip
+      // inputu SIFIRDAN, varsayılan değerle yeniden kuruyordu. `data-focus-key` artık bu turla
+      // (roundKey) eşleşiyor — app.js'teki genel yakala/geri-yükle mekanizması artık odaktan
+      // BAĞIMSIZ olarak `.value`'yu da koruyor, YENİ bir tur başladığında (key değiştiğinde)
+      // ise doğal olarak sıfırlanıyor.
       const bidInput = el('input', {
         type: 'number', min: String(minAmount), max: String(cap), value: String(Math.min(Math.max(cap, minAmount), minAmount)),
         disabled: d.paused ? 'disabled' : undefined,
+        'data-focus-key': `bid-input-${roundKey}`,
       });
 
       const submittedIds = round.submittedClientIds || [];
@@ -705,9 +752,16 @@ export function renderDraft({ state, actions }) {
         ? (state.room.players.find((p) => p.clientId === round.highestBidderClientId)?.name || '?')
         : null;
 
+      // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Biri teklif verirken diğerinin yazdığı teklif
+      // kayboluyor" — canlı moddaki rakip teklifi her geldiğinde (round.highestBid değişince
+      // minNext de değişir) bu input SIFIRDAN kuruluyordu; kendi yazdığın özel bir teklif varsa
+      // sessizce siliniyordu. Aynı çözüm: data-focus-key round'a (bidRoundKey) bağlı, app.js'teki
+      // genel mekanizma değeri odaktan bağımsız koruyor.
+      const bidRoundKey = `${round.main.id}@${round.deadline}`;
       const bidInput = el('input', {
         type: 'number', min: String(minNext), max: String(cap), value: String(Math.min(cap, minNext)),
         disabled: d.paused ? 'disabled' : undefined,
+        'data-focus-key': `bid-input-${bidRoundKey}`,
       });
 
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Diğer kullanıcıların ne kadar teklif verdiğini
@@ -722,7 +776,6 @@ export function renderDraft({ state, actions }) {
         ]);
       }));
 
-      const bidRoundKey = `${round.main.id}@${round.deadline}`;
       const prevBid = lastShownBid.has(bidRoundKey) ? lastShownBid.get(bidRoundKey) : null;
       lastShownBid.set(bidRoundKey, round.highestBid);
       const bidAmountEl = el('b', {});
@@ -914,6 +967,18 @@ function renderWheelRound({ state, actions, round, paused }) {
 // kompakt bir liste olarak gösterilir (potansiyel olarak onlarca/yüzlerce aday olabileceği için
 // tam boy player-card grid'i yerine bilerek kompakt satırlar — bkz. renderPlayerDatabase'deki
 // benzer yoğun-liste deseni).
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın." —
+// seçim ekranının HER varyantına (steal/rating/icon/league/nation/club, aday var/yok) eklenen
+// ortak bir "kararsızım" çıkışı — süre dolmasını (WHEEL_PICK_DURATION_SECONDS) beklemeden sunucuya
+// AYNI otomatik-seçim mantığını (bkz. DraftEngine.requestAutoPick/autoPickWheel) hemen çalıştırtır.
+function autoPickButton(actions) {
+  const btn = el('button', {
+    type: 'button', class: 'btn secondary block wheel-autopick-btn',
+    onclick: async () => { btn.disabled = true; await actions.requestWheelAutoPick(); },
+  }, '🤖 Kararsızım, Bilgisayar Seçsin');
+  return btn;
+}
+
 function renderWheelPickList({ state, actions, round }) {
   const wrap = el('div', { class: 'wheel-pick-wrap' });
   const seg = round.currentSpin;
@@ -930,6 +995,7 @@ function renderWheelPickList({ state, actions, round }) {
     if (rows.length === 0) {
       wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
         'Rakiplerde bu pozisyonda oyuncu kalmadı — süre dolunca sunucu otomatik seçecek.'));
+      wrap.appendChild(autoPickButton(actions));
       return wrap;
     }
     rows.sort((a, b) => b.entry.player.rating - a.entry.player.rating);
@@ -948,6 +1014,7 @@ function renderWheelPickList({ state, actions, round }) {
       return row;
     }));
     wrap.appendChild(el('div', { class: 'wheel-pick-scroll' }, list));
+    wrap.appendChild(autoPickButton(actions));
     return wrap;
   }
 
@@ -968,17 +1035,19 @@ function renderWheelPickList({ state, actions, round }) {
   if (seg.kind === 'icon') candidates = candidates.filter((p) => p.isIcon);
   else if (seg.kind === 'league') candidates = candidates.filter((p) => p.league === round.revealValue);
   else if (seg.kind === 'nation') candidates = candidates.filter((p) => p.nation === round.revealValue);
+  else if (seg.kind === 'club') candidates = candidates.filter((p) => p.club === round.revealValue);
   else candidates = candidates.filter((p) => p.rating >= seg.min && p.rating <= seg.max);
   candidates = candidates.sort((a, b) => b.rating - a.rating);
 
   if (candidates.length === 0) {
     wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' },
       'Bu segmentte uygun oyuncu kalmadı — süre dolunca sunucu otomatik olarak seni atayacak.'));
+    wrap.appendChild(autoPickButton(actions));
     return wrap;
   }
 
   const headerBits = [];
-  if ((seg.kind === 'league' || seg.kind === 'nation') && round.revealValue) headerBits.push(`🎯 ${round.revealValue}`);
+  if ((seg.kind === 'league' || seg.kind === 'nation' || seg.kind === 'club') && round.revealValue) headerBits.push(`🎯 ${round.revealValue}`);
   headerBits.push(`${candidates.length} aday — birini seç`);
   wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center;margin-bottom:8px' }, headerBits.join(' — ')));
 
@@ -996,6 +1065,7 @@ function renderWheelPickList({ state, actions, round }) {
     return row;
   }));
   wrap.appendChild(el('div', { class: 'wheel-pick-scroll' }, list));
+  wrap.appendChild(autoPickButton(actions));
   return wrap;
 }
 
@@ -1045,7 +1115,7 @@ function renderRoundResultPanel(event, state) {
         emoji: '💀', headline: `${actor} → ${event.player.name}`,
         sub: 'Şanssız tur — bu pozisyondaki en düşük reytingli oyuncu otomatik atandı.',
       }));
-    } else if ((event.segmentKind === 'league' || event.segmentKind === 'nation') && event.revealValue) {
+    } else if ((event.segmentKind === 'league' || event.segmentKind === 'nation' || event.segmentKind === 'club') && event.revealValue) {
       wrap.appendChild(receiptStrip({
         emoji: '🎡', headline: `${actor} → ${event.player.name}`,
         sub: `${event.revealValue} piyangosu (${event.band}) — ücretsiz seçildi.`,
@@ -1232,10 +1302,14 @@ const STYLE_CHOICES = [
   ['normal', '🙂 Normal', 'Standart risk'],
   ['aggressive', '🔥 Agresif', 'Kart riski yüksek'],
 ];
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kontra" — kendi hücum/orta saha gücünden biraz feragat
+// edip karşılığında RAKİBİN hücum gücünü doğrudan kısan dördüncü taktik (bkz. simulate.js
+// applyCounterDefense) — zayıf bir savunması olan kadıya bile gerçek bir strateji şansı veriyor.
 const TACTIC_CHOICES = [
   ['defensive', '🛡️ Defansif', 'Defans +, hücum −'],
   ['balanced', '⚖️ Dengeli', 'Değişiklik yok'],
   ['attack', '⚔️ Atak', 'Hücum +, defans −'],
+  ['counter', '🔀 Kontra', 'Kendi hücumun biraz azalır, rakibin hücum gücünü doğrudan kısarsın'],
 ];
 
 function renderTacticPanel({ state, actions, side }) {
@@ -1897,6 +1971,11 @@ export function renderMatch({ state, actions }) {
         ]))),
       ]),
     ]),
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Puan/averaj/atılan gol de eşitse ek bir istatistik
+    // kriteri kullanılsın" — sıralama mantığı şeffaf olsun diye (bkz. claude.md "Puan Tablosu
+    // 3-0 sorusu") kısa bir açıklama satırı.
+    el('p', { class: 'muted', style: 'margin-top:8px;font-size:12.5px' },
+      'Sıralama: Puan → Averaj → Atılan Gol → Deplasman Golü → Fair-Play (az kart). Bunlar da tam eşitse kura ile belirlenir.'),
   ]));
 
   // N>2 odada birden fazla eşleşme oynanır — sekmelerle aralarında gezinilir (2 kişilik odada
@@ -2000,7 +2079,28 @@ function matchPointsSummary(m) {
   return `${winnerSide} kazandı — 3 puan aldı, diğeri 0 puan`;
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Salt skor yeterli değil, motoru gerçekten yansıtan kısa
+// bir anlatı/flavor-text üretilebilir — 'rakibin kalecisi seni 3 kez kurtardı' ya da 'zayıf
+// defansın seni yedi' gibi." — sunucu (bkz. story.js) sadece yapısal olgular ({key, team,
+// magnitude}) üretir, gerçek cümleyi burada takım isimleriyle kuruyoruz — narration.js'in
+// event->metin ayrımıyla AYNI mimari.
+const STORY_TEMPLATES = {
+  attack_star: (team, homeName, awayName) => `⚔️ ${team === 'home' ? homeName : awayName} hücum hattı maça damga vurdu.`,
+  defense_leak: (team, homeName, awayName) => `🕳️ ${team === 'home' ? homeName : awayName} defansı bu maçta rakibe kapıları açtı.`,
+  defense_wall: (team, homeName, awayName) => `🛡️ ${team === 'home' ? homeName : awayName} defansı bu maçta neredeyse geçilmedi.`,
+  keeper_wall: (team, homeName, awayName) => `🧤 ${team === 'home' ? homeName : awayName} kalecisi kritik anlarda seriyi kurtardı.`,
+  keeper_soft: (team, homeName, awayName) => `🥅 ${team === 'home' ? homeName : awayName} kalecisinin zayıflığı bu maçta rakibin işine yaradı.`,
+  unlucky: (team, homeName, awayName) => `📉 ${team === 'home' ? homeName : awayName}, beklenenin oldukça altında bir sonuçla ayrıldı — şanssızdı.`,
+  lucky: (team, homeName, awayName) => `📈 ${team === 'home' ? homeName : awayName}, beklenenin oldukça üzerinde bir sonuçla ayrıldı — şanslıydı.`,
+};
+
+function matchStoryLine(fact, homeName, awayName) {
+  const fn = STORY_TEMPLATES[fact.key];
+  return fn ? fn(fact.team, homeName, awayName) : null;
+}
+
 function renderMatchResultCard(title, homeName, awayName, m) {
+  const storyLines = (m.story || []).map((f) => matchStoryLine(f, homeName, awayName)).filter(Boolean);
   return el('div', { class: 'panel match-result-card' }, [
     el('div', { class: 'match-result-header' }, [
       el('div', { class: 'match-result-title' }, title),
@@ -2012,6 +2112,7 @@ function renderMatchResultCard(title, homeName, awayName, m) {
       el('div', { class: 'team' }, [awayName, el('div', { class: 'xg' }, `xG ${m.xgAway.toFixed(2)}`)]),
     ]),
     el('p', { class: 'muted', style: 'text-align:center;margin-top:2px' }, matchPointsSummary(m)),
+    storyLines.length ? el('div', { class: 'match-story' }, storyLines.map((line) => el('p', { class: 'match-story-line' }, line))) : null,
     el('div', { class: 'scorer-columns' }, [
       scorerColumn(m.events, 'home', homeName),
       scorerColumn(m.events, 'away', awayName),

@@ -9,6 +9,8 @@ const {
   HOME_ADVANTAGE_BONUS,
   TACTIC_SHIFT,
   RED_CARD_POWER_PENALTY,
+  COUNTER_OWN_ATTACK_PENALTY,
+  COUNTER_OPPONENT_ATTACK_PENALTY,
 } = require('../shared/gameConfig');
 const { buildMatchEvents } = require('./narration');
 const { rollCards } = require('./cards');
@@ -62,6 +64,11 @@ function samplePoisson(lambda) {
 // [KULLANICI İSTEĞİ] "Atak/dengeli/defansif oyna seçenekleri gelsin maçtan önce." — takımın
 // kendi seçtiği taktiğe göre hücum/defans gücü arasında bir ödünleşim (trade-off) uygular.
 // 'balanced' (varsayılan/eksikse) hiçbir şeyi değiştirmez.
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kontra" — zayıf bir kadroya da gerçek bir taktik şansı
+// versin diye eklendi (bkz. gameConfig.js COUNTER_* notu). Burada SADECE kendi hücum/orta saha
+// gücünden feragat eden kısmı uygulanıyor; rakibin hücum gücünü KISAN kısmı (asıl "kontra"
+// etkisi) simulateSingleMatch'te, iki takımın taktiği birbirine bakılarak uygulanıyor — o yüzden
+// applyTactic tek başına (rakip bilgisi olmadan) sadece kendi tarafını işleyebiliyor.
 function applyTactic(powers, tactic) {
   if (tactic === 'attack') {
     return { ...powers, FW: powers.FW * (1 + TACTIC_SHIFT), DF: powers.DF * (1 - TACTIC_SHIFT) };
@@ -69,7 +76,28 @@ function applyTactic(powers, tactic) {
   if (tactic === 'defensive') {
     return { ...powers, DF: powers.DF * (1 + TACTIC_SHIFT), FW: powers.FW * (1 - TACTIC_SHIFT) };
   }
+  if (tactic === 'counter') {
+    return { ...powers, FW: powers.FW * (1 - COUNTER_OWN_ATTACK_PENALTY), MF: powers.MF * (1 - COUNTER_OWN_ATTACK_PENALTY / 2) };
+  }
   return powers;
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kontra taktiğinin asıl etkisi — rakip, kontra oynayan bir
+// takıma karşı saldırırken kendi hücum gücünden bir kısmını (COUNTER_OPPONENT_ATTACK_PENALTY)
+// kaybeder. Bu, "defansif" taktiğin aksine kendi DF/GK kalitesinden BAĞIMSIZ, doğrudan rakibin
+// hücumunu köreltiyor — zayıf savunması olan bir kadro bile disiplinli bir kontra bloğuyla güçlü
+// bir hücum hattını gerçekten zorlayabiliyor.
+function applyCounterDefense(attackerPowers, defenderTactic) {
+  if (defenderTactic !== 'counter') return attackerPowers;
+  // [DÜZELTİLDİ — Monte Carlo testinde ölçüldü] Sadece FW'yi kısmak, attackPower formülünde
+  // (FW + 0.5×MF) etkiyi fazlaca sulandırıyordu — zayıf tarafın kazanma ihtimalini pratikte
+  // ~%1 (istatistiksel gürültü seviyesinde) değiştiriyordu, "gerçek bir taktik şansı" hissi
+  // vermiyordu. Artık MF de aynı oranda kısılıyor (attackPower'ın TAMAMI, sadece FW'si değil).
+  return {
+    ...attackerPowers,
+    FW: attackerPowers.FW * (1 - COUNTER_OPPONENT_ATTACK_PENALTY),
+    MF: attackerPowers.MF * (1 - COUNTER_OPPONENT_ATTACK_PENALTY),
+  };
 }
 
 // [KULLANICI İSTEĞİ] Kırmızı kart görülünce (10 kişi kalma) takımın kaleci hariç tüm güç
@@ -102,8 +130,11 @@ function simulateSingleMatch(lineupHome, lineupAway, opts = {}) {
   if (cardsHome.hasRed) powersHome = applyRedCardPenalty(powersHome);
   if (cardsAway.hasRed) powersAway = applyRedCardPenalty(powersAway);
 
-  const xgHome = expectedGoals(powersHome, powersAway, true);
-  const xgAway = expectedGoals(powersAway, powersHome, false);
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kontra taktiği — rakip kontra oynuyorsa, SALDIRAN
+  // takımın hücum gücü bu spesifik yönde (sadece bu xG hesabı için, kalıcı olarak DEĞİL — ör.
+  // ev sahibinin gücü deplasman maçında/başka bir hesapta bundan etkilenmez) kısılıyor.
+  const xgHome = expectedGoals(applyCounterDefense(powersHome, tacticAway), powersAway, true);
+  const xgAway = expectedGoals(applyCounterDefense(powersAway, tacticHome), powersHome, false);
 
   const goalsHome = samplePoisson(xgHome);
   const goalsAway = samplePoisson(xgAway);
@@ -130,5 +161,5 @@ function simulateSingleMatch(lineupHome, lineupAway, opts = {}) {
 
 module.exports = {
   groupPowers, goalkeeperSaveFactor, expectedGoals, samplePoisson, simulateSingleMatch,
-  applyTactic, applyRedCardPenalty,
+  applyTactic, applyRedCardPenalty, applyCounterDefense,
 };

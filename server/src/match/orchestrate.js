@@ -15,6 +15,7 @@
 // knockout/kupa modu eklenirse diye dosya silinmedi).
 const { simulateSingleMatch } = require('./simulate');
 const { computeMatchRatings, scorerCountsFor } = require('./ratings');
+const { buildMatchStory } = require('./story');
 
 // Tek bir maçın sonucuna göre normal futbol puanlaması (3 galibiyet / 1 beraberlik / 0 mağlubiyet).
 function matchPoints(goalsHome, goalsAway) {
@@ -66,6 +67,9 @@ function playPairFixture(pA, pB, squadsA, squadsB) {
       events: match1.events,
       lineupHome: match1LineupHome, lineupAway: match1LineupAway,
       pointsHome: points1.pointsHome, pointsAway: points1.pointsAway,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Salt skor yeterli değil, motoru gerçekten yansıtan
+      // kısa bir anlatı üretilebilir" — bkz. story.js. Sonucu DEĞİŞTİRMEZ, sadece yorumlar.
+      story: buildMatchStory(match1),
     },
     match2: {
       homeClientId: pB.clientId, awayClientId: pA.clientId,
@@ -75,6 +79,7 @@ function playPairFixture(pA, pB, squadsA, squadsB) {
       events: match2.events,
       lineupHome: match2LineupHome, lineupAway: match2LineupAway,
       pointsHome: points2.pointsHome, pointsAway: points2.pointsAway,
+      story: buildMatchStory(match2),
     },
     // Bilgi amaçlı — averaj/toplam gol (puan hesabında ARTIK kullanılmıyor, sadece "bu ikili
     // toplamda nasıl gitti" özetini göstermek için client'ta kullanılabilir).
@@ -108,9 +113,33 @@ function playRoundRobin(room) {
   const losses = {};
   const goalsFor = {};
   const goalsAgainst = {};
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Puan/averaj/atılan gol de eşitse ek bir istatistik
+  // kriteri kullanılsın (deplasman golü, kart sayısı gibi)" — bkz. aşağıdaki standings.sort.
+  // Tam bu üçü de eşit kalan (nadir ama mümkün — bkz. claude.md "Puan Tablosu 3-0 sorusu")
+  // durumlarda sırasıyla deplasmanda atılan gol, sonra fair-play (az kart = daha iyi) devreye
+  // giriyor; bu da eşitse (istatistiksel olarak tamamen aynı iki taraf) her hesaplamada bir
+  // kereliğine belirlenen rastgele bir son çare kullanılıyor — "listedeki ilk oyuncu her zaman
+  // kazanır" gibi sessiz/anlamsız bir varsayılana asla geri düşülmüyor.
+  const awayGoals = {};
+  const cardPoints = {};
+  const tieBreakSeed = {};
   for (const p of players) {
     points[p.clientId] = 0; wins[p.clientId] = 0; draws[p.clientId] = 0; losses[p.clientId] = 0;
     goalsFor[p.clientId] = 0; goalsAgainst[p.clientId] = 0;
+    awayGoals[p.clientId] = 0; cardPoints[p.clientId] = 0;
+    tieBreakSeed[p.clientId] = Math.random();
+  }
+
+  // Bir takımın bir maçtaki kart puanı — fair-play sıralaması için (sarı=1, kırmızı=3; az olan
+  // önde). match.events zaten team:'home'|'away' etiketli (bkz. simulate.js).
+  function cardPointsFor(events, team) {
+    let pts = 0;
+    for (const e of events) {
+      if (e.team !== team) continue;
+      if (e.type === 'yellow') pts += 1;
+      else if (e.type === 'red') pts += 3;
+    }
+    return pts;
   }
 
   // Bir tek maçın sonucunu puan tablosuna işler (W/D/L sayaçları + gol farkı dahil).
@@ -119,6 +148,9 @@ function playRoundRobin(room) {
     points[m.awayClientId] += m.pointsAway;
     goalsFor[m.homeClientId] += m.goalsHome; goalsAgainst[m.homeClientId] += m.goalsAway;
     goalsFor[m.awayClientId] += m.goalsAway; goalsAgainst[m.awayClientId] += m.goalsHome;
+    awayGoals[m.awayClientId] += m.goalsAway;
+    cardPoints[m.homeClientId] += cardPointsFor(m.events, 'home');
+    cardPoints[m.awayClientId] += cardPointsFor(m.events, 'away');
     if (m.pointsHome === 3) { wins[m.homeClientId] += 1; losses[m.awayClientId] += 1; }
     else if (m.pointsAway === 3) { wins[m.awayClientId] += 1; losses[m.homeClientId] += 1; }
     else { draws[m.homeClientId] += 1; draws[m.awayClientId] += 1; }
@@ -146,7 +178,16 @@ function playRoundRobin(room) {
     goalsFor: goalsFor[p.clientId],
     goalsAgainst: goalsAgainst[p.clientId],
     goalDiff: goalsFor[p.clientId] - goalsAgainst[p.clientId],
-  })).sort((a, b) => b.points - a.points || b.goalDiff - a.goalDiff || b.goalsFor - a.goalsFor);
+    // Sadece tam bir eşitlik bozmak için taşınıyor (bkz. sort) — standings-table bunları ayrı
+    // kolon olarak göstermiyor, sadece gerektiğinde devreye giriyor.
+    awayGoals: awayGoals[p.clientId],
+    cardPoints: cardPoints[p.clientId],
+  })).sort((a, b) => b.points - a.points
+    || b.goalDiff - a.goalDiff
+    || b.goalsFor - a.goalsFor
+    || b.awayGoals - a.awayGoals
+    || a.cardPoints - b.cardPoints
+    || tieBreakSeed[a.clientId] - tieBreakSeed[b.clientId]);
 
   return {
     fixtures,

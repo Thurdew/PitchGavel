@@ -3,8 +3,10 @@ const { buildableFormations, validateAssignment } = require('../lineup/lineup');
 const { FORMATIONS } = require('../shared/football');
 const { normalizeStyle } = require('../match/cards');
 
-// [KULLANICI İSTEĞİ] "Atak/dengeli/defansif oyna seçenekleri gelsin maçtan önce."
-const VALID_TACTICS = ['defensive', 'balanced', 'attack'];
+// [KULLANICI İSTEĞİ] "Atak/dengeli/defansif oyna seçenekleri gelsin maçtan önce." — [KULLANICI
+// İSTEĞİ, KARARLAŞTIRILDI] "Kontra" eklendi (bkz. simulate.js applyCounterDefense) — zayıf bir
+// kadıya da gerçek bir taktik şansı versin diye.
+const VALID_TACTICS = ['defensive', 'balanced', 'attack', 'counter'];
 function normalizeTactic(tactic) {
   return VALID_TACTICS.includes(tactic) ? tactic : 'balanced';
 }

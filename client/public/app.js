@@ -42,11 +42,17 @@ const state = {
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "İlk maç x-y oluyor sonra y-x oluyor sonra diğer maçlara
 // geçiyor — öyle yapma, karışık şekilde oynat, hep değiştir." — N>2 odada anlatım eskiden her
 // eşleşmeyi (fixture) sırayla, kendi içinde match1->match2 oynatıyordu (x-y, y-x, x-z, z-x, ...).
-// Artık TÜM eşleşmelerin TÜM maçları (2 * fixtures.length tanesi) tek düz bir listede toplanıp
-// draft/round-robin sırasından bağımsız rastgele karıştırılıyor — hangi ikilinin maçının ne zaman
-// geleceği önceden tahmin edilemiyor. Fikstür özet ekranı (renderMatch/matchResultUi) BİLEREK
-// değişmedi — orası hâlâ ikili bazlı gruplanmış bir SONUÇ tablosu, bu sadece anlatım SIRASI.
-function buildMatchOrder(fixtureCount) {
+// Artık TÜM eşleşmelerin TÜM maçları (2 * fixtures.length tanesi) tek düz bir listede karışık
+// sırayla oynatılıyor.
+// [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "3 arkadaş oynuyoruz, herkesin ekranında o sırada
+// farklı maç oynanıyor, spoiler yiyoruz — herkesin ekranında aynı anda aynı maç olması lazım."
+// Kök neden: bu sıralama eskiden BURADA, her istemcinin KENDİ Math.random()'ıyla bağımsız
+// üretiliyordu — aynı sonuca (fixtures) rağmen her ekran farklı bir anlatım sırası izliyordu.
+// Artık sıra sunucuda TEK SEFERDE belirlenip result.matchOrder olarak geliyor (bkz.
+// matchSockets.js buildMatchOrder) — TÜM istemciler AYNI diziyi oynatıyor. Sunucudan bir
+// sebeple gelmezse (ör. eski bir cache/reconnect senaryosu) yerel üretime düşülür — anlatım
+// yine de çalışsın diye, ama bu artık sadece bir savunma satırı.
+function buildMatchOrderFallback(fixtureCount) {
   const order = [];
   for (let i = 0; i < fixtureCount; i++) {
     order.push({ fixtureIndex: i, matchIndex: 0 });
@@ -64,13 +70,13 @@ function buildMatchOrder(fixtureCount) {
 // kurulu olduğu için (state.matchPlayback dolu) elden geçirilmez, kullanıcı akışı bozulmaz.
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — sonuç artık {fixtures, standings}
 // şeklinde (N>2 odada birden fazla eşleşme oynanır); anlatım artık pb.order'daki karışık sırayı
-// (bkz. buildMatchOrder) tek tek izler.
+// tek tek izler.
 function applyMatchResult(result) {
   state.matchResult = result;
   if (!state.matchPlayback) {
     pushDataLayer('match_result', { fixtures_count: (result.fixtures || []).length });
     state.matchPlayback = {
-      order: buildMatchOrder((result.fixtures || []).length),
+      order: result.matchOrder || buildMatchOrderFallback((result.fixtures || []).length),
       pos: 0,
       clock: 0,
       shown: [],
@@ -293,19 +299,42 @@ function updateTopbar() {
 // `data-focus-key` işaretiyle) kaydet, yeniden kurduktan SONRA aynı işarete sahip elemanı bulup
 // odağı + imleç konumunu geri yükle. Bu, route()'u çağıran HERHANGİ bir input için genel bir
 // çözüm — sadece arama kutusuna değil, `data-focus-key` taşıyan her elemana otomatik uygulanır.
+// [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "X teklif verirken Y yazıyor, X'in teklifi anda
+// Y'nin sayfası kendini yeniliyor ve yazdığı teklif kayboluyor" — kök neden: sadece odak/imleç
+// konumu geri yükleniyordu, elemanın YAZILMIŞ DEĞERİ (`.value`) değil. Teklif kutusu gibi
+// "kontrolsüz" (state'e değil DOM'a bağlı) inputlarda yeni render her zaman TAZE bir varsayılan
+// değerle kuruluyordu — o an odakta olmasa bile (ör. az önce yazıp başka bir alana geçmiş
+// olabilir) kullanıcının yazdığı metin sessizce siliniyordu. Artık `.value` da (odaktan
+// bağımsız, DOM'da o key ile eşleşen HERHANGİ bir inputtan) yakalanıp geri yükleniyor —
+// data-focus-key'in kapsamı round/turla eşleştiği için (ör. `bid-input-${roundKey}`) gerçekten
+// YENİ bir tur başladığında (key değiştiğinde) eski değer zaten hiç aranmıyor, doğru şekilde
+// sıfırlanıyor.
 function captureFocus() {
   const active = document.activeElement;
-  if (!active || !appRoot.contains(active)) return null;
-  const key = active.getAttribute && active.getAttribute('data-focus-key');
-  if (!key) return null;
+  const focusedKey = active && appRoot.contains(active) && active.getAttribute
+    ? active.getAttribute('data-focus-key') : null;
+  const values = {};
+  for (const node of appRoot.querySelectorAll('[data-focus-key]')) {
+    const key = node.getAttribute('data-focus-key');
+    if (key && 'value' in node) values[key] = node.value;
+  }
+  if (!focusedKey && Object.keys(values).length === 0) return null;
   return {
-    key,
-    selectionStart: typeof active.selectionStart === 'number' ? active.selectionStart : null,
-    selectionEnd: typeof active.selectionEnd === 'number' ? active.selectionEnd : null,
+    key: focusedKey,
+    selectionStart: focusedKey && typeof active.selectionStart === 'number' ? active.selectionStart : null,
+    selectionEnd: focusedKey && typeof active.selectionEnd === 'number' ? active.selectionEnd : null,
+    values,
   };
 }
 function restoreFocus(saved) {
   if (!saved) return;
+  for (const node of appRoot.querySelectorAll('[data-focus-key]')) {
+    const key = node.getAttribute('data-focus-key');
+    if (key && Object.prototype.hasOwnProperty.call(saved.values, key) && 'value' in node) {
+      node.value = saved.values[key];
+    }
+  }
+  if (!saved.key) return;
   const el2 = appRoot.querySelector(`[data-focus-key="${saved.key}"]`);
   if (!el2) return;
   el2.focus();
@@ -314,8 +343,21 @@ function restoreFocus(saved) {
   }
 }
 
+// [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Bir kullanıcı kadrosunu/teklifini kaydederken benim
+// ekranım da kendinin başına atıyor, sayfa yenileniyormuş gibi oluyor" — kök neden: route() her
+// socket broadcast'inde (bir başkasının hamlesi dahil) appRoot'u sıfırdan kuruyor; tarayıcı yeni
+// içerikle sayfanın en üstünden başladığı için scroll konumu sessizce sıfırlanıyordu. Aynı
+// "görünüm" içindeysek (sayfa + oda durumu değişmediyse — sadece içerik güncellendiyse) eski
+// scroll konumu geri yükleniyor; GERÇEK bir ekran geçişinde (ör. draft bitip dizilime geçmek)
+// tarayıcının doğal "yeni sayfa üstten başlar" davranışına dokunulmuyor.
+function currentViewKey() {
+  return `${state.page || ''}|${state.room ? state.room.status : ''}`;
+}
+
 function route() {
   const savedFocus = captureFocus();
+  const prevViewKey = route._viewKey;
+  const prevScrollY = window.scrollY;
   appRoot.innerHTML = '';
   updateTopbar();
   updateHead();
@@ -324,21 +366,28 @@ function route() {
   // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
   homeNavBtn.style.display = state.room ? '' : 'none';
 
+  function finish() {
+    restoreFocus(savedFocus);
+    const newViewKey = currentViewKey();
+    if (prevViewKey === newViewKey) window.scrollTo(0, prevScrollY);
+    route._viewKey = newViewKey;
+  }
+
   if (state.page === 'players') {
     appRoot.appendChild(renderPlayerDatabase({ state, actions }));
-    restoreFocus(savedFocus);
+    finish();
     return;
   }
 
   if (state.page === 'how-to-play') {
     appRoot.appendChild(renderHowToPlay({ state, actions }));
-    restoreFocus(savedFocus);
+    finish();
     return;
   }
 
   if (!state.room) {
     appRoot.appendChild(renderLobby({ state, actions }));
-    restoreFocus(savedFocus);
+    finish();
     return;
   }
 
@@ -363,7 +412,7 @@ function route() {
     default:
       appRoot.appendChild(el('div', { class: 'panel' }, 'Bilinmeyen oda durumu.'));
   }
-  restoreFocus(savedFocus);
+  finish();
 }
 
 const actions = {
@@ -462,6 +511,15 @@ const actions = {
   async submitWheelPick(playerId, ownerClientId) {
     const res = await emitAck('draft:wheelPick', { code: state.code, playerId, ownerClientId });
     if (res.error) toast('Seçim reddedildi: ' + res.error);
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kullanıcı karar vermek istemezse bilgisayar atasın." —
+  // sırası gelen oyuncu süre dolmasını beklemeden aynı otomatik-seçim mantığını hemen tetikler
+  // (bkz. DraftEngine.requestAutoPick). Sonuç zaten normal `draft:update` broadcast'iyle gelir,
+  // burada ayrıca bir şey yapmaya gerek yok — sadece hata varsa haber ver.
+  async requestWheelAutoPick() {
+    const res = await emitAck('draft:wheelAutoPick', { code: state.code });
+    if (res.error) toast('Otomatik seçim yapılamadı: ' + res.error);
     return res;
   },
   async fetchLineupOptions() {
@@ -596,7 +654,7 @@ socket.on('draft:update', (msg) => {
         toast(`😱 ${nameOf(ev.clientId)}, en iyisi ${ev.player.name}'i ${nameOf(ev.toClientId)}'e verdi!`);
       } else if (ev.segmentKind === 'forced_worst') {
         toast(`💀 ${nameOf(ev.clientId)} şanssız turda ${ev.player.name}'i aldı`);
-      } else if ((ev.segmentKind === 'league' || ev.segmentKind === 'nation') && ev.revealValue) {
+      } else if ((ev.segmentKind === 'league' || ev.segmentKind === 'nation' || ev.segmentKind === 'club') && ev.revealValue) {
         toast(`🎡 ${nameOf(ev.clientId)}: ${ev.revealValue} → ${ev.player.name}`);
       } else {
         toast(`🎡 ${nameOf(ev.clientId)}: ${ev.band} → ${ev.player.name}`);
