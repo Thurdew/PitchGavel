@@ -11,6 +11,7 @@ const {
   BIG_GAP_POSITIONS_COUNT,
   WHEEL_PICK_DURATION_SECONDS,
   WHEEL_AUTO_RESOLVE_DELAY_MS,
+  WHEEL_RATING_BANDS,
 } = require('../shared/gameConfig');
 const {
   pickMainAndLadder, pickSingle, buildWheelSegments, poolForSlot,
@@ -548,8 +549,32 @@ class DraftEngine {
     let revealValue = null;
 
     if (raw.kind === 'steal') {
+      // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Rakibin o mevkide oyuncusu yoksa bana istediğim
+      // oyuncuyu seçme hakkı veriyor, o biraz saçma" — kimsede çalınacak oyuncu yoksa eskiden
+      // segment 1-99 arası TAMAMEN AÇIK bir "genel havuzdan seç"e düşüyordu (fiilen ücretsiz,
+      // dilediğin reytingte bir oyuncu — steal'in riskli/rekabetçi doğasıyla çelişen bir
+      // ödül). Artık aynı 'respin' mekanizması (bkz. "🍀 Şanslı Tekrar") kullanılıyor: turu
+      // KAYBETMEDEN aynı kişi/pozisyon için taze bir çark daha açılıyor.
       const hasStealable = room.players.some((o) => o.clientId !== round.clientId && o.squad.some((e) => e.slot === type));
-      if (!hasStealable) segment = { kind: 'rating', label: `${raw.label} (kimsede yok — havuzdan seç)`, min: 1, max: 99 };
+      if (!hasStealable) segment = { kind: 'respin', label: `${raw.label} (çalınacak oyuncu yok — tekrar çeviriyorsun)` };
+    } else if (raw.kind === 'rating') {
+      // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "60 altı oyuncu geliyor ama ekranda 64'lük
+      // oyuncu çıkıyor, diğer ratinglerde de bu sorun var" — kök neden: bant boşsa pool.js
+      // sunucuda otomatik bir ALT banda (ya da tam fallback'e) genişliyordu ama round'un
+      // gösterdiği label/min/max hiç güncellenmiyordu — istemci hâlâ ORİJİNAL bandın etiketini
+      // gösteriyor, oysa gerçek adaylar başka bir bandan geliyordu. Artık spin anında bandın
+      // gerçekten dolu olup olmadığı kontrol ediliyor; boşsa segment GERÇEK (genişletilmiş)
+      // banda ya da tam fallback'e göre güncelleniyor — etiket her zaman gösterilen adaylarla
+      // birebir eşleşiyor.
+      const { candidates, effectiveLabel } = pickWheelRatingCandidates(type, room.draft.takenIds, raw, room.playerPool);
+      if (candidates.length === 0) {
+        segment = { kind: 'rating', label: `${raw.label} (havuz boş — genel seç)`, min: 1, max: 99 };
+      } else if (effectiveLabel && effectiveLabel !== raw.label) {
+        const matchedBand = WHEEL_RATING_BANDS.find((b) => b.label === effectiveLabel);
+        segment = matchedBand
+          ? { ...matchedBand, label: `${matchedBand.label} (${raw.label} bandı boştu)` }
+          : { kind: 'rating', label: `${raw.label} (havuz boş — genel seç)`, min: 1, max: 99 };
+      }
     } else if (raw.kind === 'icon') {
       if (pickWheelIconCandidates(type, room.draft.takenIds, room.playerPool).length === 0) {
         segment = { kind: 'rating', label: `${raw.label} (efsane kalmadı — havuzdan seç)`, min: 1, max: 99 };

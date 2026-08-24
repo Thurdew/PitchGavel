@@ -14,7 +14,11 @@ const WHEEL_RATING_BANDS = [
   { kind: 'rating', label: '75-79', min: 75, max: 79, pool: 'orta', weight: 18 },
   { kind: 'rating', label: '70-74', min: 70, max: 74, pool: 'orta', weight: 20 },
   { kind: 'rating', label: '65-69', min: 65, max: 69, pool: 'kötü', weight: 16 },
-  { kind: 'rating', label: '60 altı', min: 1, max: 64, pool: 'kötü', weight: 10 },
+  // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "60 altı oyuncu geliyor ama ekranda 64'lük oyuncu
+  // çıkıyor" — etiket "60 altı" ama gerçek sınır min:1/max:64'tü (65-69 bandıyla boşluk
+  // kalmasın diye bilerek 64'e kadar genişletilmişti, ama etiket bu genişlemeyi yansıtmıyordu).
+  // Etiket artık gerçek sınırla birebir eşleşiyor — sınırlar DEĞİŞMEDİ, sadece isim doğrulandı.
+  { kind: 'rating', label: '64 ve altı', min: 1, max: 64, pool: 'kötü', weight: 10 },
 ];
 
 // Özel aksiyon segmentleri — [KULLANICI İSTEĞİ] "rakipten istediğin oyuncuyu al, rakibine en iyi
@@ -155,6 +159,30 @@ module.exports = {
   // geriye dönük uyumluluğu garanti eder.
   TACTIC_SHIFT: 0.12,
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Taktik seçeneklerini ikiden fazlaya çıkaralım — zayıf
+  // takıma gerçek bir strateji şansı vermiyor, sadece şansına küs ya da güven. 'Kontra' — kendi
+  // Hücum/OrtaSaha gücünü biraz düşürüp karşılığında rakibin Hücum gücünü belli oranda kısan bir
+  // taktik olsun." — Atak/Defansif (TACTIC_SHIFT) kendi güç grupları ARASINDA transfer yapan
+  // "geniş/genel" taktiklerdi (defansif = kendi DF'ini büyütür, bu da defenseFactor üzerinden
+  // rakibin xG'sini dolaylı düşürür — ama zayıf bir DF'in kendisi zaten zayıfsa bu pek işe
+  // yaramaz). Kontra farklı bir kaldıraç kullanıyor: rakibin HÜCUM gücünü DOĞRUDAN kısıyor (bkz.
+  // simulate.js simulateSingleMatch) — kendi savunmanın kalitesinden bağımsız, organize/disiplinli
+  // bir kontra-pres bloğunun tasviri. Bu yüzden zayıf defansı olan bir kadro bile, kontra
+  // seçtiğinde güçlü bir rakibin hücumunu gerçekten körelten bir avantaj elde ediyor — "şansa
+  // küs/güven" yerine gerçek bir taktik tercihi. Bedeli: kendi hücum/orta saha gücünden bir kısmı
+  // feragat ediliyor (COUNTER_OWN_ATTACK_PENALTY, orta sahada yarı oranda — kontra atakta orta
+  // saha tamamen devre dışı kalmıyor, hızlı geçiş için hâlâ kullanılıyor).
+  // [DÜZELTİLDİ — Monte Carlo ile ölçülüp ayarlandı] İlk denemede (0.10/0.15, sadece FW'ye
+  // uygulanan opponent-penalty) etkisi istatistiksel gürültü seviyesindeydi (55 vs 75 rating
+  // farkında zayıfın kazanma ihtimalini 20.000 denemede ~%19.0'dan ~%19.8'e, yani sadece 1 puan
+  // taşıyordu) — "gerçek bir taktik şansı" hissi vermiyordu. Ölçülerek yükseltildi (bkz.
+  // simulate.js applyCounterDefense — artık MF'yi de kısıyor, sadece FW'yi değil): aynı 55 vs 75
+  // senaryosunda zayıfın kazanma ihtimalini ~%19.0'dan ~%24.6'ya (favorinin kazanma ihtimali
+  // ~%57.2'den ~%46.4'e) çıkarıyor — gerçek, hissedilir bir taktik avantajı ama favoriyi alt üst
+  // edecek kadar da değil (hâlâ favori olmaya devam ediyor).
+  COUNTER_OWN_ATTACK_PENALTY: 0.08,
+  COUNTER_OPPONENT_ATTACK_PENALTY: 0.28,
+
   ROOM_TTL_MS: 6 * 60 * 60 * 1000, // 6 saat işlem görmeyen odalar temizlenir
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çark Modu — üçüncü draftMode ('live'/'blind'den
@@ -205,9 +233,16 @@ module.exports = {
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] "forced_worst"/"give_best" gibi seçim
   // gerektirmeyen (otomatik uygulanan) segmentlerin, istemcideki çark döndürme animasyonu
-  // (bkz. views.js, ~2.6sn) bitmeden sonucu açığa çıkarmaması için kısa bir gecikme — animasyon
-  // süresinden biraz uzun tutuldu ki "sonuç ekrana gelmeden" round kapanmasın.
-  WHEEL_AUTO_RESOLVE_DELAY_MS: Number(process.env.DRAFT_WHEEL_AUTO_RESOLVE_MS) || 2800,
+  // bitmeden sonucu açığa çıkarmaması için kısa bir gecikme.
+  // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Şanssız tur gelince ekran çok hızlı geçiyor, bir
+  // anda bir oyuncu veriyor geçiyor" — kök neden: istemcideki çark animasyonu+reveal ~3350ms
+  // sürüyor (bkz. views.js WHEEL_REVEAL_DELAY_MS = WHEEL_SPIN_DURATION_MS + 150) ama bu değer
+  // 2800ms'ydi — sunucu, istemcinin animasyonu GÖSTERMEYİ bitirmeden turu çözüp "Tur Sonucu"
+  // paneline geçiriyordu (round null olunca renderWheelRound yerine anında sonuç ekranı
+  // render ediliyor — bkz. app.js RESOLVED_EVENT_TYPES). Artık istemcinin reveal anından
+  // (3350ms) belirgin şekilde SONRA tetikleniyor — kullanıcı önce "⚡ ... sonuç uygulanıyor!"
+  // bandını bir süre görüyor, sonra sonuç paneline geçiyor.
+  WHEEL_AUTO_RESOLVE_DELAY_MS: Number(process.env.DRAFT_WHEEL_AUTO_RESOLVE_MS) || 4200,
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — "kaç kullanıcı oynayacağını lobide
   // sorma, kaç kişi gelirse gelsin" — host'a bir hedef sayı sorulmuyor, oda sadece bu sabit

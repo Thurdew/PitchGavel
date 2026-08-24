@@ -123,12 +123,24 @@ function pickMainAndLadder(slotType, takenIds, backupCount, ratingGap = BACKUP_R
     targets.push(backupCount === 1 ? topTarget : topTarget - (topTarget - floor) * (i / (backupCount - 1)));
   }
 
+  // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "2. ve 3. oyuncuyu aynı ratingde veriyor bazen,
+  // aralarında da fark olsun, rekabet artsın" — eskiden her basamak SADECE kendi hedef
+  // reytingine en yakın adayı arıyordu; sığ bir pozisyonda (ya da aynı reytingte birden fazla
+  // oyuncu olduğunda) iki farklı basamak birbirine çok yakın (hatta aynı) reytingli iki farklı
+  // oyuncuya düşebiliyordu. Artık her basamak, mümkünse bir ÖNCEKİ basamaktan KESİN daha düşük
+  // reytingli bir aday arasından seçiliyor — gerçek, azalan bir merdiven garantisi. Havuz buna
+  // izin vermiyorsa (aynı reytingte çok fazla oyuncu var / pozisyon çok sığ) elden gelenle
+  // (eski davranış) devam edilir, draft asla tıkanmaz.
   const backups = [];
+  let lastRating = main.rating;
   for (const target of targets) {
     if (rest.length === 0) break; // havuz tükendi — merdiven kısa kalır
-    const pick = pickClosestToTarget(rest, target, main.rating);
+    const strictlyLower = rest.filter((p) => p.rating < lastRating);
+    const searchPool = strictlyLower.length > 0 ? strictlyLower : rest;
+    const pick = pickClosestToTarget(searchPool, target, main.rating);
     backups.push(pick);
     rest = rest.filter((p) => p.id !== pick.id);
+    lastRating = pick.rating;
   }
   return { main, backups };
 }
@@ -167,11 +179,21 @@ function pickWheelRatingCandidates(slotType, takenIds, segment, poolKey = 'all')
   const inBand = all.filter((p) => p.rating >= segment.min && p.rating <= segment.max);
   if (inBand.length > 0) return { candidates: inBand, effectiveLabel: segment.label };
 
-  const idx = WHEEL_RATING_BANDS.indexOf(segment);
-  for (let i = idx + 1; i < WHEEL_RATING_BANDS.length; i++) {
-    const s = WHEEL_RATING_BANDS[i];
-    const pool = all.filter((p) => p.rating >= s.min && p.rating <= s.max);
-    if (pool.length > 0) return { candidates: pool, effectiveLabel: s.label };
+  // [DÜZELTİLDİ — BUG] `segment` buraya her zaman `buildWheelSegments`'in spread-copy'lediği
+  // (`{...s}`) bir nesne olarak geliyor — WHEEL_RATING_BANDS'teki orijinal nesneyle REFERANS
+  // olarak asla eşleşmiyordu, bu yüzden `indexOf` her zaman -1 dönüyordu ve döngü "bir sonraki
+  // ALT bant" yerine baştan (90+'tan) TÜM bantları tarıyordu — boş bir "70-74" bandı, bomboş
+  // olsa bile alakasız şekilde "90+" gibi çok daha YÜKSEK bir banda genişleyebiliyordu. Artık
+  // `label` alanına göre (katalogdaki tek benzersiz anahtar — bkz. WHEEL_SEGMENT_CATALOG notu)
+  // eşleştiriliyor; sentetik/bilinmeyen bir segmentse (idx=-1, ör. daha önce başka bir fallback'in
+  // ürettiği "havuz boş" segmenti) bant taramasına hiç girilmeden doğrudan tam fallback'e düşülür.
+  const idx = WHEEL_RATING_BANDS.findIndex((b) => b.label === segment.label);
+  if (idx !== -1) {
+    for (let i = idx + 1; i < WHEEL_RATING_BANDS.length; i++) {
+      const s = WHEEL_RATING_BANDS[i];
+      const pool = all.filter((p) => p.rating >= s.min && p.rating <= s.max);
+      if (pool.length > 0) return { candidates: pool, effectiveLabel: s.label };
+    }
   }
   // En alt banda kadar hiçbiri de dolu değilse (garip ama olası) pozisyondaki tüm kalanlarla devam.
   return { candidates: all, effectiveLabel: null };
