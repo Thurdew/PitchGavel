@@ -69,11 +69,17 @@ export function renderLobby({ state, actions }) {
   // "➕ Oda Kur" diyor, tekrar göstermeye gerek yok). (2) Draft Modu/Oyuncu Havuzu artık büyük
   // kart değil, dizilim ekranındaki formasyon seçiciyle AYNI kompakt "hap" (pill) düğmeler —
   // açıklama metni native tooltip'e (title) taşındı, ekranda ayrı bir satır kaplamıyor.
-  // [KULLANICI İSTEĞİ] "Kartlar boş duruyor, ilgi çekici değil" — küçük bir ok (hover'da beliren)
-  // ile birlikte tek bir yardımcı fonksiyondan üretiliyor (bkz. .lobby-mode-arrow CSS'i).
-  function lobbyModeCard(num, label, desc, onClick) {
-    return el('button', { class: 'lobby-mode-btn', onclick: onClick }, [
-      el('div', { class: 'lobby-mode-num' }, num),
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Lobi ekranı çok çok çok kötü" — "01"/"02" numaraları
+  // Oda Kur/Odaya Katıl'ın birbirini takip eden bir SIRA değil, birbirini DIŞLAYAN iki seçenek
+  // olduğu gerçeğiyle çelişiyordu (yanlış bir "önce bunu sonra onu yap" hissi veriyordu).
+  // Numaralar yerine artık markanın kendi motifi: 🔨 (PitchGavel'in "gavel"i — yeni bir açık
+  // arttırma AÇMAK) ve 🎫 (elindeki kodla girmek, bir bilet gibi). `big` bayrağı bu ekrandaki
+  // İKİ karta (bu sayfanın tek gerçek kararı) daha fazla görsel ağırlık veriyor — Nasıl Oynanır
+  // sayfasındaki kompakt 3'lü mod listesi (lobbyModeCardLink) aynı temel bileşeni küçük haliyle
+  // kullanmaya devam ediyor.
+  function lobbyModeCard(icon, label, desc, onClick, big) {
+    return el('button', { class: `lobby-mode-btn ${big ? 'big' : ''}`, onclick: onClick }, [
+      el('div', { class: 'lobby-mode-num' }, icon),
       el('div', { class: 'lobby-mode-body' }, [
         el('div', { class: 'lobby-mode-label-row' }, [
           el('div', { class: 'lobby-mode-label' }, label),
@@ -85,8 +91,8 @@ export function renderLobby({ state, actions }) {
   }
 
   const modePicker = ui.mode ? null : el('div', { class: 'lobby-mode-picker' }, [
-    lobbyModeCard('01', 'Oda Kur', 'Yeni bir oda aç, kodu rakibine gönder', () => selectMode('create')),
-    lobbyModeCard('02', 'Odaya Katıl', 'Rakibinden aldığın kodla gir', () => selectMode('join')),
+    lobbyModeCard('🔨', 'Oda Kur', 'Yeni bir açık arttırma başlat, kodu rakibine gönder', () => selectMode('create'), true),
+    lobbyModeCard('🎫', 'Odaya Katıl', 'Rakibinden aldığın kodla gir', () => selectMode('join'), true),
   ]);
 
   // Kompakt hap-düğme grubu — bkz. yukarıdaki not. Dizilim ekranındaki `.formation-pick`/
@@ -204,15 +210,13 @@ export function renderLobby({ state, actions }) {
     ]);
   }
 
-  // [KULLANICI İSTEĞİ] "Ekranın yarısından fazlası boş duruyor, daha güzel olsun, yazı
-  // ekleyebiliriz, bir tasarım olabilir" — geniş ekranda dar bir sütun ortada kalıp yanları boş
-  // bırakıyordu. Artık: (1) geniş ekranda hero metni SOLDA, Oda Kur/Katıl kartları SAĞDA yan
-  // yana (bkz. .lobby-hero-split) — dikey yerine yatay alan kullanılıyor. (2) Hero'nun altına
-  // oyunun ne sunduğunu özetleyen kısa bir özellik şeridi eklendi (bkz. .lobby-features) — hem
-  // bilgilendirici hem alan dolduruyor. (3) Arka planda gerçek player-card bileşeniyle (aynı
-  // helpers.js fonksiyonu, sadece dekoratif/etkileşimsiz) döndürülmüş, soluk iki kart — sayfanın
-  // geri kalanındaki "trading card" diliyle atmosfer kuruyor. Dar ekranda hepsi tek sütuna
-  // katlanıyor, dekoratif kartlar gizleniyor (bkz. CSS media query).
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Lobi ekranı çok çok çok kötü" — bkz. CSS'teki
+  // .lobby-hero-wide notu: solda-metin/sağda-dar-kart-sütunu düzeni terk edildi. Artık TEK bir
+  // ortalanmış, geniş sütun: başlık → İKİ BÜYÜK aksiyon kartı (bu ekranın tek gerçek kararı,
+  // artık sayfanın kenarına sıkışmış küçük bir yan panel değil) → özellik şeridi, hepsi AYNI
+  // genişliği tam kullanıyor. Dekoratif kartlar artık içerik sütununun dışına (sol/sağ kenarlara)
+  // taşıp gerçekten görünür bir opaklıkta (bkz. CSS) — metnin üstüne binip "hayalet" gibi
+  // durmuyorlar.
   const FEATURES = [
     ['LV', 'Canlı Açık Arttırma', 'Teklifler anlık, heyecan bitmiyor'],
     ['DB', '3500+ Oyuncu', '6 lig, gerçek piyasa verisiyle'],
@@ -233,16 +237,16 @@ export function renderLobby({ state, actions }) {
   decorB.classList.add('lobby-decor-card', 'b');
   const decor = el('div', { class: 'lobby-decor', 'aria-hidden': 'true' }, [decorA, decorB]);
 
-  const heroCol = el('div', { class: 'lobby-hero-col' }, [
+  const heroContent = el('div', { class: 'lobby-hero-content' }, [
     el('div', { class: 'lobby-hero-badge' }, 'CANLI AÇIK ARTTIRMA'),
     el('h1', { class: 'lobby-title' }, ['Kendi ', el('span', {}, '11'), '\'ini kur.']),
     el('p', { class: 'lobby-sub' }, 'Rakibinle canlı açık arttırmada kadro topla, formasyonunu seç, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla.'),
+    modePicker,
     featureStrip,
   ]);
-  const cardsCol = el('div', { class: 'lobby-cards-col' }, [modePicker]);
 
   return el('div', { class: 'lobby-shell' }, [
-    el('div', { class: 'lobby-hero-split' }, [decor, heroCol, cardsCol]),
+    el('div', { class: 'lobby-hero-wide' }, [decor, heroContent]),
   ]);
 }
 
@@ -342,109 +346,146 @@ function lobbyModeCardLink(actions, emoji, title, desc, page) {
 }
 
 // ============================== WAITING ROOM ==============================
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kişi gelirse gelsin, herkes hazır verdikten sonra
-// oda sahibi başlatsın" — sabit bir hedefe göre boş slot göstermek yerine, o an odada kim varsa
-// (2-8 kişi) sadece onlar listelenir. Herkes kendi "hazırım" oyunu verir; draftı fiilen
-// başlatan ayrı ve host'a özel bir buton (bkz. draftSockets.js `draft:start`).
-// [KULLANICI İSTEĞİ] "Oda/lobi ekranı düz bir kart — ana sayfadaki güçlü görsel kimlik burada
-// zayıflıyor. DESIGN.md'nin skorbord/yayın grafiği enerjisi sadece ana sayfada kalmış, oyunun
-// her ekranına henüz yayılmamış." — bu ekran eskiden iki düz `.panel` (kod + 3 satır muted metin,
-// sonra bir oyuncu listesi) idi, homepage'in "canlı yayın" enerjisinden (pulsing badge, diyagonal
-// etiketler, bilet motifi) hiçbirini taşımıyordu. Artık AYNI bileşenleri (yeni CSS icat etmeden)
-// yeniden kullanıyor: `.lobby-hero-badge` (homepage'teki pulsing "CANLI" rozeti), `.formation-badge`
-// (draft ekranındaki diyagonal-kesikli etiket — mod/havuz/kapasite artık muted metin değil,
-// gerçek bir "yayın grafiği" etiketi), ve `.player-slot.empty` (v1'de tanımlanmış ama hiç
-// kullanılmayan dashed "boş slot" stili — artık odada yer varken gerçekten bir amaca hizmet
-// ediyor, bkz. design.md "Boş/Yükleniyor Durumları").
+// Bekleme Odası v2 — "Yayın Kontrol Odası" düzeni.
+// [KULLANICI İSTEĞİ] "Lobi ekranı çok kötü, daha profesyonel olsun, çok basit ve yapay duruyor"
+// — v1 ortalanmış LED kod bloğu + tam genişlikte turuncu "KADRO AÇIKLANDI" bandı + emoji
+// rozetlerden oluşuyordu; ikisi de ekranın gerçek işini (odaya adam çağırmak + kimin hazır
+// olduğunu görmek) küçük bir köşeye sıkıştırıyordu. v2 asimetrik: solda odanın TÜM kontenjanını
+// gösteren 8 satırlık kadro kağıdı, sağda davet + hazırlık. Turuncu sadece kod, CTA ve kaptan
+// işaretinde. Stiller: styles.css "Bekleme Odası v2" bölümü (.wr-*), mobil ≤760px orada.
 export function renderWaitingRoom({ state, actions }) {
   const { room } = state;
   const votes = room.readyVotes || [];
   const iAmReady = votes.includes(state.clientId);
   const amIHost = room.hostClientId === state.clientId;
-  const allReady = room.players.length >= 2 && room.players.every((p) => p.connected)
-    && votes.length === room.players.length;
   const maxPlayers = room.maxPlayers || 8;
+  const filled = room.players.length;
+  const allReady = filled >= 2 && room.players.every((p) => p.connected) && votes.length === filled;
 
-  const modeBadge = room.draftMode === 'blind' ? '🙈 Kör Draft — teklifler gizli'
-    : room.draftMode === 'wheel' ? '🎡 Çark Modu — bütçe yok, ücretsiz seç'
-    : '⏱️ Canlı Açık Arttırma';
-  const poolBadge = room.playerPool === 'super-lig' ? '🇹🇷 Tek Lig — Süper Lig + Türk icon\'lar' : '🌍 Tüm Ligler';
+  const modeLabel = room.draftMode === 'blind' ? 'Kör draft'
+    : room.draftMode === 'wheel' ? 'Çark modu'
+    : 'Canlı açık arttırma';
+  const poolLabel = room.playerPool === 'super-lig' ? 'Süper Lig' : 'Tüm ligler';
 
-  return el('div', { class: 'view' }, [
-    el('div', { class: 'panel waiting-room-hero' }, [
-      el('div', { class: 'lobby-hero-badge' }, 'CANLI BEKLEME ODASI'),
-      el('h3', {}, 'Oda Kodu — rakibine/gruba gönder'),
-      el('div', { class: 'room-code-row' }, [
-        el('div', { class: 'room-code' }, room.code),
-        el('button', {
-          type: 'button', class: 'btn secondary copy-code-btn',
-          onclick: async () => {
-            try {
-              await navigator.clipboard.writeText(room.code);
-              toast('Oda kodu kopyalandı 📋');
-            } catch (e) {
-              toast('Kopyalanamadı — kodu elle seçip kopyalayabilirsin');
-            }
-          },
-        }, '📋 Kopyala'),
-      ]),
-      el('div', { class: 'room-info-badges' }, [
-        el('div', { class: 'formation-badge' }, modeBadge),
-        el('div', { class: 'formation-badge' }, poolBadge),
-        el('div', { class: 'formation-badge' }, `👥 En fazla ${maxPlayers} kişi`),
-      ]),
-    ]),
-    el('div', { class: 'panel' }, [
-      el('h3', {}, `Kadro Listesi (${room.players.length}/${maxPlayers})`),
-      el('div', { class: 'player-slots' }, [
-        ...room.players.map((p, i) => el('div', { class: 'player-slot' }, [
-          el('span', { class: 'player-slot-num' }, String(i + 1)),
-          el('span', { class: `dot ${p.connected ? 'on' : 'off'}` }),
-          el('span', { class: 'player-slot-name' }, [
-            p.name + (p.clientId === state.clientId ? ' (sen)' : ''),
-            p.clientId === room.hostClientId ? el('span', { class: 'host-badge' }, '👑 Kaptan') : null,
-          ]),
-          votes.includes(p.clientId) ? el('span', { class: 'status-pill done' }, 'Hazır') : null,
-        ])),
-        room.players.length < maxPlayers ? el('div', { class: 'player-slot empty' }, [
-          el('span', { class: 'player-slot-num' }, String(room.players.length + 1)),
-          el('span', { class: 'dot' }),
-          el('span', { class: 'player-slot-name' }, `Katılım bekleniyor... (${maxPlayers - room.players.length} yer daha var)`),
-        ]) : null,
-      ]),
-      el('button', {
-        class: `btn block ticket-btn ${iAmReady ? 'secondary' : ''}`,
-        style: 'margin-top:16px',
-        onclick: () => actions.toggleDraftReady(),
-      }, [
-        el('span', { class: 'ticket-btn-icon' }, iAmReady ? '⏳' : '✅'),
-        el('span', { class: 'ticket-btn-label' }, [
-          el('span', { class: 'ticket-btn-title' }, iAmReady ? 'Hazırsın' : 'Hazırım'),
-          iAmReady ? el('span', { class: 'ticket-btn-sub' }, 'geri çekmek için tıkla') : null,
+  const copyText = async (text, ok) => {
+    try { await navigator.clipboard.writeText(text); toast(ok); }
+    catch (e) { toast('Kopyalanamadı — elle seçip kopyalayabilirsin'); }
+  };
+  // [NOT] app.js'te oda kodunu URL'den okuyan bir yol YOK (bkz. app.js route()) — o yüzden
+  // "davet" bir deep link değil, paylaşıma hazır KISA BİR METİN: adres + kod. Deep link
+  // eklenirse (örn. ?oda=KOD) burayı tek satırda URL'e çevirebilirsin.
+  const inviteText = `PitchGavel'de oda kurdum — ${location.origin} adresine gir, oda kodu: ${room.code}`;
+
+  const metaCell = (k, v) => el('div', {}, [
+    el('div', { class: 'wr-meta-k' }, k),
+    el('div', { class: 'wr-meta-v' }, v),
+  ]);
+
+  // Kadro kağıdı: dolu satırlar + boş kontenjan satırları — oda kaç kişilik, bir bakışta.
+  const rows = [];
+  for (let i = 0; i < maxPlayers; i++) {
+    const p = room.players[i];
+    const isMe = p && p.clientId === state.clientId;
+    const isHost = p && p.clientId === room.hostClientId;
+    const isReady = p && votes.includes(p.clientId);
+    const offline = p && !p.connected;
+    const cls = ['wr-row', p ? 'taken' : '', isMe ? 'me' : '', isReady ? 'ready' : '', offline ? 'offline' : '']
+      .filter(Boolean).join(' ');
+    rows.push(el('div', { class: cls }, [
+      el('div', { class: 'wr-row-num' }, String(i + 1)),
+      el('div', { class: 'wr-row-who' }, [
+        el('div', { class: 'wr-avatar' }, p ? p.name.charAt(0).toUpperCase() : '–'),
+        el('div', { style: 'min-width:0' }, [
+          el('div', { class: 'wr-row-name' }, p ? p.name + (isMe ? ' (sen)' : '') : 'Boş'),
+          el('div', { class: 'wr-row-sub' }, p
+            ? (offline ? 'bağlantı yok' : isHost ? 'kaptan · bağlı' : 'bağlı')
+            : 'katılım bekleniyor'),
         ]),
       ]),
-      amIHost
-        ? (allReady
-          ? el('button', {
-              class: 'btn block ticket-btn start-ready',
-              style: 'margin-top:10px',
-              onclick: () => actions.startDraft(),
-            }, [
-              el('span', { class: 'ticket-btn-icon' }, '🚀'),
-              el('span', { class: 'ticket-btn-label' }, el('span', { class: 'ticket-btn-title' }, 'Draftı Başlat')),
-            ])
-          : el('div', { class: 'start-progress', style: 'margin-top:10px' }, [
-              el('div', { class: 'start-progress-row' }, [
-                el('span', {}, 'Başlamak için herkes hazır olmalı'),
-                el('span', { class: 'start-progress-count' }, `${votes.length}/${room.players.length}`),
-              ]),
-              el('div', { class: 'start-progress-bar' }, el('div', {
-                class: 'start-progress-fill',
-                style: `width:${(votes.length / room.players.length) * 100}%`,
-              })),
-            ]))
-        : el('p', { class: 'muted', style: 'margin-top:12px;text-align:center' },
-            allReady ? 'Herkes hazır — oda sahibinin başlatması bekleniyor...' : `Hazır: ${votes.length}/${room.players.length}`),
+      el('div', { class: 'wr-row-tag' }, p
+        ? (offline ? 'Kopuk' : isReady ? 'Hazır' : 'Bekliyor')
+        : 'Boş'),
+    ]));
+  }
+
+  return el('div', { class: 'view wr' }, [
+    el('div', { class: 'wr-head' }, [
+      el('div', { class: 'wr-head-left' }, [
+        el('div', { class: 'wr-live' }, 'Oda canlı'),
+        el('h1', { class: 'wr-title' }, 'Bekleme Odası'),
+        el('div', { class: 'wr-title-sub' }, 'Kadro tamamlanınca kaptan draftı başlatır.'),
+      ]),
+      el('div', { class: 'wr-meta' }, [
+        metaCell('Draft', modeLabel),
+        metaCell('Havuz', poolLabel),
+        metaCell('Kontenjan', `2–${maxPlayers} kişi`),
+      ]),
+    ]),
+
+    el('div', { class: 'wr-grid' }, [
+      el('div', { class: 'wr-card wr-sheet' }, [
+        el('div', { class: 'wr-sheet-head' }, [
+          el('div', { class: 'wr-sheet-title' }, 'Kadro Kağıdı'),
+          el('div', { class: 'wr-sheet-count' }, [
+            el('b', {}, String(filled)),
+            el('span', {}, `/ ${maxPlayers} oyuncu · ${maxPlayers - filled} yer boş`),
+          ]),
+        ]),
+        ...rows,
+      ]),
+
+      el('div', { class: 'wr-aside' }, [
+        el('div', { class: 'wr-card pad wr-invite' }, [
+          el('div', { class: 'wr-label' }, 'Kapı kodu'),
+          el('div', { class: 'wr-code-box' }, [
+            el('span', { class: 'wr-code' }, room.code),
+            el('button', {
+              type: 'button', class: 'wr-code-copy', title: 'Kodu kopyala',
+              onclick: () => copyText(room.code, 'Oda kodu kopyalandı'),
+            }, '⧉'),
+          ]),
+          el('div', { class: 'wr-invite-row' }, [
+            el('button', {
+              type: 'button', class: 'btn',
+              onclick: () => copyText(room.code, 'Oda kodu kopyalandı'),
+            }, 'Kodu kopyala'),
+            el('button', {
+              type: 'button', class: 'btn secondary',
+              onclick: () => copyText(inviteText, 'Davet metni kopyalandı'),
+            }, 'Daveti kopyala'),
+          ]),
+          el('div', { class: 'wr-hint' }, 'Arkadaşların ana sayfadan "Odaya Katıl" ile bu kodu girer.'),
+        ]),
+
+        el('div', { class: 'wr-card pad wr-ready' }, [
+          el('div', { class: 'wr-label', style: 'margin-bottom:12px' }, 'Hazırlık'),
+          el('div', { class: 'wr-ready-row' }, [
+            el('span', {}, 'Hazır oyuncu'),
+            el('b', {}, [String(votes.length), el('i', {}, `/${filled}`)]),
+          ]),
+          el('div', { class: 'wr-bar' }, el('div', {
+            style: `width:${filled ? (votes.length / filled) * 100 : 0}%`,
+          })),
+          el('button', {
+            type: 'button', class: `wr-cta ${iAmReady ? 'on' : ''}`,
+            onclick: () => actions.toggleDraftReady(),
+          }, iAmReady ? 'Hazırsın' : 'Hazırım'),
+          el('div', { class: 'wr-hint' }, iAmReady
+            ? 'Geri çekmek için tekrar tıkla.'
+            : filled < 2
+              ? `En az 2 oyuncu gerekiyor — ${maxPlayers} kişiye kadar katılabilir.`
+              : amIHost
+                ? 'Herkes hazır olduğunda draftı sen başlatacaksın.'
+                : 'Herkes hazır olduğunda kaptan draftı başlatır.'),
+          amIHost
+            ? el('button', {
+                type: 'button', class: `wr-cta start ${allReady ? '' : 'wait'}`,
+                disabled: allReady ? null : '',
+                onclick: () => { if (allReady) actions.startDraft(); },
+              }, allReady ? 'Draftı Başlat' : 'Herkes hazır değil')
+            : null,
+        ]),
+      ]),
     ]),
   ]);
 }
@@ -1915,7 +1956,87 @@ export function renderMatchPlayback({ state, actions }) {
     playbackTimer = setInterval(tick, SPEED_MS_PER_MIN[pb.speed]);
   }
 
+  // [KULLANICI İSTEĞİ] "Simülasyon sırasında altta bir yerlerde canlı puan durumu gözükmesini
+  // istiyorum." — sadece pb.order'da ŞU ANA KADAR TAMAMEN oynatılmış maçlar (pb.pos'tan ÖNCEKİ
+  // adımlar — şu an izlenen maç henüz bitmediği için dahil edilmiyor, aksi halde onun sonucunu
+  // anlatım bitmeden açık ederdi) hesaba katılıyor. pb.pos her ilerlediğinde (bir maç bitip
+  // sıradakine geçildiğinde) zaten actions.route() çağrılıyor (bkz. yukarıdaki setTimeout), bu
+  // yüzden tablo otomatik olarak canlı güncelleniyor — ayrı bir yeniden çizim mekanizması
+  // gerekmedi. N=2 odada (tek eşleşme) ilk maç bitene kadar tablo boş bir bekleme mesajı
+  // gösteriyor, ikinci maç bitince renderMatch'teki NİHAİ tabloyla birebir örtüşüyor.
+  const completedSteps = pb.order.slice(0, pb.pos);
+  root.appendChild(el('div', { class: 'panel' }, completedSteps.length === 0
+    ? [
+        el('h3', {}, 'Canlı Puan Durumu'),
+        el('p', { class: 'muted', style: 'text-align:center;margin:0' }, 'İlk maç bitince tablo burada güncellenecek.'),
+      ]
+    : [
+        el('h3', {}, 'Canlı Puan Durumu'),
+        el('div', { style: 'overflow-x:auto' }, standingsTable(computeLiveStandings(state.room.players, r.fixtures, completedSteps), state)),
+      ]));
+
   return root;
+}
+
+// [KULLANICI İSTEĞİ] "Simülasyon sırasında canlı puan durumu" — henüz oynanmamış maçlar hariç,
+// SADECE tamamlanmış adımlardan (bkz. renderMatchPlayback completedSteps) bir puan tablosu
+// üretir. orchestrate.js'teki sunucu mantığının basitleştirilmiş bir istemci-tarafı kopyası —
+// nihai/kesin tablo HER ZAMAN sunucudan gelir (r.standings), bu sadece oynanış SIRASINDA
+// gösterilen geçici/canlı bir özet; bu yüzden sunucudaki nadir son-çare eşitlik bozucuları
+// (deplasman golü/fair-play/kura) burada tekrarlanmıyor — puan/averaj/atılan gol yeterli.
+function computeLiveStandings(players, fixtures, completedSteps) {
+  const points = {}, wins = {}, draws = {}, losses = {}, goalsFor = {}, goalsAgainst = {};
+  for (const p of players) {
+    points[p.clientId] = 0; wins[p.clientId] = 0; draws[p.clientId] = 0; losses[p.clientId] = 0;
+    goalsFor[p.clientId] = 0; goalsAgainst[p.clientId] = 0;
+  }
+  for (const step of completedSteps) {
+    const fixture = fixtures[step.fixtureIndex];
+    const m = step.matchIndex === 0 ? fixture.match1 : fixture.match2;
+    points[m.homeClientId] += m.pointsHome; points[m.awayClientId] += m.pointsAway;
+    goalsFor[m.homeClientId] += m.goalsHome; goalsAgainst[m.homeClientId] += m.goalsAway;
+    goalsFor[m.awayClientId] += m.goalsAway; goalsAgainst[m.awayClientId] += m.goalsHome;
+    if (m.pointsHome === 3) { wins[m.homeClientId] += 1; losses[m.awayClientId] += 1; }
+    else if (m.pointsAway === 3) { wins[m.awayClientId] += 1; losses[m.homeClientId] += 1; }
+    else { draws[m.homeClientId] += 1; draws[m.awayClientId] += 1; }
+  }
+  return players.map((p) => ({
+    clientId: p.clientId,
+    name: p.name,
+    played: wins[p.clientId] + draws[p.clientId] + losses[p.clientId],
+    wins: wins[p.clientId],
+    draws: draws[p.clientId],
+    losses: losses[p.clientId],
+    points: points[p.clientId],
+    goalsFor: goalsFor[p.clientId],
+    goalsAgainst: goalsAgainst[p.clientId],
+    goalDiff: goalsFor[p.clientId] - goalsAgainst[p.clientId],
+  })).sort((a, b) => b.points - a.points || b.goalDiff - a.goalDiff || b.goalsFor - a.goalsFor);
+}
+
+// Puan tablosu <table>'ı — hem nihai sonuç ekranındaki (renderMatch) gerçek/kesin tablo hem de
+// anlatım sırasındaki (renderMatchPlayback) canlı/geçici tablo AYNI görünümü paylaşıyor.
+function standingsTable(standings, state) {
+  return el('table', { class: 'standings-table' }, [
+    el('thead', {}, el('tr', {}, [
+      el('th', {}, '#'), el('th', {}, 'Oyuncu'), el('th', {}, 'O'), el('th', {}, 'G'), el('th', {}, 'B'), el('th', {}, 'M'),
+      el('th', {}, 'A'), el('th', {}, 'Y'), el('th', {}, 'AV'), el('th', {}, 'P'),
+    ])),
+    el('tbody', {}, standings.map((s, i) => el('tr', {
+      class: [s.clientId === state.clientId ? 'me' : '', i === 0 ? 'winner' : ''].filter(Boolean).join(' ') || undefined,
+    }, [
+      el('td', { class: 'rank-cell' }, String(i + 1)),
+      el('td', {}, s.name + (s.clientId === state.clientId ? ' (sen)' : '')),
+      el('td', {}, String(s.played)),
+      el('td', {}, String(s.wins)),
+      el('td', {}, String(s.draws)),
+      el('td', {}, String(s.losses)),
+      el('td', {}, String(s.goalsFor)),
+      el('td', {}, String(s.goalsAgainst)),
+      el('td', {}, (s.goalDiff > 0 ? '+' : '') + s.goalDiff),
+      el('td', { style: 'font-weight:800' }, String(s.points)),
+    ]))),
+  ]);
 }
 
 // ============================== MATCH ==============================
@@ -1949,28 +2070,7 @@ export function renderMatch({ state, actions }) {
   // standings.wins/draws/losses/played), sadece Puan/Averaj değil.
   root.appendChild(el('div', { class: 'panel' }, [
     el('h3', {}, 'Puan Tablosu'),
-    el('div', { style: 'overflow-x:auto' }, [
-      el('table', { class: 'standings-table' }, [
-        el('thead', {}, el('tr', {}, [
-          el('th', {}, '#'), el('th', {}, 'Oyuncu'), el('th', {}, 'O'), el('th', {}, 'G'), el('th', {}, 'B'), el('th', {}, 'M'),
-          el('th', {}, 'A'), el('th', {}, 'Y'), el('th', {}, 'AV'), el('th', {}, 'P'),
-        ])),
-        el('tbody', {}, r.standings.map((s, i) => el('tr', {
-          class: [s.clientId === state.clientId ? 'me' : '', i === 0 ? 'winner' : ''].filter(Boolean).join(' ') || undefined,
-        }, [
-          el('td', { class: 'rank-cell' }, String(i + 1)),
-          el('td', {}, s.name + (s.clientId === state.clientId ? ' (sen)' : '')),
-          el('td', {}, String(s.played)),
-          el('td', {}, String(s.wins)),
-          el('td', {}, String(s.draws)),
-          el('td', {}, String(s.losses)),
-          el('td', {}, String(s.goalsFor)),
-          el('td', {}, String(s.goalsAgainst)),
-          el('td', {}, (s.goalDiff > 0 ? '+' : '') + s.goalDiff),
-          el('td', { style: 'font-weight:800' }, String(s.points)),
-        ]))),
-      ]),
-    ]),
+    el('div', { style: 'overflow-x:auto' }, standingsTable(r.standings, state)),
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Puan/averaj/atılan gol de eşitse ek bir istatistik
     // kriteri kullanılsın" — sıralama mantığı şeffaf olsun diye (bkz. claude.md "Puan Tablosu
     // 3-0 sorusu") kısa bir açıklama satırı.
