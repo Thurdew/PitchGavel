@@ -228,6 +228,22 @@ function pickWheelFieldCandidates(slotType, takenIds, poolKey, field, value) {
 // bkz. RoomManager.createRoom) o SABİT liste aynen kullanılır — istediği kadar iyi/kötü/karışık,
 // pool zorunluluğu YOK. Host hiç işaretlemediyse (customLabels boş/undefined) eski
 // dengeli-rastgele (her pooldan WHEEL_POOL_PICK_COUNT) davranış DEĞİŞMEDEN sürer.
+// [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Çarktaki şeyler seçildikten sonra homojen
+// dağılmıyor, yeşiller yan yana geliyor, kırmızılar bir araya" — kök neden: hem özelleştirilmiş
+// hem varsayılan (dengeli-rastgele) yolda dilimler havuz sırasına göre (önce TÜM 'iyi'ler, sonra
+// TÜM 'orta'lar, sonra TÜM 'kötü'ler) ardışık ekleniyordu, son bir karıştırma hiç yapılmıyordu —
+// bu yüzden aynı renkteki (havuzdaki) dilimler çarkın üzerinde hep yan yana kümeleniyordu. Artık
+// döndürülmeden önce TÜM dizi (hangi yoldan geldiği fark etmeksizin) Fisher-Yates ile karıştırılıp
+// havuzlar birbirine karışıyor.
+function shuffleSegments(list) {
+  const arr = [...list];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function buildWheelSegments(customLabels) {
   if (Array.isArray(customLabels) && customLabels.length > 0) {
     const catalog = [...WHEEL_RATING_BANDS, ...WHEEL_SPECIAL_SEGMENTS];
@@ -235,7 +251,7 @@ function buildWheelSegments(customLabels) {
       .map((label) => catalog.find((s) => s.label === label))
       .filter(Boolean)
       .map((s) => ({ ...s }));
-    if (picked.length > 0) return picked;
+    if (picked.length > 0) return shuffleSegments(picked);
   }
 
   const pools = { iyi: [], orta: [], kötü: [] };
@@ -248,7 +264,7 @@ function buildWheelSegments(customLabels) {
     const take = shuffled.slice(0, Math.min(WHEEL_POOL_PICK_COUNT, shuffled.length));
     picked.push(...take.map((s) => ({ ...s })));
   }
-  return picked;
+  return shuffleSegments(picked);
 }
 
 /** Ağırlıklı rastgele bir segment seçer — sunucu tarafında otoriter "çark çevirme". `segments`

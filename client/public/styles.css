@@ -217,6 +217,12 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   letter-spacing: 1.6px; font-weight: 600; text-transform: uppercase;
 }
 .panel h3::before { content: '▎'; color: var(--accent); margin-right: 6px; }
+/* [KULLANICI İSTEĞİ] "Draft sırasında ekranda çok fazla gösterilen şey oluyor, kalabalık oluyor
+   — isteğe bağlı açılıp kapanabilse güzel olur." — bkz. views.js renderDraft "Kadrolar" paneli
+   (artık <details>/<summary>) — .panel h3 ile aynı kondanse/uppercase görünümü paylaşıyor. */
+.panel > summary { cursor: pointer; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);
+  letter-spacing: 1.6px; font-weight: 600; text-transform: uppercase; list-style: revert; }
+.panel > summary::marker { color: var(--accent); }
 
 /* ---------- Lobby hero ---------- */
 /* [KULLANICI İSTEĞİ] "Yukarıda kalmış, ortala" — sayfa `.app`in üst dolgusuna yapışıp kalıyordu,

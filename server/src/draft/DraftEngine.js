@@ -965,13 +965,19 @@ class DraftEngine {
     const opponents = room.players.filter((p) => p.clientId !== round.clientId);
     const eligible = giver.squad.filter((entry) => opponents.some((o) => (o.slotsNeeded[entry.slot] || 0) > 0));
     if (eligible.length === 0) {
-      // Kimse ihtiyaç duymuyor (ya da kadro boş) — turu boşa harcamamak için nötr bir reyting
-      // bandı seçim ekranına düşülür (bkz. resolveSpin'deki fallback deseniyle aynı yaklaşım).
-      round.currentSpin = { kind: 'rating', label: '😱 En İyisini Ver (uygun alıcı yok — havuzdan seç)', min: 1, max: 99 };
-      round.phase = 'awaiting_pick';
+      // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "İlk turda 'en iyisini ver' çıktı ama kadromda
+      // henüz oyuncu yoktu, sistem bana o mevkide istediğim oyuncuyu seçtirdi" — kök neden: kimse
+      // ihtiyaç duymuyorsa (ya da kadro boşsa) eskiden sınırsız (1-99, dilediğin oyuncu) bir
+      // seçim ekranına düşülüyordu — bu, KÖTÜ bir segmenti fiilen en iyi olası sonuçlardan birine
+      // çeviriyordu. `steal` segmenti aynı sınıftaki sorunu zaten `respin`'e (turu kaybetmeden
+      // aynı kişi/pozisyon için TAZE bir çark daha çevirir) düşürerek çözmüştü — `give_best` de
+      // artık AYNI mekanizmayı kullanıyor, ödül sızıntısı kalmıyor.
+      round.currentSpin = null;
+      round.revealValue = null;
+      round.phase = 'awaiting_spin';
       round.deadline = Date.now() + WHEEL_PICK_DURATION_SECONDS * 1000;
       clearTimeout(round.timer);
-      round.timer = setTimeout(() => this.autoPickWheel(room), WHEEL_PICK_DURATION_SECONDS * 1000);
+      round.timer = setTimeout(() => this.autoSpinWheel(room), WHEEL_PICK_DURATION_SECONDS * 1000);
       this.emitDraft(room);
       return;
     }

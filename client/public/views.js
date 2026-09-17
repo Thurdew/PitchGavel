@@ -534,6 +534,27 @@ function prepWheelCatalog(state) {
   ]);
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kör draft moduna çark özelliği ekledik (zaten Canlı modda
+// da aktif — bkz. yukarıdaki not), o çark normal çevrilsin, çark gözüksün, üzerinde neler
+// gelebileceği yazsın, kullanıcı çevirirken diğer kullanıcılar izleyebilsin." — Hazırlık Çarkı
+// sunucuda ATOMİK/senkron çözülüyor (bkz. DraftEngine.spinPrepWheel — sonuç tek bir
+// `prepWheel:resolved` broadcast'iyle geliyor, Çark Modu'ndaki gibi iki fazlı bir round state'i
+// YOK). Çark Modu'nun kullandığı numara burada da uygulanıyor: sonuç aslında anında biliniyor
+// ama istemci bilerek `PREP_WHEEL_SPIN_HOLD_MS` kadar gizleyip önce döndürme animasyonunu
+// oynatıyor. Broadcast TÜM istemcilere (yaklaşık) aynı anda ulaştığı için herkes aynı anda aynı
+// animasyonu (aynı hedef dilime doğru) izliyor (bkz. app.js `prepWheel:resolved` handler'ı —
+// `state.prepWheelSpin`'i dolduran taraf). Sunucu bu arada sırayı zaten ilerletmiş olsa bile
+// (room.prepWheel.cursor güncel), animasyon bitene kadar BURADA o TURUN görünümü gösterilmeye
+// devam ediyor — aksi halde animasyon tamamlanmadan sıradaki kişinin turu görünürdü.
+const prepWheelSpinAnimated = new Map(); // spinKey -> final rotation (deg) — wheelSpinAnimated ile AYNI desen, ayrı isim uzayı
+const prepWheelSpinScheduled = new Set(); // spinKey -> reveal zamanlayıcısı zaten kuruldu mu
+
+function prepWheelSegmentsFor(state) {
+  const catalog = state.config?.PREP_WHEEL_SEGMENTS || [];
+  const isBlind = state.room?.draftMode === 'blind';
+  return catalog.filter((s) => isBlind || s.kind !== 'spy');
+}
+
 export function renderPrepWheel({ state, actions }) {
   const { room } = state;
   const pw = room.prepWheel;
@@ -551,7 +572,38 @@ export function renderPrepWheel({ state, actions }) {
   ]));
   root.appendChild(prepWheelCatalog(state));
 
-  clearInterval(timerInterval);
+  clearInterval(timerInterval); // önceki render'dan kalan geri sayım (varsa) burada kesiliyor
+
+  const spin = state.prepWheelSpin;
+  const spinElapsed = spin ? Date.now() - spin.startedAt : Infinity;
+  const PREP_WHEEL_SPIN_HOLD_MS = WHEEL_SPIN_DURATION_MS + 400;
+  const spinActive = !!spin && spinElapsed < PREP_WHEEL_SPIN_HOLD_MS;
+  if (spin && !spinActive) state.prepWheelSpin = null;
+
+  if (spinActive) {
+    const spinnerName = (room.players.find((p) => p.clientId === spin.clientId) || {}).name || '?';
+    const isMine = spin.clientId === state.clientId;
+    const revealReady = spinElapsed >= WHEEL_SPIN_DURATION_MS;
+    const spinKey = `prep-${spin.clientId}-${spin.startedAt}`;
+    const geo = wheelGeometry(prepWheelSegmentsFor(state));
+    const disk = buildWheelDiskEl(geo, spinKey, spin.perk.label, prepWheelSpinAnimated);
+    const stage = el('div', {
+      class: `wheel-stage ${!revealReady ? 'spinning' : ''}`,
+    }, [el('div', { class: `wheel-pointer ${revealReady ? 'landed' : ''}` }), disk]);
+
+    if (!prepWheelSpinScheduled.has(spinKey)) {
+      prepWheelSpinScheduled.add(spinKey);
+      setTimeout(() => actions.route(), PREP_WHEEL_SPIN_HOLD_MS - spinElapsed + 30);
+    }
+
+    root.appendChild(el('div', { class: 'panel' }, [
+      el('div', { class: `wheel-turn-banner ${isMine ? 'mine' : ''}` },
+        !revealReady ? `🎡 ${spinnerName}${isMine ? ' (sen)' : ''} çeviriyor...` : `🎯 ${spin.perk.label} çıktı!`),
+      stage,
+    ]));
+    return root; // animasyon bitene kadar aşağıdaki normal tur/sıra ekranı hiç gösterilmiyor
+  }
+
   const timerLabel = el('div', { class: 'timer-label' }, '—');
   const timerFill = el('div', { class: 'timer-fill', style: 'width:100%' });
   const timerWrap = el('div', { class: 'timer-wrap' }, [el('div', { class: 'timer-bar' }, timerFill), timerLabel]);
@@ -751,9 +803,12 @@ export function renderDraft({ state, actions }) {
     root.appendChild(el('div', { class: 'warning-banner' }, '⏸ Draft duraklatıldı — devam etmek için taraflardan biri "Devam Et"e basmalı.'));
   }
 
+  // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Çark Modunda kullanıcıların parası gözüküyor, o
+  // modda para hiç kullanılmıyor" — Çark Modu'nda bütçe hiç değişmiyor (bkz. claude.md "Çark
+  // Modu" — tamamen ücretsiz), bu yüzden gösterilmesi kafa karıştırıcıydı.
   root.appendChild(el('div', { class: 'budget-row' }, d.players.map((p) => el('div', { class: 'budget-card' }, [
     el('div', { class: 'name' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
-    el('div', { class: 'budget' }, fmtMoney(p.budget)),
+    isWheelMode ? null : el('div', { class: 'budget' }, fmtMoney(p.budget)),
     el('div', { class: 'slots' }, `${11 - p.remainingSlots}/11 dolduruldu`),
   ]))));
 
@@ -914,10 +969,20 @@ export function renderDraft({ state, actions }) {
       // (roundKey) eşleşiyor — app.js'teki genel yakala/geri-yükle mekanizması artık odaktan
       // BAĞIMSIZ olarak `.value`'yu da koruyor, YENİ bir tur başladığında (key değiştiğinde)
       // ise doğal olarak sıfırlanıyor.
+      // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Teklif yazarken imleç sayının başına atıyor" —
+      // kök neden: `type="number"` input'larda `setSelectionRange` çoğu tarayıcıda hata fırlatıyor
+      // (app.js restoreFocus bunu sessizce yutuyordu) — değer korunsa bile imleç konumu HİÇBİR
+      // ZAMAN korunamıyordu. `type="text"` + `inputmode="numeric"` ile setSelectionRange gerçekten
+      // çalışıyor; rakam-dışı girişi engellemek için oninput'ta manuel filtreleniyor.
       const bidInput = el('input', {
-        type: 'number', min: String(minAmount), max: String(cap), value: String(Math.min(Math.max(cap, minAmount), minAmount)),
+        type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
+        min: String(minAmount), max: String(cap), value: String(Math.min(Math.max(cap, minAmount), minAmount)),
         disabled: d.paused ? 'disabled' : undefined,
         'data-focus-key': `bid-input-${roundKey}`,
+        oninput: (e) => {
+          const digits = e.target.value.replace(/[^0-9]/g, '');
+          if (digits !== e.target.value) e.target.value = digits;
+        },
       });
 
       const submittedIds = round.submittedClientIds || [];
@@ -972,10 +1037,17 @@ export function renderDraft({ state, actions }) {
       // sessizce siliniyordu. Aynı çözüm: data-focus-key round'a (bidRoundKey) bağlı, app.js'teki
       // genel mekanizma değeri odaktan bağımsız koruyor.
       const bidRoundKey = `${round.main.id}@${round.deadline}`;
+      // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Teklif yazarken imleç sayının başına atıyor" —
+      // bkz. yukarıdaki kör draft teklif input'undaki aynı düzeltme notu.
       const bidInput = el('input', {
-        type: 'number', min: String(minNext), max: String(cap), value: String(Math.min(cap, minNext)),
+        type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
+        min: String(minNext), max: String(cap), value: String(Math.min(cap, minNext)),
         disabled: d.paused ? 'disabled' : undefined,
         'data-focus-key': `bid-input-${bidRoundKey}`,
+        oninput: (e) => {
+          const digits = e.target.value.replace(/[^0-9]/g, '');
+          if (digits !== e.target.value) e.target.value = digits;
+        },
       });
 
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Diğer kullanıcıların ne kadar teklif verdiğini
@@ -1020,8 +1092,19 @@ export function renderDraft({ state, actions }) {
 
   root.appendChild(roundPanel);
 
-  root.appendChild(el('div', { class: 'panel' }, [
-    el('h3', {}, 'Kadrolar'),
+  // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Kör draftta draft sırasında ekranda çok fazla
+  // gösterilen şey oluyor, kalabalık oluyor — isteğe bağlı açılıp kapanabilse güzel olur." —
+  // odadaki HERKESİN 11'lik kadrosunu her zaman açık göstermek yerine katlanabilir bir panele
+  // alındı (prep çark kataloğundaki `<details>` deseniyle aynı). Açık/kapalı tercihi
+  // `state.draftUi`'de tutuluyor ki route() her socket broadcast'inde DOM'u sıfırdan kursa bile
+  // (draft sırasında bu çok sık olur) kullanıcının seçimi bir sonraki broadcast'te kaybolmasın.
+  if (!state.draftUi) state.draftUi = { squadsOpen: false };
+  root.appendChild(el('details', {
+    class: 'panel',
+    open: state.draftUi.squadsOpen ? '' : undefined,
+    ontoggle: (e) => { state.draftUi.squadsOpen = e.target.open; },
+  }, [
+    el('summary', {}, 'Kadrolar'),
     ...d.players.map((p) => el('div', { style: 'margin-bottom:14px' }, [
       el('div', { style: 'font-weight:700;margin-bottom:6px' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
       el('div', { class: 'squad-grid' }, p.squad.map((s) => squadChip(s))),
@@ -1037,6 +1120,51 @@ export function renderDraft({ state, actions }) {
 // gizli kalır, sonra o segmente uygun bir seçim ekranı (ya da özel aksiyonlarda otomatik sonuç)
 // açılır. Diğer katılımcılar da aynı anda AYNI çark animasyonunu/reveal zamanlamasını görür
 // (round zaten broadcast edildiği için).
+// [KULLANICI İSTEĞİ — HAZIRLIK ÇARKI "GÖRSEL ÇARK"] Bu, çark disk'inin (conic-gradient dilimler +
+// yay genişliğine göre ölçeklenen etiketler + döndürme transform'u) ORTAK inşa mantığı — Çark
+// Modu'ndaki `renderWheelRound` VE Hazırlık Çarkı'ndaki (`renderPrepWheel`) spin animasyonu
+// TARAFINDAN paylaşılır. `animMap` çağıranın kendi spinKey->açı önbelleği (Çark Modu ve Hazırlık
+// Çarkı ayrı Map kullanır — spinKey isim uzayları çakışmasın diye), `targetLabel` null ise disk
+// hiç dönmeden (0deg) durur.
+function buildWheelDiskEl(geo, spinKey, targetLabel, animMap) {
+  const disk = el('div', { class: 'wheel-disk' });
+  disk.style.background = `conic-gradient(${geo.map((s) => `${s.color} ${s.startPct}% ${s.endPct}%`).join(', ')})`;
+  for (const s of geo) {
+    const angleDeg = s.endDeg - s.startDeg;
+    const arcWidth = 2 * LABEL_RADIUS * Math.sin((angleDeg / 2) * (Math.PI / 180));
+    const labelWidth = Math.max(30, Math.min(70, Math.round(arcWidth * 0.86)));
+    const fontSize = labelWidth < 38 ? 9 : labelWidth < 50 ? 10 : 11.5;
+    const displayLabel = s.label.replace(/^\p{Extended_Pictographic}️?\s*/u, '');
+    disk.appendChild(el('div', {
+      class: 'wheel-slice-label',
+      style: `transform: rotate(${s.centerDeg}deg) translateY(-${LABEL_RADIUS}px) rotate(${-(s.centerDeg + (animMap.get(spinKey) || 0))}deg); width:${labelWidth}px; margin-left:${-labelWidth / 2}px; font-size:${fontSize}px;`,
+    }, displayLabel));
+  }
+
+  if (targetLabel) {
+    let finalDeg = animMap.get(spinKey);
+    if (finalDeg == null) {
+      finalDeg = wheelRotationFor(geo, targetLabel);
+      animMap.set(spinKey, finalDeg);
+      disk.style.transition = 'none';
+      disk.style.transform = 'rotate(0deg)';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          disk.style.transition = `transform ${WHEEL_SPIN_DURATION_MS}ms cubic-bezier(0.14, 0.68, 0.16, 1)`;
+          disk.style.transform = `rotate(${finalDeg}deg)`;
+        });
+      });
+    } else {
+      disk.style.transition = 'none';
+      disk.style.transform = `rotate(${finalDeg}deg)`;
+    }
+  } else {
+    disk.style.transition = 'none';
+    disk.style.transform = 'rotate(0deg)';
+  }
+  return disk;
+}
+
 function renderWheelRound({ state, actions, round, paused }) {
   const wrap = el('div', { class: 'wheel-round' });
   const nameOf = (id) => (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
@@ -1072,52 +1200,13 @@ function renderWheelRound({ state, actions, round, paused }) {
   }
   wrap.appendChild(el('div', { class: `wheel-turn-banner ${myTurn ? 'mine' : ''}` }, bannerText));
 
-  const disk = el('div', { class: 'wheel-disk' });
-  disk.style.background = `conic-gradient(${geo.map((s) => `${s.color} ${s.startPct}% ${s.endPct}%`).join(', ')})`;
   // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Çarktaki yazılar güzel gözükmüyor" — kök neden:
   // her dilime SABİT 64px'lik bir etiket kutusu veriliyordu, ama ağırlıklı çark yüzünden dilimler
   // eşit genişlikte DEĞİL (bkz. gameConfig.js WHEEL_RATING_BANDS/WHEEL_SPECIAL_SEGMENTS weight
-  // farkları) — dar bir dilime uzun bir etiket ("💀 Şanssız Tur", "🏳️ Milliyet Piyangosu") denk
-  // gelince metin komşu dilime taşıyordu. Artık her etiketin genişliği/font boyutu KENDİ diliminin
-  // gerçek yay genişliğine göre hesaplanıyor; ayrıca emoji önekini (banner/toast'ta zaten var, bkz.
-  // renderWheelRound bannerText) çarkın ÜZERİNDE göstermiyoruz — dar dilimlerde en kıymetli alanı
-  // asıl kelimeye ayırmak için.
-  for (const s of geo) {
-    const angleDeg = s.endDeg - s.startDeg;
-    const arcWidth = 2 * LABEL_RADIUS * Math.sin((angleDeg / 2) * (Math.PI / 180));
-    const labelWidth = Math.max(30, Math.min(70, Math.round(arcWidth * 0.86)));
-    const fontSize = labelWidth < 38 ? 9 : labelWidth < 50 ? 10 : 11.5;
-    const displayLabel = s.label.replace(/^\p{Extended_Pictographic}️?\s*/u, '');
-    disk.appendChild(el('div', {
-      class: 'wheel-slice-label',
-      style: `transform: rotate(${s.centerDeg}deg) translateY(-${LABEL_RADIUS}px) rotate(${-(s.centerDeg + (wheelSpinAnimated.get(spinKey) || 0))}deg); width:${labelWidth}px; margin-left:${-labelWidth / 2}px; font-size:${fontSize}px;`,
-    }, displayLabel));
-  }
-
-  if (round.currentSpin) {
-    let finalDeg = wheelSpinAnimated.get(spinKey);
-    if (finalDeg == null) {
-      // Bu spin için İLK render — animasyonu şimdi başlat (0'dan hedef açıya, bkz. yorum
-      // yukarıda). İki iç içe rAF: tarayıcının "transition:none + rotate(0)" durumunu gerçekten
-      // boyaması için (aksi halde 0'dan başlamadan direkt hedefe atlayabiliyor).
-      finalDeg = wheelRotationFor(geo, round.currentSpin.label);
-      wheelSpinAnimated.set(spinKey, finalDeg);
-      disk.style.transition = 'none';
-      disk.style.transform = 'rotate(0deg)';
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          disk.style.transition = `transform ${WHEEL_SPIN_DURATION_MS}ms cubic-bezier(0.14, 0.68, 0.16, 1)`;
-          disk.style.transform = `rotate(${finalDeg}deg)`;
-        });
-      });
-    } else {
-      disk.style.transition = 'none';
-      disk.style.transform = `rotate(${finalDeg}deg)`;
-    }
-  } else {
-    disk.style.transition = 'none';
-    disk.style.transform = 'rotate(0deg)';
-  }
+  // farkları) — dar bir dilime uzun bir etiket denk gelince metin komşu dilime taşıyordu; artık
+  // her etiketin genişliği/font boyutu KENDİ diliminin gerçek yay genişliğine göre hesaplanıyor
+  // (bkz. buildWheelDiskEl).
+  const disk = buildWheelDiskEl(geo, spinKey, round.currentSpin ? round.currentSpin.label : null, wheelSpinAnimated);
 
   const stage = el('div', {
     // [KULLANICI İSTEĞİ] "Döndüğü belli olsun" — dönerken (reveal'a kadar) bir glow/pulse
@@ -1708,6 +1797,27 @@ function renderSlotAssignment({ state, actions, side, squad }) {
 let playbackTimer = null;
 const SPEED_MS_PER_MIN = { slow: 380, fast: 90 };
 
+// [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Simülasyon sırasında maçlar eş zamanlı gitmiyor,
+// bazı kullanıcılar geriden geliyor." — kök neden: dakika sayacı (pb.clock) her istemcide SAF
+// SAYAÇ olarak ilerliyordu (`setInterval` her ateşlendiğinde +1 dakika) — gerçek geçen süreye
+// hiç bakmıyordu. Tarayıcı arka plandaki (odaklanmamış) bir sekmede timer'ları büyük ölçüde
+// yavaşlatır/atlar; bu istemcinin sayacı geride kalınca bir daha KENDİLİĞİNDEN yakalayamıyordu
+// (her ateşleme sadece +1 dakika ekliyordu, kaç dakikanın GERÇEKTE geçmiş olması gerektiğine
+// bakmadan). Çözüm: bir "çıpa" (pb.tickAnchorAt/tickAnchorClock/tickAnchorSpeed) tutuluyor —
+// scheduleNextTick her çağrıldığında gerçek geçen süreye göre "şu an hangi dakikada olmamız
+// gerekiyor"u hesaplıyor; geride kalınmışsa (throttle edilmiş bir setTimeout geç ateşlendiyse)
+// aynı JS turunda hemen bir dakika daha işleyip TEKRAR kendini çağırıyor — birkaç ardışık
+// çağrıda gerçek zamana yakınsıyor. Çıpa SADECE kasıtlı bir duraklamadan (gol/şans gerilimi,
+// hız değişikliği, ilk başlangıç) sonra `resumeTicking()` ile SIFIRLANIYOR — aksi halde
+// gerilim penceresi de "geride kalınmış" sayılıp hemen telafi edilmeye çalışılırdı, bu da
+// istenmeyen bir sonuç olurdu (anlatım gerilimi kaybolur).
+function resumeTicking(pb, scheduleFn) {
+  pb.tickAnchorAt = Date.now();
+  pb.tickAnchorClock = pb.clock;
+  pb.tickAnchorSpeed = pb.speed;
+  scheduleFn();
+}
+
 const GOAL_TEMPLATES = [
   (s) => `GOL! ${s} topu ağlarla buluşturdu!`,
   (s) => `GOOOL! ${s} harika bir vuruşla ağları sarstı!`,
@@ -2096,6 +2206,7 @@ export function renderMatchPlayback({ state, actions }) {
         // eşleşmenin 2. maçı olmak ZORUNDA değil, pb.order'daki bir sonraki (karışık) adım.
         if (pb.pos + 1 < pb.order.length) {
           pb.pos += 1; pb.clock = 0; pb.shown = []; pb.score = { home: 0, away: 0 };
+          pb.tickAnchorAt = null; // yeni maç — çıpa sıfırdan kurulsun (bkz. resumeTicking)
         } else {
           pb.done = true;
         }
@@ -2120,7 +2231,10 @@ export function renderMatchPlayback({ state, actions }) {
       scoreNum.classList.add('flash');
     }
     pb.pendingReveal = null;
-    if (!finishMinuteUpdate()) playbackTimer = setInterval(tick, SPEED_MS_PER_MIN[pb.speed]);
+    // [DÜZELTİLDİ — SENKRON] Gerilim penceresi kasıtlı bir duraklama — bunu "geride kalınmış"
+    // sayıp telafi etmeye çalışmamak için çıpa burada SIFIRLANIYOR (resumeTicking), ham
+    // scheduleNextTick çağrılmıyor.
+    if (!finishMinuteUpdate()) resumeTicking(pb, scheduleNextTick);
   }
 
   function armSuspense(ev) {
@@ -2142,7 +2256,7 @@ export function renderMatchPlayback({ state, actions }) {
       logEl.appendChild(el('div', { class: 'row buildup' }, buildupText));
       logEl.scrollTop = logEl.scrollHeight;
       pitch.playEvent(ev);
-      clearInterval(playbackTimer); // sonuç açıklanana kadar dakika akışı duraklar
+      clearTimeout(playbackTimer); // sonuç açıklanana kadar dakika akışı duraklar
       armSuspense(ev);
       return;
     }
@@ -2155,15 +2269,32 @@ export function renderMatchPlayback({ state, actions }) {
       logEl.scrollTop = logEl.scrollHeight;
       pitch.cardFlash(ev.type);
     }
-    finishMinuteUpdate();
+    if (!finishMinuteUpdate()) scheduleNextTick();
+  }
+
+  // [DÜZELTİLDİ — SENKRON] setInterval yerine kendi kendini düzelten bir setTimeout zinciri:
+  // her çağrıda gerçek geçen süreye göre "şu an kaçıncı dakikada olunması gerektiği" hesaplanır
+  // (bkz. yukarıdaki resumeTicking notu). Throttle edilmiş bir sekme geç uyanınca birden fazla
+  // dakikayı aynı JS turunda ardışık `tick()` çağrılarıyla hızla telafi eder.
+  function scheduleNextTick() {
+    const msPerMin = SPEED_MS_PER_MIN[pb.speed];
+    if (pb.tickAnchorSpeed !== pb.speed || !pb.tickAnchorAt) { resumeTicking(pb, scheduleNextTick); return; }
+    const elapsed = Date.now() - pb.tickAnchorAt;
+    const dueClock = pb.tickAnchorClock + Math.floor(elapsed / msPerMin);
+    if (dueClock > pb.clock) { tick(); return; }
+    const remaining = msPerMin - (elapsed % msPerMin);
+    clearTimeout(playbackTimer);
+    playbackTimer = setTimeout(scheduleNextTick, Math.max(16, remaining));
   }
 
   if (pb.pendingReveal) {
     // Bekleyen bir sonuç varken araya bir yeniden çizim girdi (ör. hız değiştirme düğmesi) —
     // akışı kaldığı yerden devam ettir.
     armSuspense(pb.pendingReveal);
+  } else if (!pb.tickAnchorAt) {
+    resumeTicking(pb, scheduleNextTick);
   } else {
-    playbackTimer = setInterval(tick, SPEED_MS_PER_MIN[pb.speed]);
+    scheduleNextTick();
   }
 
   // [KULLANICI İSTEĞİ] "Simülasyon sırasında altta bir yerlerde canlı puan durumu gözükmesini

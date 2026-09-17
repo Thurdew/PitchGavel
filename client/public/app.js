@@ -309,7 +309,9 @@ function updateTopbar() {
   bits.push(state.connected ? '🟢 bağlı' : '🔴 bağlantı yok');
   if (state.code) bits.push(`Oda: ${state.code}`);
   if (state.name) bits.push(state.name);
-  if (state.draft && state.draft.players) {
+  // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] Çark Modu'nda bütçe hiç kullanılmıyor — üst barda
+  // gösterilmesi kafa karıştırıyordu.
+  if (state.draft && state.draft.players && state.room && state.room.draftMode !== 'wheel') {
     const me = state.draft.players.find((p) => p.clientId === state.clientId);
     if (me) bits.push(`💰 ${me.budget}₺`);
   }
@@ -702,8 +704,17 @@ socket.on('room:rematch', () => {
 // perk aldığı (ya da risk almadan geçtiği) odadaki herkese toast olarak da bildiriliyor.
 socket.on('prepWheel:resolved', ({ clientId, perk, auto }) => {
   const name = state.room?.players.find((p) => p.clientId === clientId)?.name || '?';
-  if (!perk) toast(auto ? `⏭ ${name} süre doldu, risksiz devam etti` : `⏭ ${name} risk almadan devam etti`);
-  else toast(`🎡 ${name}: ${perk.label}${perk.detail ? ` (${perk.detail})` : ''}`);
+  if (!perk) {
+    toast(auto ? `⏭ ${name} süre doldu, risksiz devam etti` : `⏭ ${name} risk almadan devam etti`);
+  } else {
+    toast(`🎡 ${name}: ${perk.label}${perk.detail ? ` (${perk.detail})` : ''}`);
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Çark çevirirken diğer kullanıcılar izleyebilsin" —
+    // sunucu sonucu ATOMİK döndürüyor (sıra da hemen ilerliyor); istemci bilerek bir süre
+    // gizleyip görsel çarkı döndürüyor (bkz. views.js renderPrepWheel). Broadcast HERKESE
+    // (yaklaşık) aynı anda ulaştığı için tüm istemciler aynı anda aynı animasyonu izliyor.
+    state.prepWheelSpin = { clientId, perk, startedAt: Date.now() };
+  }
+  route();
 });
 
 socket.on('draft:started', ({ formation }) => {
