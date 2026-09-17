@@ -1364,3 +1364,199 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   .toast-host { left: 12px; right: 12px; bottom: 12px; }
   .toast { width: 100%; }
 }
+/* ========================= Dizilim v2 — .lu-* =========================
+   [KULLANICI İSTEĞİ] "Draft sonrası ekranda atak/defansif, agresif/sakin, diziliş değiştirme
+   butonları kötü ve basit gözüküyor." — bu bölüm o ekranın yeni kabuğu (bkz. lineup-v2.js).
+   Renkler tamamen mevcut token'lardan (--accent/--success/--danger/--text-*) türetiliyor;
+   yeni renk tanımlanmıyor. Eski .formation-pick/.tactic-panel/.pitch-lineup-* kuralları
+   BAŞKA ekranlarda (çark seçimi vb.) hâlâ kullanıldığı için silinmedi.ekle
+   Responsive: tek kolona düşüş 640px'te; kırılma noktası SADECE burada. */
+
+.lu { display: flex; flex-direction: column; gap: 16px; }
+
+.lu-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.lu-top-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lu-live { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--success); }
+.lu-live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 10px var(--success-glow); animation: lu-pulse 1.6s ease-in-out infinite; }
+@keyframes lu-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.lu-code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--text-muted);
+  padding: 5px 9px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 5px; }
+
+.lu-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.lu-title { margin: 0; font-size: clamp(30px, 6.5vw, 44px); line-height: .95; letter-spacing: .6px;
+  text-transform: uppercase; }
+.lu-sub { margin: 8px 0 0; font-size: 13px; color: var(--text-muted); max-width: 46ch; text-wrap: pretty; }
+.lu-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+.lu-stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; min-width: 132px; }
+.lu-stat-k { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint); }
+.lu-stat-v { font-size: 19px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; margin-top: 4px;
+  color: var(--text-muted); }
+.lu-stat.done .lu-stat-v { color: var(--success); }
+
+.lu-peers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 9px; }
+.lu-peer { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
+.lu-peer-name { font-size: 13px; font-weight: 700; }
+.lu-peer-tags { display: flex; gap: 7px; margin-top: 8px; }
+.lu-pill { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); border: 1px solid var(--border-strong);
+  padding: 3px 7px; border-radius: 4px; }
+.lu-pill.done { color: var(--success); border-color: var(--success-glow); }
+
+.lu-tabs { display: flex; gap: 6px; padding: 5px; background: #0b111c; border: 1px solid var(--border);
+  border-radius: 10px; flex-wrap: wrap; }
+.lu-tab { flex: 1; min-width: 150px; min-height: 44px; padding: 10px 22px; border: 1px solid transparent;
+  border-radius: 7px; background: none; color: var(--text-muted); font: inherit; font-size: 16px; font-weight: 800;
+  letter-spacing: 1.2px; text-transform: uppercase; cursor: pointer; }
+.lu-tab:hover { color: var(--text); }
+.lu-tab.active { background: var(--accent-soft); border-color: var(--accent-glow); color: var(--accent); }
+
+.lu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 18px;
+  align-items: start; }
+.lu-col { display: flex; flex-direction: column; gap: 14px; }
+
+.lu-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.lu-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lu-card-title { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 800;
+  letter-spacing: 1.5px; text-transform: uppercase; }
+.lu-card-title::before { content: ''; width: 3px; height: 14px; background: var(--accent); display: block; }
+.lu-card-meta { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; color: var(--text-faint); }
+
+/* ---------- saha ---------- */
+/* [DÜZELTİLDİ — EKSİK SINIF] views.js .lu-card'ın yanına ayrıca .lu-pitch-card da veriyordu
+   (bkz. pitchCard()) ama bu sınıf hiç tanımlı değildi — çıplak .lu-card genişliği (grid item)
+   .lu-pitch'in aspect-ratio:3/4 portre sahasını gereksiz yere geniş/kısa gösterebiliyordu.
+   Sahayı "hero" kart olarak öne çıkarmak + genişliğini sahaya uygun bir üst sınırda tutmak için
+   ince bir vurgu + max-width eklendi; .lu-grid'in kendisine dokunulmadı. */
+.lu-pitch-card { max-width: 460px; width: 100%; margin: 0 auto; border-color: var(--border-strong); }
+
+.lu-pitch { position: relative; aspect-ratio: 3 / 4; margin-top: 14px; border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, .1); overflow: hidden;
+  background: repeating-linear-gradient(180deg, rgba(34, 197, 94, .055) 0px, rgba(34, 197, 94, .055) 34px,
+    rgba(34, 197, 94, .02) 34px, rgba(34, 197, 94, .02) 68px), #08121a; }
+.lu-pitch-half { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(255, 255, 255, .12); }
+.lu-pitch-circle { position: absolute; left: 50%; top: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px;
+  border: 1px solid rgba(255, 255, 255, .12); border-radius: 50%; }
+.lu-pitch-box { position: absolute; left: 50%; width: 38%; height: 11%; margin-left: -19%;
+  border: 1px solid rgba(255, 255, 255, .12); }
+.lu-pitch-box.bottom { bottom: 0; border-bottom: none; border-radius: 3px 3px 0 0; }
+.lu-pitch-box.top { top: 0; border-top: none; border-radius: 0 0 3px 3px; }
+
+/* Genişlik lineup-v2.js'te hatta kaç oyuncu olduğuna göre YÜZDE olarak veriliyor (inline);
+   burada sadece taban ve alt sınır var — kalabalık hatta çip incelir, sahadan taşmaz. */
+.lu-slot { position: absolute; transform: translate(-50%, -50%); min-width: 56px; display: flex;
+  flex-direction: column; align-items: center; gap: 4px; }
+.lu-pos { font-family: var(--font-mono, ui-monospace, monospace); font-size: 8.5px; font-weight: 700;
+  letter-spacing: 1.2px; background: rgba(7, 12, 20, .85); border: 1px solid var(--border-strong);
+  padding: 2px 6px; border-radius: 4px; color: var(--text-muted); }
+.lu-pos.pos-GK { color: #ffd166; }
+.lu-pos.pos-DF { color: #5eead4; }
+.lu-pos.pos-MF { color: #93c5fd; }
+.lu-pos.pos-FW { color: #fb7185; }
+.lu-chip { position: relative; width: 100%; background: rgba(7, 12, 20, .9); border: 1px solid var(--border-strong);
+  border-radius: 8px; padding: 6px 5px; text-align: center; backdrop-filter: blur(3px); }
+.lu-chip.hot { border-color: var(--accent-glow); }
+.lu-chip.icon { box-shadow: 0 0 0 1px var(--accent) inset; }
+.lu-select-wrap { position: relative; }
+.lu-rating { font-size: 20px; font-weight: 800; line-height: 1; color: var(--text); }
+.lu-chip.hot .lu-rating { color: var(--accent); }
+.lu-name { font-size: 10px; font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.lu-slot.dense .lu-rating { font-size: 17px; }
+.lu-slot.dense .lu-name { font-size: 9px; }
+/* Gerçek <select> — görünmez ama tıklanabilir; SADECE rating+isim alanını kaplar. */
+.lu-select-native { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+  appearance: none; border: none; }
+.lu-swap-row { display: flex; gap: 4px; justify-content: center; margin-top: 5px; }
+.lu-swap { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255, 255, 255, .2); border-radius: 5px; background: none; color: var(--text-muted);
+  font-size: 9px; padding: 0; cursor: pointer; }
+.lu-swap:hover { border-color: var(--accent); color: var(--accent); }
+.lu-swap.off { border-color: rgba(255, 255, 255, .06); color: #232f45; cursor: default; }
+.lu-slot.dense .lu-swap { width: 19px; height: 19px; }
+
+/* ---------- formasyon kartları ---------- */
+.lu-formations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 92px), 1fr)); gap: 9px;
+  margin-top: 13px; }
+.lu-formation { min-height: 104px; display: flex; flex-direction: column; align-items: center; gap: 9px;
+  padding: 11px 8px; border: 1px solid rgba(255, 255, 255, .12); border-radius: 10px; background: #0b111c;
+  cursor: pointer; font: inherit; }
+.lu-formation:hover { border-color: var(--accent-glow); }
+.lu-formation.on { border-color: var(--accent); background: var(--accent-soft);
+  box-shadow: 0 10px 26px -14px var(--accent-glow); }
+.lu-mini { display: flex; flex-direction: column; gap: 5px; width: 100%; align-items: center; }
+.lu-mini-row { display: flex; gap: 4px; justify-content: center; }
+.lu-dot { width: 5px; height: 5px; border-radius: 50%; background: #3a4763; display: block; }
+.lu-formation.on .lu-dot { background: var(--accent); }
+.lu-formation-label { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 700;
+  letter-spacing: 1.4px; color: var(--text-muted); }
+.lu-formation.on .lu-formation-label { color: var(--accent); }
+
+/* ---------- oyun tarzı / taktik kartları ---------- */
+.lu-styles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 108px), 1fr)); gap: 9px;
+  margin-top: 13px; }
+.lu-tactics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 9px;
+  margin-top: 13px; }
+.lu-opt { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .12); border-radius: 10px; background: #0b111c; cursor: pointer;
+  text-align: left; font: inherit; color: var(--text); }
+.lu-opt:hover { border-color: var(--accent-glow); }
+.lu-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.lu-opt-label { font-size: 19px; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; }
+.lu-opt.on .lu-opt-label { color: var(--accent); }
+.lu-opt-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; text-wrap: pretty; }
+.lu-meter { display: flex; gap: 3px; }
+.lu-meter-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--border); display: block; }
+.lu-meter-bar.fill { background: #3a4763; }
+.lu-opt.on .lu-meter-bar.fill { background: var(--accent); }
+
+/* [DÜZELTİLDİ — EKSİK SINIF] views.js taktik butonlarına .lu-opt'un yanında ayrıca .lu-tactic da
+   veriyordu (bkz. tacticCard()) ama tanımlı değildi. Grid satırı (.lu-tactics) elemanları zaten
+   varsayılan olarak eşit yüksekliğe geriliyor (grid item stretch) — bu modifier, o eşit
+   yükseklikte kısa açıklamalı kartların içeriğini üstte/altta yapışık değil DENGELİ dağıtıyor
+   (başlık+radyo üstte, açıklama altta hizalı kalsın diye) — .lu-opt (Oyun Tarzı) DEĞİŞMEDİ. */
+.lu-opt.lu-tactic { justify-content: space-between; }
+
+.lu-tactic-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lu-radio { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .24);
+  display: block; flex-shrink: 0; }
+.lu-opt.on .lu-radio { border-color: var(--accent); background: var(--accent); }
+.lu-effects { display: flex; flex-direction: column; gap: 5px; }
+.lu-effect { display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 8px; }
+.lu-effect-k { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--text-faint); }
+.lu-effect-track { position: relative; height: 3px; border-radius: 2px; background: var(--border);
+  display: block; overflow: hidden; }
+.lu-effect-fill { position: absolute; top: 0; bottom: 0; display: block; background: transparent; }
+.lu-effect-fill.up { background: var(--success); }
+.lu-effect-fill.down { background: var(--danger); }
+.lu-effect-v { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 700;
+  min-width: 26px; text-align: right; }
+.lu-effect-v.up { color: var(--success); }
+.lu-effect-v.down { color: var(--danger); }
+.lu-effect-v.zero { color: var(--text-faint); }
+
+/* ---------- uyarı + kaydet ---------- */
+.lu-warn { display: flex; gap: 11px; align-items: flex-start; background: rgba(255, 149, 0, .08);
+  border: 1px solid rgba(255, 149, 0, .32); border-left: 3px solid var(--accent); border-radius: 10px;
+  padding: 13px 14px; font-size: 12px; line-height: 1.45; text-wrap: pretty; }
+.lu-warn-k { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 700;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); flex-shrink: 0; padding-top: 1px; }
+.lu-save-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.lu-save { flex: 1; min-width: min(100%, 220px); min-height: 54px; padding: 15px 20px; border: 1px solid var(--accent);
+  border-radius: 10px; background: var(--accent); color: var(--accent-ink); font: inherit; font-size: 20px;
+  font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase; cursor: pointer;
+  box-shadow: 0 14px 32px -12px var(--accent-glow); }
+.lu-save:hover { background: var(--accent-strong); }
+.lu-save.saved { background: var(--accent-soft); color: var(--accent); box-shadow: none; }
+.lu-save-hint { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; color: var(--text-faint);
+  line-height: 1.5; max-width: 200px; }
+
+@media (max-width: 640px) {
+  .lu-stats { width: 100%; }
+  .lu-stat { flex: 1; min-width: 0; }
+  .lu-save-hint { max-width: none; }
+}

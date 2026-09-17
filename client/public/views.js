@@ -1516,8 +1516,52 @@ function renderRoundResultPanel(event, state) {
 }
 
 // ============================== LINEUP ==============================
+// v2 — bkz. handoff/lineup-v2.css (.lu-*)
+
+const STYLE_CHOICES = [
+  ['calm', 'Sakin', 1, 'Sert girme yok. Kart riski en düşük, ikili mücadelede biraz geride kalırsın.'],
+  ['normal', 'Normal', 2, 'Standart risk. Kart oranı ve mücadele gücü dengede.'],
+  ['aggressive', 'Agresif', 3, 'Baskı yüksek, ikili mücadele güçlü. Sarı ve kırmızı kart riski en yüksek.'],
+];
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kontra": kendi hücumundan biraz feragat edip RAKİBİN
+// hücum gücünü doğrudan kısan dördüncü taktik (bkz. server simulate.js applyCounterDefense).
+const TACTIC_CHOICES = [
+  ['defensive', 'Defansif', [['Defans', 1], ['Hücum', -1]], 'Blok geride kurulur. Gol yeme olasılığın düşer, üretimin azalır.'],
+  ['balanced', 'Dengeli', [['Defans', 0], ['Hücum', 0]], 'Kadronun ham gücüyle oynarsın. Hiçbir eksende değişiklik yok.'],
+  ['attack', 'Atak', [['Hücum', 1], ['Defans', -1]], 'Hat yukarı çıkar. Daha çok pozisyon üretirsin, arkan açık kalır.'],
+  ['counter', 'Kontra', [['Hücum', -0.5], ['Rakip hücum', -1]], 'Kendi hücumundan biraz feragat edip rakibin hücum gücünü doğrudan kısarsın.'],
+];
+
+const GROUP_Y = { GK: 91, DF: 70, MF: 44, FW: 16 };
+const SLOT_RANK = { GK: 50, LB: 8, CB: 50, RB: 92, DM: 50, CM: 50, AM: 50, LM: 15, RM: 85, LW: 15, ST: 50, RW: 85 };
+// Kenar çipleri sahanın (overflow:hidden) dışına taşmasın diye yayılım dar tutuluyor ve çip
+// genişliği yüzdesel: kalabalık hatta çip incelir, çakışma/kırpılma olmaz.
+function spreadFor(n) { return n >= 5 ? 72 : n === 4 ? 76 : 70; }
+
+function layout(slots) {
+  const rows = {};
+  slots.forEach((slot, idx) => { const g = slotGroup(slot); (rows[g] = rows[g] || []).push({ slot, idx }); });
+  const out = new Array(slots.length);
+  Object.keys(rows).forEach((g) => {
+    const items = rows[g].slice().sort((a, b) => (SLOT_RANK[a.slot] ?? 50) - (SLOT_RANK[b.slot] ?? 50) || a.idx - b.idx);
+    const n = items.length;
+    const spread = spreadFor(n);
+    const step = n > 1 ? spread / (n - 1) : 24;
+    items.forEach((item, i) => {
+      out[item.idx] = {
+        x: n === 1 ? 50 : (100 - spread) / 2 + i * step,
+        y: GROUP_Y[g] ?? 50,
+        w: Math.min(21, step * 0.92),
+        dense: n >= 5,
+        siblings: items.map((it) => it.idx),
+      };
+    });
+  });
+  return out;
+}
+
 export function renderLineup({ state, actions }) {
-  const root = el('div', { class: 'view' });
+  const root = el('div', { class: 'view lu' });
   const room = state.room;
 
   if (!state.lineupOptions) {
@@ -1525,139 +1569,113 @@ export function renderLineup({ state, actions }) {
     actions.fetchLineupOptions().then(() => actions.route());
     return root;
   }
-
   if (!state.lineupUi) {
-    const draftFormation = room.formation;
     state.lineupUi = {
       activeTab: 'home',
       selections: {
-        home: initSelection(state.lineupOptions.options, draftFormation),
-        away: initSelection(state.lineupOptions.options, draftFormation),
+        home: initSelection(state.lineupOptions.options, room.formation),
+        away: initSelection(state.lineupOptions.options, room.formation),
       },
     };
   }
 
-  const submitted = state.lineupSubmitted[state.clientId] || {};
-
-  // [KULLANICI İSTEĞİ] "Maç başlarken de iki oyuncuda hazır versin." — [KULLANICI İSTEĞİ,
-  // KARARLAŞTIRILDI] Çok Oyunculu Mod: eşik odadaki TÜM oyuncu sayısı, durum kartları da tek
-  // bir "rakip" yerine odadaki HERKESİ listeler.
-  const matchVotes = room.readyVotes || [];
-  const matchIAmReady = matchVotes.includes(state.clientId);
-
-  root.appendChild(el('div', { class: 'panel' }, [
-    el('div', { style: 'display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap' }, [
-      el('h3', { style: 'margin:0' }, 'Durum'),
-      leaveGameButton(actions),
-    ]),
-    el('div', { class: 'budget-row' }, room.players.map((p) =>
-      statusCard(p.name + (p.clientId === state.clientId ? ' (sen)' : ''), state.lineupSubmitted[p.clientId] || {}))),
-    room.status === 'match'
-      ? el('button', {
-          class: `btn block ${matchIAmReady ? 'secondary' : ''}`,
-          style: 'margin-top:14px',
-          onclick: () => actions.toggleMatchReady(),
-        }, matchIAmReady ? `⏳ Hazırsın — diğerleri bekleniyor (${matchVotes.length}/${room.players.length})` : '✅ Hazırım — Maçı Başlat')
-      : null,
-  ]));
-
-  // [KULLANICI İSTEĞİ] "Kadroları kaydederken uyarı göster, hem ev sahibi hem deplasman
-  // kadrosunu kaydedin diye" — ikisi de kaydedilmeden maç başlayamayacağı açıkça hatırlatılıyor.
-  if (!submitted.home || !submitted.away) {
-    const missing = [!submitted.home ? 'Ev Sahibi' : null, !submitted.away ? 'Deplasman' : null].filter(Boolean).join(' ve ');
-    root.appendChild(el('div', { class: 'warning-banner' }, `⚠️ Unutma: hem Ev Sahibi hem Deplasman dizilimini kaydetmelisin — eksik: ${missing}.`));
-  }
-
-  root.appendChild(el('div', { class: 'tabs' }, ['home', 'away'].map((side) => el('button', {
-    class: `tab ${state.lineupUi.activeTab === side ? 'active' : ''}`,
-    onclick: () => { state.lineupUi.activeTab = side; actions.route(); },
-  }, side === 'home' ? 'Ev Sahibi Maçı' : 'Deplasman Maçı'))));
-
   const side = state.lineupUi.activeTab;
   const sel = state.lineupUi.selections[side];
   const squad = state.lineupOptions.squad;
+  const submitted = state.lineupSubmitted[state.clientId] || {};
+  const sideName = side === 'home' ? 'Ev Sahibi' : 'Deplasman';
 
-  // Doküman: "Sistem, kadroyla gerçekten kurulamayacak formasyonları seçenek olarak
-  // GÖSTERMEMELİ" — bu yüzden kurulamayan formasyonlar listeden tamamen çıkarılıyor
-  // (devre dışı/üstü çizili göstermek yerine).
-  const feasibleOptions = state.lineupOptions.options.filter((o) => o.feasible);
+  // ---------- üst bar ----------
+  root.appendChild(el('div', { class: 'lu-top' }, [
+    el('div', { class: 'lu-top-left' }, [
+      el('span', { class: 'lu-live' }, 'Draft tamamlandı'),
+      el('span', { class: 'lu-code' }, room.code),
+    ]),
+    el('button', { type: 'button', class: 'btn small secondary', onclick: () => actions.leaveRoom() }, '🚪 Oyundan Çık'),
+  ]));
 
-  root.appendChild(el('div', { class: 'panel' }, [
-    el('h3', {}, `${side === 'home' ? 'Ev Sahibi' : 'Deplasman'} — Formasyon Seç`),
-    el('div', { class: 'formation-pick' }, feasibleOptions.map((o) => el('button', {
-      class: `formation-option ${sel.formation === o.formation ? 'selected' : ''}`,
-      onclick: () => {
-        // Formasyon değişse de daha önce seçilmiş oyun tarzı/taktik korunsun.
-        const next = initSelectionForFormation(o);
-        next.style = sel.style;
-        next.tactic = sel.tactic;
-        state.lineupUi.selections[side] = next;
-        actions.route();
-      },
-    }, o.formation))),
+  root.appendChild(el('div', { class: 'lu-head' }, [
+    el('div', {}, [
+      el('h1', { class: 'lu-title' }, 'Dizilim & Taktik'),
+      el('p', { class: 'lu-sub' }, 'Her iki maç için kadronu kur, oyun tarzını ve taktiğini seç. İkisi de kaydedilmeden maç başlamaz.'),
+    ]),
+    el('div', { class: 'lu-stats' }, [
+      el('div', { class: `lu-stat ${submitted.home ? 'done' : ''}` }, [
+        el('div', { class: 'lu-stat-k' }, 'Ev sahibi'),
+        el('div', { class: 'lu-stat-v' }, submitted.home ? 'Kaydedildi' : 'Bekliyor'),
+      ]),
+      el('div', { class: `lu-stat ${submitted.away ? 'done' : ''}` }, [
+        el('div', { class: 'lu-stat-k' }, 'Deplasman'),
+        el('div', { class: 'lu-stat-v' }, submitted.away ? 'Kaydedildi' : 'Bekliyor'),
+      ]),
+    ]),
+  ]));
 
-    sel.formation ? renderTacticPanel({ state, actions, side }) : null,
-    sel.formation ? renderSlotAssignment({ state, actions, side, squad }) : el('p', { class: 'muted' }, 'Bir formasyon seç.'),
+  // ---------- rakip/oda durumu ----------
+  const matchVotes = room.readyVotes || [];
+  const matchIAmReady = matchVotes.includes(state.clientId);
+  root.appendChild(el('div', { class: 'lu-peers' }, room.players.map((p) => {
+    const s = state.lineupSubmitted[p.clientId] || {};
+    return el('div', { class: 'lu-peer' }, [
+      el('div', { class: 'lu-peer-name' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
+      el('div', { class: 'lu-peer-tags' }, [
+        el('span', { class: `lu-pill ${s.home ? 'done' : ''}` }, s.home ? 'Ev ✓' : 'Ev —'),
+        el('span', { class: `lu-pill ${s.away ? 'done' : ''}` }, s.away ? 'Dep ✓' : 'Dep —'),
+      ]),
+    ]);
+  })));
 
-    sel.formation ? el('button', {
-      class: 'btn block',
-      style: 'margin-top:14px',
-      onclick: async () => {
-        const res = await actions.submitLineup(side, sel.formation, sel.assignment, sel.style, sel.tactic);
-        if (res && res.ok) toast(`${side === 'home' ? 'Ev sahibi' : 'Deplasman'} dizilimi kaydedildi.`);
-      },
-    }, `${side === 'home' ? 'Ev Sahibi' : 'Deplasman'} Dizilimini Kaydet`) : null,
+  // ---------- sekmeler ----------
+  root.appendChild(el('div', { class: 'lu-tabs' }, ['home', 'away'].map((s) => el('button', {
+    type: 'button',
+    class: `lu-tab ${side === s ? 'active' : ''}`,
+    onclick: () => { state.lineupUi.activeTab = s; actions.route(); },
+  }, s === 'home' ? 'Ev Sahibi Maçı' : 'Deplasman Maçı'))));
+
+  if (!sel.formation) {
+    root.appendChild(el('div', { class: 'lu-card' }, el('p', { class: 'muted' }, 'Kadroyla kurulabilecek bir formasyon bulunamadı.')));
+    return root;
+  }
+
+  // ---------- saha + kontroller ----------
+  root.appendChild(el('div', { class: 'lu-grid' }, [
+    pitchCard({ state, actions, side, squad }),
+    el('div', { class: 'lu-col' }, [
+      formationCard({ state, actions, side }),
+      styleCard({ state, actions, side }),
+      tacticCard({ state, actions, side }),
+      (!submitted.home || !submitted.away)
+        ? el('div', { class: 'lu-warn' }, [
+            el('span', { class: 'lu-warn-k' }, 'Eksik'),
+            el('span', {}, `Maç başlamadan önce iki dizilim de kaydedilmeli. Eksik: ${[!submitted.home ? 'Ev Sahibi' : null, !submitted.away ? 'Deplasman' : null].filter(Boolean).join(' ve ')}.`),
+          ])
+        : null,
+      el('div', { class: 'lu-save-row' }, [
+        el('button', {
+          type: 'button',
+          class: `lu-save ${submitted[side] ? 'saved' : ''}`,
+          onclick: async () => {
+            const res = await actions.submitLineup(side, sel.formation, sel.assignment, sel.style, sel.tactic);
+            if (res && res.ok) toast(`${sideName} dizilimi kaydedildi.`);
+          },
+        }, submitted[side] ? `${sideName} Kaydedildi` : `${sideName} Dizilimini Kaydet`),
+        el('div', { class: 'lu-save-hint' }, submitted[side]
+          ? 'Değişiklik yaparsan tekrar kaydet.'
+          : 'Formasyon, tarz ve taktik birlikte kaydedilir.'),
+      ]),
+      room.status === 'match'
+        ? el('button', {
+            type: 'button',
+            class: `btn block ${matchIAmReady ? 'secondary' : ''}`,
+            onclick: () => actions.toggleMatchReady(),
+          }, matchIAmReady
+            ? `⏳ Hazırsın — diğerleri bekleniyor (${matchVotes.length}/${room.players.length})`
+            : '✅ Hazırım — Maçı Başlat')
+        : null,
+    ]),
   ]));
 
   return root;
-}
-
-// [KULLANICI İSTEĞİ] "Kadro diziliminde agresif oyna/sakin oyna seçenekleri gelsin, buna bağlı
-// olarak kırmızı/sarı kart gelsin. Atak/dengeli/defansif oyna seçenekleri de gelsin maçtan
-// önce." — iki bağımsız eksen: oyun tarzı (kart riski) ve taktik (hücum/defans dengesi).
-const STYLE_CHOICES = [
-  ['calm', '😌 Sakin', 'Kart riski düşük'],
-  ['normal', '🙂 Normal', 'Standart risk'],
-  ['aggressive', '🔥 Agresif', 'Kart riski yüksek'],
-];
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kontra" — kendi hücum/orta saha gücünden biraz feragat
-// edip karşılığında RAKİBİN hücum gücünü doğrudan kısan dördüncü taktik (bkz. simulate.js
-// applyCounterDefense) — zayıf bir savunması olan kadıya bile gerçek bir strateji şansı veriyor.
-const TACTIC_CHOICES = [
-  ['defensive', '🛡️ Defansif', 'Defans +, hücum −'],
-  ['balanced', '⚖️ Dengeli', 'Değişiklik yok'],
-  ['attack', '⚔️ Atak', 'Hücum +, defans −'],
-  ['counter', '🔀 Kontra', 'Kendi hücumun biraz azalır, rakibin hücum gücünü doğrudan kısarsın'],
-];
-
-function renderTacticPanel({ state, actions, side }) {
-  const sel = state.lineupUi.selections[side];
-
-  function choiceRow(label, choices, current, onPick) {
-    return el('div', { class: 'tactic-row' }, [
-      el('div', { class: 'tactic-label' }, label),
-      el('div', { class: 'formation-pick' }, choices.map(([key, text, desc]) => el('button', {
-        class: `formation-option ${current === key ? 'selected' : ''}`,
-        title: desc,
-        onclick: () => { onPick(key); actions.route(); },
-      }, text))),
-    ]);
-  }
-
-  return el('div', { class: 'tactic-panel' }, [
-    choiceRow('Oyun Tarzı', STYLE_CHOICES, sel.style, (key) => { sel.style = key; }),
-    choiceRow('Taktik', TACTIC_CHOICES, sel.tactic, (key) => { sel.tactic = key; }),
-  ]);
-}
-
-function statusCard(label, submitted) {
-  return el('div', { class: 'budget-card' }, [
-    el('div', { class: 'name' }, label),
-    el('div', { style: 'display:flex;gap:8px;margin-top:8px' }, [
-      el('span', { class: `status-pill ${submitted.home ? 'done' : 'pending'}` }, `Ev: ${submitted.home ? 'Hazır' : 'Bekliyor'}`),
-      el('span', { class: `status-pill ${submitted.away ? 'done' : 'pending'}` }, `Dep: ${submitted.away ? 'Hazır' : 'Bekliyor'}`),
-    ]),
-  ]);
 }
 
 function initSelection(options, preferredFormation) {
@@ -1673,102 +1691,66 @@ function initSelectionForFormation(option) {
   };
 }
 
-// [KULLANICI İSTEĞİ] "İlk 11'lerin gösterildiği ekran kötü... saha formatında pozisyon
-// pozisyon gözüksün." — her slotun sahadaki yaklaşık (x%, y%) konumunu hesaplar. GK en altta
-// (kendi kalesi), FW en üstte (hücum) olacak şekilde dikey bir saha varsayılır. Aynı satırdaki
-// (aynı güç grubundaki) slotlar, saha genişliğine, sol/orta/sağ eğilimlerine göre dağıtılır.
-const LINEUP_SLOT_RANK = { GK: 50, LB: 8, CB: 50, RB: 92, DM: 50, CM: 50, AM: 50, LM: 15, RM: 85, LW: 15, ST: 50, RW: 85 };
-const LINEUP_GROUP_Y = { GK: 92, DF: 68, MF: 42, FW: 15 };
-
-function computeLineupPositions(slots) {
-  const rows = {};
-  slots.forEach((slot, idx) => {
-    const group = slotGroup(slot);
-    (rows[group] = rows[group] || []).push({ slot, idx });
-  });
-  const positions = new Array(slots.length);
-  for (const group of Object.keys(rows)) {
-    const items = rows[group].slice().sort((a, b) => (LINEUP_SLOT_RANK[a.slot] ?? 50) - (LINEUP_SLOT_RANK[b.slot] ?? 50) || a.idx - b.idx);
-    const n = items.length;
-    items.forEach((item, i) => {
-      const x = n === 1 ? 50 : 10 + i * (80 / (n - 1));
-      positions[item.idx] = { x, y: LINEUP_GROUP_Y[group] ?? 50 };
-    });
-  }
-  return positions;
-}
-
-function renderSlotAssignment({ state, actions, side, squad }) {
+// ============================== SAHA ==============================
+function pitchCard({ state, actions, side, squad }) {
   const sel = state.lineupUi.selections[side];
   const slots = state.config.FORMATIONS[sel.formation];
-  const positions = computeLineupPositions(slots);
+  const pos = layout(slots);
+  const rated = sel.assignment.map((i) => (i != null && squad[i] ? squad[i].player.rating : 0));
+  const avg = rated.length ? Math.round(rated.reduce((a, b) => a + b, 0) / rated.length) : 0;
 
-  // [KULLANICI İSTEĞİ] "3 orta saha oyuncum var, x y z... z'nin ortada durmasını istiyorum,
-  // x z y yapabilmeliyim, diğer mevkiler için de geçerli" — aynı slot TİPİNDEN (örn. üç CM)
-  // iki slotun ATANMIŞ OYUNCUSUNU birbiriyle takas eder. computeLineupPositions aynı tipteki
-  // slotları zaten artan idx sırasına göre soldan sağa dizdiği için "komşu index" = "komşu
-  // görsel konum" — ayrı bir sıralama/konum state'i tutmaya gerek yok.
-  function swapAssignment(i, j) {
-    const tmp = sel.assignment[i];
-    sel.assignment[i] = sel.assignment[j];
-    sel.assignment[j] = tmp;
+  function swap(i, j) {
+    const a = sel.assignment.slice();
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+    sel.assignment = a;
     actions.route();
   }
 
   const chips = slots.map((slotType, slotIdx) => {
+    const p = pos[slotIdx];
     const usedElsewhere = new Set(sel.assignment.filter((_, i) => i !== slotIdx));
     const eligible = squad
       .map((entry, idx) => ({ idx, entry }))
       .filter(({ entry }) => entry.player.eligibleSlots.some((e) => e.slot === slotType));
-
-    // Seçili oyuncunun reytingi/ismi büyük görünsün diye <select> yerine kendi görünümümüzü
-    // çiziyoruz; native <select> altta görünmez şekilde bindirilip tıklamayı/erişilebilirliği
-    // yönetiyor (klavye/ekran okuyucu için de gerçek bir <select> kalmış olur).
     const currentIdx = sel.assignment[slotIdx];
     const current = currentIdx != null ? squad[currentIdx] : null;
 
+    // Görünür kart bizim; tıklama/klavye/ekran okuyucu işini üstte şeffaf bir gerçek <select>
+    // yapıyor. Select SADECE rating+isim sarmalayıcısını kaplar — swap okları onun dışında
+    // (aksi halde okların tıklamasını yutuyordu).
     const select = el('select', {
-      class: 'pitch-lineup-select-native',
-      onchange: (e) => {
-        sel.assignment[slotIdx] = Number(e.target.value);
-        actions.route();
-      },
+      class: 'lu-select-native',
+      onchange: (e) => { sel.assignment[slotIdx] = Number(e.target.value); actions.route(); },
     }, eligible.map(({ idx, entry }) => el('option', {
       value: String(idx),
-      selected: sel.assignment[slotIdx] === idx ? 'selected' : undefined,
-      disabled: usedElsewhere.has(idx) && sel.assignment[slotIdx] !== idx ? 'disabled' : undefined,
-    }, `${entry.player.name} (${entry.player.rating})${usedElsewhere.has(idx) && sel.assignment[slotIdx] !== idx ? ' — kullanımda' : ''}`)));
+      selected: currentIdx === idx ? 'selected' : undefined,
+      disabled: usedElsewhere.has(idx) && currentIdx !== idx ? 'disabled' : undefined,
+    }, `${entry.player.name} (${entry.player.rating})${usedElsewhere.has(idx) && currentIdx !== idx ? ' — kullanımda' : ''}`)));
 
-    // Aynı tip (örn. hepsi 'CM') kardeş slotlar, artan idx sırasıyla = soldan sağa görünüm
-    // sırasıyla aynı. Sol/sağ ok sadece bir komşu VARSA gösterilir (uçtaki slotta o yön yok).
-    const siblings = slots.map((s, i) => (s === slotType ? i : -1)).filter((i) => i >= 0);
-    const posInGroup = siblings.indexOf(slotIdx);
-    const leftSibling = posInGroup > 0 ? siblings[posInGroup - 1] : null;
-    const rightSibling = posInGroup < siblings.length - 1 ? siblings[posInGroup + 1] : null;
-    const swapRow = siblings.length > 1 ? el('div', { class: 'pitch-lineup-swap-row' }, [
-      leftSibling != null
-        ? el('button', { type: 'button', class: 'pitch-lineup-swap', title: 'Soldakiyle yer değiştir', onclick: () => swapAssignment(slotIdx, leftSibling) }, '◀')
-        : el('span', { class: 'pitch-lineup-swap placeholder' }, '◀'),
-      rightSibling != null
-        ? el('button', { type: 'button', class: 'pitch-lineup-swap', title: 'Sağdakiyle yer değiştir', onclick: () => swapAssignment(slotIdx, rightSibling) }, '▶')
-        : el('span', { class: 'pitch-lineup-swap placeholder' }, '▶'),
+    const sibs = (p.siblings || []).filter((i) => slots[i] === slotType);
+    const k = sibs.indexOf(slotIdx);
+    const left = k > 0 ? sibs[k - 1] : null;
+    const right = k >= 0 && k < sibs.length - 1 ? sibs[k + 1] : null;
+    const swapRow = sibs.length > 1 ? el('div', { class: 'lu-swap-row' }, [
+      el('button', {
+        type: 'button', class: `lu-swap ${left == null ? 'off' : ''}`, title: 'Soldakiyle yer değiştir',
+        onclick: left == null ? null : () => swap(slotIdx, left),
+      }, '◀'),
+      el('button', {
+        type: 'button', class: `lu-swap ${right == null ? 'off' : ''}`, title: 'Sağdakiyle yer değiştir',
+        onclick: right == null ? null : () => swap(slotIdx, right),
+      }, '▶'),
     ]) : null;
 
-    const pos = positions[slotIdx];
     return el('div', {
-      class: `pitch-lineup-slot ${current && current.player.isIcon ? 'icon' : ''}`,
-      style: `left:${pos.x}%; top:${pos.y}%`,
+      class: `lu-slot ${p.dense ? 'dense' : ''}`,
+      style: `left:${p.x}%; top:${p.y}%; width:${p.w}%`,
     }, [
-      el('div', { class: `pitch-lineup-badge pos-${slotGroup(slotType)}` }, slotType),
-      el('div', { class: 'pitch-lineup-chip' }, [
-        // [DÜZELTİLDİ — BUG] Görünmez <select> daha önce TÜM slotu (swap okları dahil) kapladığı
-        // için z-index'e rağmen bazı tarayıcılarda ok tıklamalarını yutuyordu ("oyuncu pozisyon
-        // değiş işe yaramıyor"). Artık select SADECE rating+isim alanını saran ayrı bir wrapper'a
-        // (.pitch-lineup-select-wrap) bindirilip swap okları bu wrapper'ın TAMAMEN DIŞINDA —
-        // örtüşme fiziksel olarak imkansız, z-index/stacking-context varsayımına gerek kalmıyor.
-        el('div', { class: 'pitch-lineup-select-wrap' }, [
-          current ? el('div', { class: 'pitch-lineup-rating' }, String(current.player.rating)) : null,
-          el('div', { class: 'pitch-lineup-name' }, current ? current.player.name : 'Seç...'),
+      el('div', { class: `lu-pos pos-${slotGroup(slotType)}` }, slotType),
+      el('div', { class: `lu-chip ${current && current.player.rating >= 90 ? 'hot' : ''} ${current && current.player.isIcon ? 'icon' : ''}` }, [
+        el('div', { class: 'lu-select-wrap' }, [
+          el('div', { class: 'lu-rating' }, current ? String(current.player.rating) : '–'),
+          el('div', { class: 'lu-name' }, current ? current.player.name : 'Seç...'),
           select,
         ]),
         swapRow,
@@ -1776,15 +1758,110 @@ function renderSlotAssignment({ state, actions, side, squad }) {
     ]);
   });
 
-  const field = el('div', { class: 'lineup-pitch-field' }, [
-    el('div', { class: 'lineup-pitch-halfline' }),
-    el('div', { class: 'lineup-pitch-circle' }),
-    el('div', { class: 'lineup-pitch-box top' }),
-    el('div', { class: 'lineup-pitch-box bottom' }),
-    ...chips,
+  return el('div', { class: 'lu-card lu-pitch-card' }, [
+    el('div', { class: 'lu-card-head' }, [
+      el('span', { class: 'lu-card-title' }, 'Saha'),
+      el('span', { class: 'lu-card-meta' }, `${sel.formation} · ort. ${avg}`),
+    ]),
+    el('div', { class: 'lu-pitch' }, [
+      el('div', { class: 'lu-pitch-half' }),
+      el('div', { class: 'lu-pitch-circle' }),
+      el('div', { class: 'lu-pitch-box top' }),
+      el('div', { class: 'lu-pitch-box bottom' }),
+      ...chips,
+    ]),
   ]);
+}
 
-  return el('div', { class: 'lineup-pitch' }, [field]);
+// ============================== FORMASYON ==============================
+function formationCard({ state, actions, side }) {
+  const sel = state.lineupUi.selections[side];
+  const feasible = state.lineupOptions.options.filter((o) => o.feasible);
+
+  return el('div', { class: 'lu-card' }, [
+    el('div', { class: 'lu-card-head' }, [
+      el('span', { class: 'lu-card-title' }, 'Formasyon'),
+      el('span', { class: 'lu-card-meta' }, 'Kadroyla kurulabilenler'),
+    ]),
+    el('div', { class: 'lu-formations' }, feasible.map((o) => {
+      const on = sel.formation === o.formation;
+      const slots = state.config.FORMATIONS[o.formation] || [];
+      const counts = { DF: 0, MF: 0, FW: 0 };
+      slots.forEach((s) => { const g = slotGroup(s); if (counts[g] != null) counts[g] += 1; });
+      const rows = [counts.FW, counts.MF, counts.DF, 1].filter((n) => n > 0);
+      return el('button', {
+        type: 'button', class: `lu-formation ${on ? 'on' : ''}`,
+        onclick: () => {
+          // Formasyon değişse de seçilmiş oyun tarzı/taktik korunsun.
+          const next = initSelectionForFormation(o);
+          next.style = sel.style;
+          next.tactic = sel.tactic;
+          state.lineupUi.selections[side] = next;
+          actions.route();
+        },
+      }, [
+        el('div', { class: 'lu-mini' }, rows.map((n) =>
+          el('div', { class: 'lu-mini-row' }, new Array(n).fill(0).map(() => el('span', { class: 'lu-dot' }))))),
+        el('span', { class: 'lu-formation-label' }, o.formation),
+      ]);
+    })),
+  ]);
+}
+
+// ============================== OYUN TARZI ==============================
+function styleCard({ state, actions, side }) {
+  const sel = state.lineupUi.selections[side];
+  return el('div', { class: 'lu-card' }, [
+    el('div', { class: 'lu-card-head' }, [
+      el('span', { class: 'lu-card-title' }, 'Oyun Tarzı'),
+      el('span', { class: 'lu-card-meta' }, 'Kart riski'),
+    ]),
+    el('div', { class: 'lu-styles' }, STYLE_CHOICES.map(([key, label, risk, desc]) => {
+      const on = sel.style === key;
+      return el('button', {
+        type: 'button', class: `lu-opt ${on ? 'on' : ''}`,
+        onclick: () => { sel.style = key; actions.route(); },
+      }, [
+        el('div', { class: 'lu-opt-label' }, label),
+        el('div', { class: 'lu-meter' }, [0, 1, 2].map((i) =>
+          el('span', { class: `lu-meter-bar ${i < risk ? 'fill' : ''}` }))),
+        el('div', { class: 'lu-opt-desc' }, desc),
+      ]);
+    })),
+  ]);
+}
+
+// ============================== TAKTİK ==============================
+function tacticCard({ state, actions, side }) {
+  const sel = state.lineupUi.selections[side];
+  return el('div', { class: 'lu-card' }, [
+    el('div', { class: 'lu-card-head' }, [
+      el('span', { class: 'lu-card-title' }, 'Taktik'),
+      el('span', { class: 'lu-card-meta' }, 'Hücum / defans dengesi'),
+    ]),
+    el('div', { class: 'lu-tactics' }, TACTIC_CHOICES.map(([key, label, effects, desc]) => {
+      const on = sel.tactic === key;
+      return el('button', {
+        type: 'button', class: `lu-opt lu-tactic ${on ? 'on' : ''}`,
+        onclick: () => { sel.tactic = key; actions.route(); },
+      }, [
+        el('div', { class: 'lu-tactic-head' }, [
+          el('span', { class: 'lu-opt-label' }, label),
+          el('span', { class: 'lu-radio' }),
+        ]),
+        el('div', { class: 'lu-effects' }, effects.map(([axis, v]) => el('div', { class: 'lu-effect' }, [
+          el('span', { class: 'lu-effect-k' }, axis),
+          el('span', { class: 'lu-effect-track' }, el('span', {
+            class: `lu-effect-fill ${v > 0 ? 'up' : v < 0 ? 'down' : ''}`,
+            style: `left:${v >= 0 ? 50 : 50 - Math.abs(v) * 50}%; width:${Math.abs(v) * 50}%`,
+          })),
+          el('span', { class: `lu-effect-v ${v > 0 ? 'up' : v < 0 ? 'down' : 'zero'}` },
+            v === 0 ? '0' : (v > 0 ? '+' : '−') + String(Math.abs(v)).replace('0.5', '½')),
+        ]))),
+        el('div', { class: 'lu-opt-desc' }, desc),
+      ]);
+    })),
+  ]);
 }
 
 // ============================== MAÇ ANLATIMI ==============================
