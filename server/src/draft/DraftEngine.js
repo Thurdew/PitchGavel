@@ -792,8 +792,13 @@ class DraftEngine {
           : { kind: 'rating', label: `${raw.label} (havuz boş — genel seç)`, min: 1, max: 99 };
       }
     } else if (raw.kind === 'icon') {
+      // [DÜZELTİLDİ — TUTARLILIK] Daha önce "efsane kalmadı" durumunda sınırsız (1-99, dilediğin
+      // oyuncu) bir seçim ekranına düşülüyordu — segmentin kendi tanımı (efsaneyle sınırlı)
+      // karşılanamayınca istemeden daha geniş/daha rahat bir ödüle dönüşüyordu. `steal` segmenti
+      // aynı sınıftaki sorunu (bkz. yukarısı) `respin`'e (turu kaybetmeden aynı kişi/pozisyon için
+      // TAZE bir çark daha çevirir) düşürerek çözmüştü — `icon` de artık AYNI mekanizmayı kullanıyor.
       if (pickWheelIconCandidates(type, room.draft.takenIds, room.playerPool).length === 0) {
-        segment = { kind: 'rating', label: `${raw.label} (efsane kalmadı — havuzdan seç)`, min: 1, max: 99 };
+        segment = { kind: 'respin', label: `${raw.label} (efsane kalmadı — tekrar çeviriyorsun)` };
       }
     } else if (raw.kind === 'league' || raw.kind === 'nation' || raw.kind === 'club') {
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kulüp Piyangosu" — league/nation ile BİREBİR aynı
@@ -802,7 +807,10 @@ class DraftEngine {
       const all = poolForSlot(type, room.draft.takenIds, room.playerPool);
       const values = [...new Set(all.map((p) => p[field]).filter(Boolean))];
       if (values.length === 0) {
-        segment = { kind: 'rating', label: `${raw.label} (havuz boş — genel seç)`, min: 1, max: 99 };
+        // [DÜZELTİLDİ — TUTARLILIK] Aynı gerekçe: bu üç piyangonun tanımı (belirli bir lig/
+        // milliyet/kulüple sınırlı) karşılanamıyorsa sınırsız bir seçim ekranına düşmek yerine
+        // `respin` — icon/steal'deki AYNI kural.
+        segment = { kind: 'respin', label: `${raw.label} (havuz boş — tekrar çeviriyorsun)` };
       } else {
         revealValue = values[Math.floor(Math.random() * values.length)];
       }
@@ -931,13 +939,38 @@ class DraftEngine {
   // pozisyondaki en düşük reytingli oyuncu otomatik atanır), give_best ("en iyisini ver" —
   // kendi kadrondaki, bir rakibin ihtiyaç duyduğu bir slotta en yüksek reytingli oyuncu o rakibe
   // verilir) ve respin ("şanslı tekrar") burada, seçim beklemeden otomatik uygulanır.
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Daha fazla çark özelliği gelsin" (🍀 Şanslı Tekrar) —
+  // turu KAYBETMEDEN (finishWheelTurn ÇAĞRILMIYOR, sıra aynı kişide kalıyor) round baştan
+  // 'awaiting_spin'e döner — aynı kişi aynı pozisyon için TAZE bir çark daha çevirir.
+  // resolveSpin'deki ilk-tur açılışıyla (openWheelTurn) BİREBİR aynı state şekli. [DÜZELTİLDİ —
+  // TUTARLILIK] Artık sadece 🍀 segmentinin kendisi değil, "segmentin kendi tanımı karşılanamadı"
+  // durumlarının TAMAMI (steal'de çalınacak oyuncu yok, icon'da efsane kalmadı, league/nation/
+  // club'da uygun havuz yok, forced_worst'te pozisyon tamamen tükendi) bu ORTAK yola çıkıyor —
+  // hiçbiri artık sınırsız/tanımı aşan bir "yedek ödül"e dönüşmüyor.
+  triggerRespin(room, round) {
+    round.currentSpin = null;
+    round.revealValue = null;
+    round.phase = 'awaiting_spin';
+    round.deadline = Date.now() + WHEEL_PICK_DURATION_SECONDS * 1000;
+    clearTimeout(round.timer);
+    round.timer = setTimeout(() => this.autoSpinWheel(room), WHEEL_PICK_DURATION_SECONDS * 1000);
+    this.emitDraft(room);
+  }
+
   resolveAutoWheelOutcome(room, round) {
     if (room.status !== STATUS.DRAFT) return;
     const seg = round.currentSpin;
 
     if (seg.kind === 'forced_worst') {
       const all = poolForSlot(round.slotType, room.draft.takenIds, room.playerPool);
-      if (all.length === 0) { this.skipWheelTurnType(room, round); return; }
+      // [DÜZELTİLDİ — TUTARLILIK] Bu pozisyon için havuzda GERÇEKTEN hiç aday kalmadıysa (aşırı
+      // nadir — küçük havuzlu modlarda draftın sonlarına doğru mümkün) eskiden `skipWheelTurnType`
+      // ile bu slotu 0 ihtiyaç diye TERK EDİP kadroyu 11'in altında bırakıyordu. Artık `respin` —
+      // steal/give_best'in başka bir yoldan (rakipten alma/verme) pozisyonu hâlâ doldurabilmesi
+      // ihtimaline bir şans daha tanınıyor; havuz tipi GERÇEKTEN kalıcı olarak tükenmişse `rating`
+      // segmentinin kendi son-çare fallback'i (bkz. resolveSpin) ve oradaki `skipWheelTurnType`
+      // güvenlik ağı hâlâ nihai dayanak olarak duruyor — sonsuz bir respin döngüsü riski yok.
+      if (all.length === 0) { this.triggerRespin(room, round); return; }
       const worst = all.reduce((min, p) => (p.rating < min.rating ? p : min), all[0]);
       room.draft.takenIds.add(worst.id);
       this.assignPlayer(room, findPlayer(room, round.clientId), worst, round.slotType, 0, 'wheel_forced_worst');
@@ -946,17 +979,7 @@ class DraftEngine {
     }
 
     if (seg.kind === 'respin') {
-      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Daha fazla çark özelliği gelsin" — turu KAYBETMEDEN
-      // (finishWheelTurn ÇAĞRILMIYOR, sıra aynı kişide kalıyor) round baştan 'awaiting_spin'e
-      // dönüyor — aynı kişi aynı pozisyon için TAZE bir çark daha çevirir. resolveSpin'deki
-      // ilk-tur açılışıyla (openWheelTurn) BİREBİR aynı state şekli.
-      round.currentSpin = null;
-      round.revealValue = null;
-      round.phase = 'awaiting_spin';
-      round.deadline = Date.now() + WHEEL_PICK_DURATION_SECONDS * 1000;
-      clearTimeout(round.timer);
-      round.timer = setTimeout(() => this.autoSpinWheel(room), WHEEL_PICK_DURATION_SECONDS * 1000);
-      this.emitDraft(room);
+      this.triggerRespin(room, round);
       return;
     }
 
