@@ -1574,7 +1574,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
      · Oyuncu veritabanı → .player-db-toolbar, .pdb-*
      · Çark            → .wheel-stage/-pointer/-turn-banner, .prep-wheel-*
    DOKUNULMADI (bilinçli — bkz. styles.css başındaki kısıt notu): .mini-pitch/.pitch-*,
-   .lineup-pitch*/.pitch-lineup-*, .lu-* (dizilim v2). Renkler tamamen mevcut token'lardan.
+   .lineup-pitch*, .pitch-lineup-*, .lu-* (dizilim v2). Renkler tamamen mevcut token'lardan.
    Responsive: tek kolona düşüşler 760px ve 560px'te. */
 
 /* ---------- ortak: panel ritmi ve bölüm başlıkları ---------- */
@@ -2360,3 +2360,80 @@ details.panel > summary {
   .trade-list { max-height: none; }
 }
 
+
+/* ============ Ses v2 + buton cilası ============
+   [KULLANICI İSTEĞİ] "Bütün ekranları iyice incele, butonları dahil hallet. Ses efektleri daha
+   iyi olabilir: gol olunca goool sesi, direkten dönünce direkten dönme sesi, maç bitince düdük."
+
+   Ses tarafı tamamen sfx.js + views.js/app.js içinde (dosyasız WebAudio). Burada iki şey var:
+     1) DİREK sonucunun görsel karşılığı (.pitch-caption.post / .pitch-phase.post)
+     2) Tüm ekranlardaki butonların ortak davranış cilası: basma geri bildirimi, klavye odağı,
+        devre dışı hali, dokunma hedefi. Yeni renk/token tanımlanmıyor.
+
+   styles.css'in EN SONUNA (trade-v2.css'ten sonra) ekle. */
+
+/* ---------- 1) direkten dönme (minyatür saha) ---------- */
+.pitch-caption.post {
+  color: #ffd166;
+  text-shadow: 0 2px 12px rgba(255, 209, 102, .5);
+}
+.pitch-phase.post { color: #ffd166; border-color: rgba(255, 209, 102, .5); }
+/* Direk vuruşunda kale ağzı sarı parlar (gol turuncusundan ayrışsın). */
+.pitch-flash.post.flash { background: rgba(255, 209, 102, .5); }
+
+/* ---------- 2) buton davranışı: tüm ekranlarda ortak ---------- */
+button, .btn, .tab, .pill, summary { -webkit-tap-highlight-color: transparent; }
+
+/* Basma geri bildirimi — sesle birlikte dokunsal bir "oturma" hissi. */
+.btn:active:not(:disabled),
+.lu-tab:active, .trade-tab:active, .fixture-tabs .tab:active,
+.lu-formation:active, .lu-opt:active, .trade-row:not(.disabled):active,
+.sfx-toggle:active, .playback-controls .btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Klavye kullanıcısı için görünür odak — fare tıklamasında çıkmaz (:focus-visible). */
+button:focus-visible, .btn:focus-visible, summary:focus-visible,
+input:focus-visible, select:focus-visible, details:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Devre dışı butonlar her ekranda AYNI görünsün (bazı ekranlarda sadece opacity vardı). */
+button:disabled, .btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Dokunma hedefi: mobilde 44px altı buton kalmasın (küçük ikon butonları hariç). */
+@media (max-width: 760px) {
+  .btn, .lu-tab, .trade-tab, .fixture-tabs .tab, .playback-controls .btn {
+    min-height: 44px;
+  }
+}
+
+/* Yükleniyor/bekliyor durumundaki butonlar (ör. "Hazırsın — diğerleri bekleniyor") tıklanabilir
+   kalır ama ikincil okunur — kullanıcı yanlışlıkla iki kez basmasın diye imleç değişir. */
+.btn.voted, .btn.waiting { cursor: default; }
+
+
+/* ---------- 3) tipografi cilası: sarma/taşma kusurları ----------
+   [KULLANICI İSTEĞİ] "Kötü, basit gözüken hiçbir şey kalmasın." — ekran taramasında bulunan
+   tekrar eden iki kusur: (a) küçük mono etiketler iki satıra sarıyor ve hizayı bozuyor,
+   (b) isim hücreleri yanında bir rozet varken gereksiz yere kısalıyor. */
+.lu-card-meta, .lu-stat-k, .trade-badge, .trade-formations-k, .trade-slot-k, .trade-valid,
+.trade-pair-limit, .trade-status-tag, .dh-total-v, .dh-price, .bid-guard-k, .bid-guard-v,
+.budget-card .slots, .match-result-tag, .scorer-list-team, .pdb-value, .pdb-pos,
+.draft-header .muted, .formation-badge, .lu-formation-label, .conn-banner {
+  white-space: nowrap;
+}
+.lu-card-title, .trade-status-name, .dh-total-name, .match-result-title {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Rozetli isim hücrelerinde isim, rozeti itmek yerine kendi kısalsın. */
+.dh-player b, .trade-row-name, .pdb-name { flex: 0 1 auto; min-width: 0; }
+/* Uzun açıklama satırları (etiket + metin) hizada kalsın. */
+.big-gap-badge, .bid-guard-note, .trade-offer-note, .lu-warn { min-width: 0; }

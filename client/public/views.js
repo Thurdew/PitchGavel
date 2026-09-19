@@ -1294,6 +1294,7 @@ function buildWheelDiskEl(geo, spinKey, targetLabel, animMap, startedAtMap) {
       finalDeg = wheelRotationFor(geo, targetLabel);
       animMap.set(spinKey, finalDeg);
       startedAtMap.set(spinKey, Date.now());
+      sfx.play('wheel'); // [KULLANICI İSTEĞİ] "Ses efektleri daha iyi olabilir" — spin GERÇEKTEN başlarken (spinKey ilk görüldüğünde) bir kere çalar, her re-render'da değil
       disk.style.transition = 'none';
       disk.style.transform = 'rotate(0deg)';
       requestAnimationFrame(() => {
@@ -2603,10 +2604,11 @@ function createMiniPitch(onGoalImpact, opts = {}) {
     apply(awayDots, attackingSide === 'away' ? push : push * 0.45);
   }
 
-  function flashGoal(side) {
+  function flashGoal(side, kind = '') {
     const node = side === 'right' ? flashRight : flashLeft;
-    node.classList.remove('flash');
+    node.classList.remove('flash', 'post');
     void node.offsetWidth;
+    if (kind) node.classList.add(kind);
     node.classList.add('flash');
   }
 
@@ -2665,17 +2667,28 @@ function createMiniPitch(onGoalImpact, opts = {}) {
     // [KULLANICI İSTEĞİ] "Top dışarı çıkıyor gibi görünüyor ama gol diyor" bug'ının düzeltmesi:
     // artık şutun hedef Y'si sonucu YANSITIYOR — gol/kurtarış kale ağzı aralığına, auta giden
     // şut ise bilerek o aralığın dışına hedefleniyor.
-    let saved = false;
+    // [KULLANICI İSTEĞİ] "Direkten dönünce direkten dönme sesi" — gol olmayan şutların üç ayrı
+    // sonucu var: kaleci kurtardı / DİREĞE çarptı / auta gitti. Direk vuruşu kale ağzının tam
+    // kenarına hedeflenir (görsel olarak da direğe çarpmış gibi durur).
+    let outcome = 'save';
     let shotY;
     if (isGoal) {
       shotY = GOAL_MOUTH_MIN + 4 + Math.random() * (GOAL_MOUTH_MAX - GOAL_MOUTH_MIN - 8);
     } else {
-      saved = Math.random() < 0.55;
-      shotY = saved
+      const roll = Math.random();
+      outcome = roll < 0.5 ? 'save' : roll < 0.68 ? 'post' : 'miss';
+      shotY = outcome === 'save'
         ? GOAL_MOUTH_MIN + 2 + Math.random() * (GOAL_MOUTH_MAX - GOAL_MOUTH_MIN - 4)
-        : (Math.random() < 0.5 ? 12 + Math.random() * 18 : 70 + Math.random() * 18);
+        : outcome === 'post'
+          ? (Math.random() < 0.5 ? GOAL_MOUTH_MIN - 1 : GOAL_MOUTH_MAX + 1) // direğin dibi
+          : (Math.random() < 0.5 ? 12 + Math.random() * 18 : 70 + Math.random() * 18);
     }
-    const shotX = isGoal ? (attackRight ? 97 : 3) : (saved ? (attackRight ? 90 : 10) : (attackRight ? 94 : 6));
+    const saved = outcome === 'save';
+    const hitPost = outcome === 'post';
+    const shotX = isGoal ? (attackRight ? 97 : 3)
+      : saved ? (attackRight ? 90 : 10)
+      : hitPost ? (attackRight ? 95 : 5)
+      : (attackRight ? 94 : 6);
     const boxY = Math.max(8, Math.min(92, shotY + (Math.random() * 16 - 8)));
     const buildY1 = 16 + Math.random() * 68;
     const buildY2 = 16 + Math.random() * 68;
@@ -2694,16 +2707,23 @@ function createMiniPitch(onGoalImpact, opts = {}) {
       ], 0, () => {
         setBall(shotX, shotY, 300); // şut
         showPhase('Vuruyor!');
+        sfx.play('shot');
         setTimeout(() => {
           if (mySeq !== seq) return;
-          flashGoal(targetSide);
+          flashGoal(targetSide, hitPost ? 'post' : '');
           if (isGoal) {
             showCaption('GOOOL! ⚽', 'goal');
             showPhase(`Gol — ${defenderName} kalesi`, 'goal');
-            if (onGoalImpact) onGoalImpact();
+            if (onGoalImpact) onGoalImpact(); // gol sesi + konfeti + ekran sallanması
+          } else if (hitPost) {
+            // [KULLANICI İSTEĞİ] direkten dönme: kendi sesi, kendi yazısı, kendi rengi.
+            showCaption('DİREK! 🥁', 'post');
+            showPhase(`Direkten döndü — ${defenderName} kurtuldu`, 'post');
+            sfx.play('post');
           } else {
             showCaption(saved ? 'KURTARDI! 🧤' : 'AUT! 📛', saved ? 'save' : 'miss');
             showPhase(saved ? `Kaleci kurtardı — ${defenderName}` : 'Top auta gitti', saved ? 'save' : 'miss');
+            sfx.play(saved ? 'save' : 'miss');
           }
           setTimeout(() => {
             if (mySeq !== seq) return;
@@ -2843,6 +2863,8 @@ export function renderMatchPlayback({ state, actions }) {
     scoreNum.textContent = `${pb.score.home} - ${pb.score.away}`;
     if (pb.clock >= 90) {
       clearPlaybackTimer();
+      // [KULLANICI İSTEĞİ] "Maç bitince düdük sesi."
+      sfx.play('whistleEnd');
       const ftText = '🏁 Maç sona erdi.';
       pb.shown.push({ type: 'fulltime', text: ftText });
       logEl.appendChild(el('div', { class: 'row' }, ftText));
@@ -2892,6 +2914,9 @@ export function renderMatchPlayback({ state, actions }) {
 
   function tick() {
     if (pb.done) { clearPlaybackTimer(); return; }
+    // [KULLANICI İSTEĞİ] Maç başlama düdüğü — her maç için yalnızca bir kez (pb.kickedOff,
+    // state'te tutuluyor ki hız değişimi/yeniden çizim düdüğü tekrar çaldırmasın).
+    if (pb.clock === 0 && pb.kickedOff !== pb.pos) { pb.kickedOff = pb.pos; sfx.play('whistleKick'); }
     pb.clock += 1;
     clockLabel.textContent = `${pb.clock}'`; // dakika sayacı gerilim sırasında da akmaya devam eder
     const due = events.filter((ev) => ev.minute === pb.clock);
@@ -2915,7 +2940,7 @@ export function renderMatchPlayback({ state, actions }) {
       logEl.appendChild(el('div', { class: `row ${rowClassFor(ev.type)}` }, text));
       logEl.scrollTop = logEl.scrollHeight;
       pitch.cardFlash(ev.type);
-      sfx.play('card');
+      sfx.play(ev.type === 'red' ? 'red' : 'yellow');
     }
     if (!finishMinuteUpdate()) scheduleNextTick();
   }

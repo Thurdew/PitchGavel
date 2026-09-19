@@ -353,7 +353,8 @@ function ensureSfxButton() {
   const host = document.getElementById('topbarStatus');
   if (!host || !host.parentElement) return;
   sfxBtn = el('button', {
-    type: 'button', class: 'sfx-toggle', title: 'Ses efektleri',
+    type: 'button', class: 'sfx-toggle', title: 'Ses efektleri (gol, düdük, direk, teklif)',
+    'data-sfx': 'off', 'aria-label': 'Ses efektlerini aç/kapat',
     onclick: () => { sfx.toggle(); syncSfxButton(); },
   });
   host.parentElement.appendChild(sfxBtn);
@@ -366,7 +367,23 @@ function syncSfxButton() {
   sfxBtn.classList.toggle('off', !on);
 }
 
+// [KULLANICI İSTEĞİ] "Butonları dahil hallet" — oyundaki TÜM butonlara kısık bir dokunma sesi.
+// Tek tek onclick'lere eklemek yerine tek bir yakalama (capture) dinleyicisi: her butonda
+// çalar, kendi sesi olan aksiyonlarda (teklif, kabul, çark, hazırım) o aksiyonun kendi sesi
+// zaten üstüne biner. data-sfx="off" ile bir butonu hariç tutabilirsin.
+let uiClickBound = false;
+function bindUiClickSound() {
+  if (uiClickBound) return;
+  uiClickBound = true;
+  document.addEventListener('pointerdown', (e) => {
+    const t = e.target instanceof Element ? e.target.closest('button, .btn, .tab, .pill, summary') : null;
+    if (!t || t.disabled || t.dataset.sfx === 'off') return;
+    sfx.play(t.classList.contains('tab') || t.tagName === 'SUMMARY' ? 'toggle' : 'click');
+  }, { capture: true, passive: true });
+}
+
 function updateTopbar() {
+  bindUiClickSound();
   ensureSfxButton();
   updateConnBanner();
   const bits = [];
@@ -889,7 +906,7 @@ socket.on('draft:update', (msg) => {
     if (entry.player) {
       state.draftHistory.push(entry);
       if (state.draftHistory.length > 80) state.draftHistory.shift();
-      sfx.play(entry.clientId === state.clientId ? 'win' : 'sold');
+      sfx.play(entry.clientId === state.clientId ? 'win' : 'gavel');
     }
 
     if (msg.event.type === 'auction_resolved' || msg.event.type === 'blind_auction_resolved') {
@@ -963,7 +980,7 @@ socket.on('trade:incoming', ({ from, give, get }) => {
 
 socket.on('trade:resolved', (record) => {
   const mine = record.aClientId === state.clientId || record.bClientId === state.clientId;
-  sfx.play(mine ? 'win' : 'sold');
+  sfx.play(mine ? 'trade' : 'sold');
   toast(`⇄ ${record.aName} ⇄ ${record.bName}: ${record.aGave.name} ⇄ ${record.bGave.name}`);
   // Kadro değişti — dizilim seçenekleri (varsa) baştan alınmalı.
   state.lineupOptions = null;
