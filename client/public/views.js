@@ -639,6 +639,7 @@ function prepWheelCatalog(state) {
 // (room.prepWheel.cursor güncel), animasyon bitene kadar BURADA o TURUN görünümü gösterilmeye
 // devam ediyor — aksi halde animasyon tamamlanmadan sıradaki kişinin turu görünürdü.
 const prepWheelSpinAnimated = new Map(); // spinKey -> final rotation (deg) — wheelSpinAnimated ile AYNI desen, ayrı isim uzayı
+const prepWheelSpinStartedAt = new Map(); // spinKey -> Date.now() — bkz. wheelSpinStartedAt (aynı anlık-sıçrama düzeltmesi)
 const prepWheelSpinScheduled = new Set(); // spinKey -> reveal zamanlayıcısı zaten kuruldu mu
 
 function prepWheelSegmentsFor(state) {
@@ -668,8 +669,7 @@ export function renderPrepWheel({ state, actions }) {
 
   const spin = state.prepWheelSpin;
   const spinElapsed = spin ? Date.now() - spin.startedAt : Infinity;
-  const PREP_WHEEL_SPIN_HOLD_MS = WHEEL_SPIN_DURATION_MS + 400;
-  const spinActive = !!spin && spinElapsed < PREP_WHEEL_SPIN_HOLD_MS;
+  const spinActive = isPrepWheelSpinActive(state);
   if (spin && !spinActive) state.prepWheelSpin = null;
 
   if (spinActive) {
@@ -678,7 +678,7 @@ export function renderPrepWheel({ state, actions }) {
     const revealReady = spinElapsed >= WHEEL_SPIN_DURATION_MS;
     const spinKey = `prep-${spin.clientId}-${spin.startedAt}`;
     const geo = wheelGeometry(prepWheelSegmentsFor(state));
-    const disk = buildWheelDiskEl(geo, spinKey, spin.perk.label, prepWheelSpinAnimated);
+    const disk = buildWheelDiskEl(geo, spinKey, spin.perk.label, prepWheelSpinAnimated, prepWheelSpinStartedAt);
     const stage = el('div', {
       class: `wheel-stage ${!revealReady ? 'spinning' : ''}`,
     }, [el('div', { class: `wheel-pointer ${revealReady ? 'landed' : ''}` }), disk]);
@@ -687,6 +687,7 @@ export function renderPrepWheel({ state, actions }) {
       prepWheelSpinScheduled.add(spinKey);
       setTimeout(() => actions.route(), PREP_WHEEL_SPIN_HOLD_MS - spinElapsed + 30);
     }
+
 
     root.appendChild(el('div', { class: 'panel' }, [
       el('div', { class: `wheel-turn-banner ${isMine ? 'mine' : ''}` },
@@ -803,6 +804,30 @@ const WHEEL_SPIN_SPINS = 7;
 // listesi) hiç göstermiyoruz, animasyon süresinden biraz sonra (bkz. wheelRevealReady) açığa
 // çıkarıyoruz — sonuç gerçekten "ekrana gelen" dramatik bir an oluyor, dönerken zaten belli.
 const WHEEL_REVEAL_DELAY_MS = WHEEL_SPIN_DURATION_MS + 150;
+// Hazırlık Çarkı'nın kendi hold süresi (reveal + kısa bir "sonucu okuma" payı) — renderPrepWheel'in
+// yukarısında (module scope'ta önce çağrılabilse de) tanımlı; JS önce TÜM modülü değerlendirip
+// SONRA fonksiyonları çağırdığı için renderPrepWheel bunu kendisinden SONRA tanımlanmış olsa
+// bile güvenle kullanabiliyor (WHEEL_SPIN_DURATION_MS için de zaten aynı desen geçerliydi).
+const PREP_WHEEL_SPIN_HOLD_MS = WHEEL_SPIN_DURATION_MS + 400;
+// [DÜZELTİLDİ — BUG, KULLANICI GERİ BİLDİRİMİ] "Çark bitince oyun hemen başlıyor" — kök neden:
+// `app.js route()` SADECE `state.room.status`'a bakarak hangi ekranı çizeceğine karar veriyordu.
+// Hazırlık Çarkı'nda SIRADAKİ kişi son kişiyse, sunucu o kişinin spin'ini çözer çözmez (hiçbir
+// gecikme olmadan, aynı tick'te) `startDraft`'ı çağırıp `room.status`'u 'draft'a çeviriyordu —
+// bu değişiklik `room:state` ile ANINDA yayınlanıyordu, ve `route()` bir SONRAKİ render'ında artık
+// `renderPrepWheel` yerine `renderDraft`'ı çiziyordu; oysa o kişinin (ve izleyen herkesin) yerel
+// `state.prepWheelSpin` "hold" süresi (bu sabit) HENÜZ dolmamış olabiliyordu — çark az önce
+// çevrilmiş, animasyon oynamaya BAŞLAMIŞ ama ekran o anda draft'a sıçrıyordu ("dönmüyor, direkt
+// sonuç çıkıyor" hissi tam olarak buydu, özellikle sıradaki son kişi çevirdiğinde/kendi turunda).
+// Çözüm: `route()` artık `state.room.status`'tan ÖNCE bu fonksiyonla "hâlâ bir prep-wheel
+// animasyonu gösteriliyor mu" diye soruyor — cevap evetse (durum artık 'draft' olsa bile)
+// `renderPrepWheel` çizilmeye devam ediyor (o fonksiyon zaten `state.prepWheelSpin`'i `room.
+// prepWheel`e hiç ihtiyaç duymadan çizebiliyor), hold süresi dolunca normal `room.status`
+// yönlendirmesi devreye giriyor. Bkz. client/public/app.js route().
+export function isPrepWheelSpinActive(state) {
+  const spin = state.prepWheelSpin;
+  if (!spin) return false;
+  return (Date.now() - spin.startedAt) < PREP_WHEEL_SPIN_HOLD_MS;
+}
 
 // Çarkı görsel olarak istenen dilimde durdurmak için gereken toplam dönüş açısı — birkaç tam
 // tur (heyecan için) + dilimin ortasına (küçük bir rastgele sapmayla, hep aynı noktada
@@ -823,7 +848,19 @@ function wheelRotationFor(geo, label, spins = WHEEL_SPIN_SPINS) {
 
 // Bir spin'in animasyonunu SADECE İLK render'ında oynat (route() DOM'u sıfırdan kursa da,
 // bkz. lastShownBid ile aynı desen) — sonraki re-render'larda çark zaten vardığı açıda durur.
+// [DÜZELTİLDİ — BUG, KULLANICI GERİ BİLDİRİMİ] "Çark dönmüyor, direkt sonuç çıkıyor" — bu
+// yorumun varsaydığı "zaten vardığı açıda durur" DOĞRU DEĞİLDİ: route() her seferinde disk'i
+// SIFIRDAN yeni bir DOM elemanı olarak kuruyor (bkz. buildWheelDiskEl), önceki elemanın o anki
+// GERÇEK (interpolated) açısı hiçbir yerde tutulmuyordu — ikinci bir render (animasyon HENÜZ
+// bitmeden, ör. rakibin bir aksiyonu/yeniden bağlanma yüzünden gelen bir room:state/draft:update
+// broadcast'i) `transition:none` ile doğrudan FİNAL açıya ATLIYORDU; yani "dönmüyor, direkt
+// sonuç çıkıyor" hissi, animasyon sırasında ARADA bir re-render olduğunda gerçekten oluşuyordu
+// (kendi testimde art arda tıklama/ekran görüntüsü almadan tek bir oturumda YAKALANMADI ama kod
+// okununca kök neden netti — bkz. wheelSpinStartedAt). Artık her spinKey için başlangıç zamanı
+// da saklanıyor; ara bir re-render'da animasyon süresi henüz dolmadıysa KALAN süre kadar (0'dan
+// değil, o ana kadar geçen süre düşülerek) dönüşe devam ediliyor — asla anlık sıçrama olmuyor.
 const wheelSpinAnimated = new Map(); // spinKey -> final rotation (deg)
+const wheelSpinStartedAt = new Map(); // spinKey -> Date.now() (ilk render anı) — ara re-render'larda kalan süreyi hesaplamak için
 // [KULLANICI İSTEĞİ] Suspense — animasyon bitene kadar sonucu (band/pick listesi) gizler. Bir
 // spinKey için reveal zamanlayıcısı SADECE bir kez kurulur (aksi halde her ara re-render'da
 // yeniden 3.2sn'lik bir bekleme başlardı).
@@ -1234,8 +1271,9 @@ export function renderDraft({ state, actions }) {
 // Modu'ndaki `renderWheelRound` VE Hazırlık Çarkı'ndaki (`renderPrepWheel`) spin animasyonu
 // TARAFINDAN paylaşılır. `animMap` çağıranın kendi spinKey->açı önbelleği (Çark Modu ve Hazırlık
 // Çarkı ayrı Map kullanır — spinKey isim uzayları çakışmasın diye), `targetLabel` null ise disk
-// hiç dönmeden (0deg) durur.
-function buildWheelDiskEl(geo, spinKey, targetLabel, animMap) {
+// hiç dönmeden (0deg) durur. `startedAtMap` (animMap ile AYNI spinKey'i paylaşan ayrı bir Map)
+// — [DÜZELTİLDİ — BUG] "çark dönmüyor, direkt sonuç çıkıyor": bkz. wheelSpinStartedAt yorumu.
+function buildWheelDiskEl(geo, spinKey, targetLabel, animMap, startedAtMap) {
   const disk = el('div', { class: 'wheel-disk' });
   disk.style.background = `conic-gradient(${geo.map((s) => `${s.color} ${s.startPct}% ${s.endPct}%`).join(', ')})`;
   for (const s of geo) {
@@ -1255,6 +1293,7 @@ function buildWheelDiskEl(geo, spinKey, targetLabel, animMap) {
     if (finalDeg == null) {
       finalDeg = wheelRotationFor(geo, targetLabel);
       animMap.set(spinKey, finalDeg);
+      startedAtMap.set(spinKey, Date.now());
       disk.style.transition = 'none';
       disk.style.transform = 'rotate(0deg)';
       requestAnimationFrame(() => {
@@ -1264,8 +1303,30 @@ function buildWheelDiskEl(geo, spinKey, targetLabel, animMap) {
         });
       });
     } else {
-      disk.style.transition = 'none';
-      disk.style.transform = `rotate(${finalDeg}deg)`;
+      // [DÜZELTİLDİ — BUG, KULLANICI GERİ BİLDİRİMİ] "Çark dönmüyor, direkt sonuç çıkıyor" — bu
+      // ARA bir re-render (route() DOM'u sıfırdan kuruyor, bkz. rakibin bir aksiyonundan/yeniden
+      // bağlanmadan gelen bir room:state/draft:update broadcast'i). Eskiden burada koşulsuz
+      // `transition:none` ile doğrudan finalDeg'e ATLANIYORDU — animasyon süresi (WHEEL_SPIN_
+      // DURATION_MS) henüz dolmadıysa bu, dönüşü GÖRÜNMEZ hale getirip sonucu anlık gösteriyordu.
+      // Artık ilk render'ın ne zaman başladığı (startedAtMap) hatırlanıyor: süre dolmadıysa yeni
+      // disk elemanı 0deg'den başlayıp KALAN süre kadar dönmeye devam ediyor (asla sıçramıyor);
+      // süre gerçekten dolduysa (normal reveal-sonrası re-render) eskisi gibi anında finalDeg'de duruyor.
+      const startedAt = startedAtMap.get(spinKey);
+      const elapsed = startedAt != null ? Date.now() - startedAt : WHEEL_SPIN_DURATION_MS;
+      const remaining = WHEEL_SPIN_DURATION_MS - elapsed;
+      if (remaining > 50) {
+        disk.style.transition = 'none';
+        disk.style.transform = 'rotate(0deg)';
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            disk.style.transition = `transform ${remaining}ms cubic-bezier(0.14, 0.68, 0.16, 1)`;
+            disk.style.transform = `rotate(${finalDeg}deg)`;
+          });
+        });
+      } else {
+        disk.style.transition = 'none';
+        disk.style.transform = `rotate(${finalDeg}deg)`;
+      }
     }
   } else {
     disk.style.transition = 'none';
@@ -1315,7 +1376,7 @@ function renderWheelRound({ state, actions, round, paused }) {
   // farkları) — dar bir dilime uzun bir etiket denk gelince metin komşu dilime taşıyordu; artık
   // her etiketin genişliği/font boyutu KENDİ diliminin gerçek yay genişliğine göre hesaplanıyor
   // (bkz. buildWheelDiskEl).
-  const disk = buildWheelDiskEl(geo, spinKey, round.currentSpin ? round.currentSpin.label : null, wheelSpinAnimated);
+  const disk = buildWheelDiskEl(geo, spinKey, round.currentSpin ? round.currentSpin.label : null, wheelSpinAnimated, wheelSpinStartedAt);
 
   const stage = el('div', {
     // [KULLANICI İSTEĞİ] "Döndüğü belli olsun" — dönerken (reveal'a kadar) bir glow/pulse

@@ -1,7 +1,7 @@
 import { el, toast } from './helpers.js';
 // [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
 import { sfx } from './sfx.js';
-import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay } from './views.js';
+import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, isPrepWheelSpinActive } from './views.js';
 
 const LS_CLIENT_ID = 'kk_clientId';
 const LS_NAME = 'kk_name';
@@ -486,6 +486,18 @@ function route() {
 
   if (!state.room) {
     appRoot.appendChild(renderLobby({ state, actions }));
+    finish();
+    return;
+  }
+
+  // [DÜZELTİLDİ — BUG, KULLANICI GERİ BİLDİRİMİ] "Çark bitince oyun hemen başlıyor" — bkz.
+  // views.js isPrepWheelSpinActive yorumu: son kişi Hazırlık Çarkı'nı çevirince sunucu
+  // room.status'u AYNI ANDA 'draft'a çevirebiliyordu, bu da çevirenin (ve izleyenlerin) henüz
+  // bitmemiş yerel spin animasyonunu status'a bakan bu switch'in ATLAMASINA yol açıyordu. Artık
+  // durum ne olursa olsun, yerel animasyon hold süresi dolmadan renderPrepWheel çizilmeye devam
+  // ediyor — hold bitince normal switch akışı (aşağıdaki case'ler) devreye giriyor.
+  if (isPrepWheelSpinActive(state)) {
+    appRoot.appendChild(renderPrepWheel({ state, actions }));
     finish();
     return;
   }
