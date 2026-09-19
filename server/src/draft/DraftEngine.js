@@ -207,6 +207,13 @@ class DraftEngine {
   constructor(io, roomManager) {
     this.io = io;
     this.roomManager = roomManager;
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] index.js kurulumda enjekte eder
+    // (döngüsel require olmasın diye constructor argümanı değil, ayrı bir setter).
+    this.tradeEngine = null;
+  }
+
+  setTradeEngine(tradeEngine) {
+    this.tradeEngine = tradeEngine;
   }
 
   emitState(room) {
@@ -1295,6 +1302,13 @@ class DraftEngine {
     this.io.to(room.code).emit('draft:complete', {
       players: room.players.map((p) => ({ clientId: p.clientId, squad: p.squad, budget: p.budget })),
     });
+
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Host oda kurarken açtıysa, dizilim
+    // seçiminden ÖNCE takas turu açılır (üç draft modunda da). Kapalıysa davranış eskisi gibi:
+    // doğrudan squad_select'te kalınır.
+    if (room.tradeRoundEnabled && this.tradeEngine) {
+      this.tradeEngine.start(room);
+    }
   }
 }
 
