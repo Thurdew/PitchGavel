@@ -1560,3 +1560,803 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   .lu-stat { flex: 1; min-width: 0; }
   .lu-save-hint { max-width: none; }
 }
+
+/* ===================== Ekranlar v2 — draft / anlatım / sonuç / veritabanı / çark =====================
+   [KULLANICI İSTEĞİ] "Bu ekranları da yeniden tasarla, uygulamak istiyorum."
+   Bu blok SADECE GÖRÜNÜM katmanıdır: mevcut sınıf adlarını (views.js'in bugün ürettiği DOM'u)
+   yeniden giydirir — HİÇBİR JS değişikliği gerektirmez. styles.css'in EN SONUNA ekle; sıra
+   önemli, aynı özgüllükteki eski kurallar bunlarla eziliyor.
+
+   Kapsam:
+     · Draft turu      → .draft-header, .budget-*, .round-area, .reveal-row, .bid-*, .timer-*
+     · Maç anlatımı    → .match-live-*, .scoreline, .event-log .row, .playback-controls
+     · Maç sonucu      → .winner-banner, .fixture-tabs, .match-result-*, .scorer-*, .standings-table
+     · Oyuncu veritabanı → .player-db-toolbar, .pdb-*
+     · Çark            → .wheel-stage/-pointer/-turn-banner, .prep-wheel-*
+   DOKUNULMADI (bilinçli — bkz. styles.css başındaki kısıt notu): .mini-pitch/.pitch-*,
+   .lineup-pitch*/.pitch-lineup-*, .lu-* (dizilim v2). Renkler tamamen mevcut token'lardan.
+   Responsive: tek kolona düşüşler 760px ve 560px'te. */
+
+/* ---------- ortak: panel ritmi ve bölüm başlıkları ---------- */
+.view .panel { border-radius: 14px; }
+.view .panel > h3 {
+  display: flex; align-items: center; gap: 9px;
+  font-family: var(--font-display); font-size: 15px; font-weight: 800;
+  letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 13px;
+}
+.view .panel > h3::before { content: ''; width: 3px; height: 14px; background: var(--accent); flex: 0 0 auto; }
+
+/* ================================ DRAFT TURU ================================ */
+.draft-header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.draft-header h3 { margin: 0; font-size: 17px; letter-spacing: .8px; text-transform: uppercase; }
+.draft-header .muted { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px;
+  color: var(--text-muted); padding: 5px 9px; background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: 5px; }
+.draft-header > .btn { margin-left: auto; }
+.draft-header > .btn + .btn { margin-left: 0; }
+.formation-badge {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent-glow);
+  padding: 5px 10px; border-radius: 5px;
+}
+
+.budget-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
+.budget-card { background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 12px 13px; }
+.budget-card.me, .budget-card.mine { background: var(--accent-soft); border-color: var(--accent-glow); }
+.budget-card .name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.budget-card .budget {
+  font-family: var(--font-display); font-weight: 800; font-size: 24px; line-height: 1;
+  letter-spacing: .5px; margin-top: 8px; color: var(--accent);
+}
+.budget-card .slots { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px;
+  color: var(--text-faint); margin-top: 7px; }
+
+.warning-banner {
+  display: flex; align-items: center; gap: 11px;
+  background: var(--danger-soft); border: 1px solid var(--danger-glow);
+  border-left: 3px solid var(--danger); border-radius: 10px; padding: 13px 14px;
+  font-size: 12.5px; color: var(--text); line-height: 1.45;
+}
+
+/* geri sayım — tek satırda büyük rakam + ince bar */
+.timer-wrap { display: flex; flex-direction: column-reverse; gap: 9px; margin: 4px 0 14px; }
+.timer-label {
+  font-family: var(--font-display); font-weight: 800; font-size: 30px; line-height: 1;
+  letter-spacing: .6px; color: var(--accent); text-align: right;
+}
+.timer-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.timer-fill { height: 100%; background: var(--accent); transition: width .15s linear; }
+.timer-wrap.urgent .timer-label, .timer-wrap.urgent .timer-fill { color: var(--urgency); background-color: var(--urgency); }
+.timer-wrap.urgent .timer-label { background: none; }
+.timer-wrap.critical .timer-label { color: var(--danger); animation: v2-pulse .6s ease-in-out infinite; }
+.timer-wrap.critical .timer-fill { background: var(--danger); }
+@keyframes v2-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+
+.big-gap-badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surprise-soft); border: 1px solid var(--surprise-glow); border-radius: 7px;
+  padding: 7px 11px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px;
+  font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--surprise);
+}
+
+/* ana oyuncu + basamaklar: ana kart geniş, yedekler altında liste ritminde */
+.reveal-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 10px; }
+.reveal-row .player-card.main {
+  grid-column: 1 / -1;
+  background: linear-gradient(160deg, #152238 0%, #0c1421 58%);
+  border-color: var(--accent-glow);
+  box-shadow: 0 18px 44px -26px var(--accent-glow);
+}
+.reveal-row .player-card.backup { position: relative; background: #0b111c; }
+.ladder-rank-badge {
+  position: absolute; top: 9px; right: 9px;
+  font-family: var(--font-display); font-weight: 800; font-size: 15px; line-height: 1;
+  color: var(--text-faint);
+}
+
+/* teklif paneli */
+.bid-panel { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.bid-current {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.bid-current b {
+  display: block; font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(32px, 5.5vw, 44px); line-height: 1; letter-spacing: .5px;
+  color: var(--accent); text-transform: none; margin-top: 4px;
+}
+.bid-leaderboard { max-width: none; gap: 6px; }
+.bid-leaderboard-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 11px; background: #0b111c; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 12.5px;
+}
+.bid-leaderboard-row span:last-child { font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.bid-leaderboard-row.leading { border-color: var(--accent-glow); background: var(--accent-soft); }
+.bid-leaderboard-row.leading span:last-child { color: var(--accent); }
+
+.bid-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.bid-form input {
+  flex: 1; min-width: min(100%, 140px); background: #05070c;
+  border: 1px solid var(--border-strong); border-radius: 8px; padding: 13px 13px;
+  color: var(--text); font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 20px; font-weight: 700;
+}
+.bid-form input:focus { outline: none; border-color: var(--accent); }
+.bid-form .btn {
+  min-height: 52px; padding: 14px 22px; border-radius: 8px;
+  font-family: var(--font-display); font-weight: 800; font-size: 18px;
+  letter-spacing: 1.2px; text-transform: uppercase;
+  box-shadow: 0 12px 28px -12px var(--accent-glow);
+}
+.bid-cap { font-size: 11px; color: var(--text-faint); line-height: 1.5; }
+.error-text:not(:empty) {
+  font-size: 12px; color: var(--danger); background: var(--danger-soft);
+  border: 1px solid var(--danger-glow); border-radius: 8px; padding: 9px 11px;
+}
+
+details.panel > summary {
+  font-family: var(--font-display); font-weight: 800; font-size: 14px;
+  letter-spacing: 1.4px; text-transform: uppercase; cursor: pointer;
+}
+
+/* ============================== MAÇ ANLATIMI ============================== */
+.match-live-layout {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px; align-items: start;
+}
+.panel.match-live-side { display: flex; flex-direction: column; gap: 12px; }
+.match-clock {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 700;
+  letter-spacing: 1.4px; color: var(--accent); text-align: center;
+}
+.scoreline {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: clamp(10px, 2vw, 22px);
+  background: linear-gradient(180deg, #101c2e 0%, #0b1320 100%);
+  border: 1px solid var(--border); border-radius: 14px; padding: clamp(14px, 2.4vw, 20px);
+}
+.scoreline .team {
+  font-family: var(--font-display); font-weight: 800; font-size: clamp(18px, 3.4vw, 28px);
+  letter-spacing: .5px; text-transform: uppercase; line-height: 1.05; min-width: 0;
+}
+.scoreline .team:first-child { text-align: right; }
+.scoreline .xg {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 500;
+  letter-spacing: .4px; text-transform: none; color: var(--text-faint); margin-top: 5px;
+}
+.scoreline .score {
+  font-family: var(--font-display); font-weight: 900; font-size: clamp(40px, 8vw, 62px);
+  line-height: .9; color: var(--accent); white-space: nowrap;
+}
+
+.playback-controls { display: flex; gap: 7px; flex-wrap: wrap; margin-left: auto; }
+.playback-controls .btn {
+  min-height: 40px; padding: 10px 16px; border-radius: 7px; font-size: 12px; font-weight: 700;
+}
+.playback-controls .btn.voted { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.playback-vote-hint {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px;
+  letter-spacing: .6px; color: var(--text-faint); margin-top: 8px;
+}
+
+.panel.match-live-log { padding-bottom: 8px; }
+.event-log.commentary-log {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 460px; overflow-y: auto; padding-right: 4px; background: none; border: none;
+}
+.event-log.commentary-log .row {
+  background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: 10px; padding: 13px 14px; font-size: 13px; line-height: 1.45;
+  color: #cbd5e1; text-wrap: pretty; animation: v2-row-in .3s ease-out;
+}
+@keyframes v2-row-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.event-log.commentary-log .row.buildup { color: var(--text-muted); font-style: italic; border-left-color: var(--border); }
+.event-log.commentary-log .row.goal {
+  background: var(--accent-soft); border-color: var(--accent-glow); border-left-color: var(--accent);
+  padding: 16px; font-size: 15px; font-weight: 600; color: var(--text);
+}
+.event-log.commentary-log .row.yellow-card { border-left-color: #ffd166; }
+.event-log.commentary-log .row.red-card {
+  background: var(--danger-soft); border-color: var(--danger-glow); border-left-color: var(--danger);
+  font-size: 15px; font-weight: 600; color: var(--text);
+}
+
+/* ================================ MAÇ SONUCU ================================ */
+.winner-banner {
+  position: relative; overflow: hidden; text-align: center;
+  background: linear-gradient(160deg, #152238 0%, #0b1320 62%);
+  border: 1px solid var(--accent-glow); border-radius: 16px;
+  padding: clamp(18px, 3vw, 28px);
+  font-family: var(--font-display); font-weight: 800; font-size: clamp(26px, 6vw, 44px);
+  line-height: 1; letter-spacing: .6px; text-transform: uppercase; color: var(--text);
+  box-shadow: 0 22px 50px -30px var(--accent-glow);
+}
+.trophy-icon { display: block; font-size: .7em; margin-bottom: 8px; }
+
+.fixture-tabs { display: flex; gap: 6px; padding: 5px; background: #0b111c;
+  border: 1px solid var(--border); border-radius: 10px; flex-wrap: wrap; }
+.fixture-tabs .tab {
+  flex: 1; min-width: 150px; min-height: 42px; padding: 10px 18px;
+  border: 1px solid transparent; border-radius: 7px; background: none; color: var(--text-muted);
+  font: inherit; font-size: 13px; font-weight: 700; letter-spacing: .4px; cursor: pointer;
+}
+.fixture-tabs .tab:hover { color: var(--text); }
+.fixture-tabs .tab.active { background: var(--accent-soft); border-color: var(--accent-glow); color: var(--accent); }
+
+.match-result-card { display: flex; flex-direction: column; gap: 12px; }
+.match-result-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.match-result-title {
+  font-family: var(--font-display); font-weight: 800; font-size: 15px;
+  letter-spacing: 1.5px; text-transform: uppercase;
+}
+.match-result-tag { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px;
+  letter-spacing: 1.2px; text-transform: uppercase; color: var(--text-faint); }
+.match-story { display: flex; flex-direction: column; gap: 6px; }
+.match-story-line {
+  margin: 0; font-size: 12.5px; line-height: 1.5; color: #cbd5e1;
+  background: #0b111c; border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 9px; padding: 10px 12px; text-wrap: pretty;
+}
+.scorer-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.scorer-list { background: #0b111c; border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; }
+.scorer-list-team {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint); margin-bottom: 9px;
+}
+.scorer-row { font-size: 12.5px; padding: 4px 0; }
+.scorer-empty { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--text-faint); }
+.match-rating-pitches { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+
+.standings-table { width: 100%; border-collapse: collapse; }
+.standings-table th {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-faint);
+  text-align: right; padding: 10px 8px; border-bottom: 1px solid var(--border); background: #0b111c;
+}
+.standings-table th:nth-child(2) { text-align: left; }
+.standings-table td {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; text-align: right;
+  padding: 11px 8px; border-bottom: 1px solid rgba(255, 255, 255, .05); color: var(--text-muted);
+}
+.standings-table td:nth-child(2) { text-align: left; font-family: var(--font-body);
+  font-size: 13px; font-weight: 600; color: var(--text); }
+.standings-table .rank-cell { font-family: var(--font-display); font-size: 17px; font-weight: 800; color: var(--text-faint); }
+.standings-table tr.me td { background: rgba(255, 149, 0, .05); }
+.standings-table tr.winner .rank-cell { color: var(--accent); }
+
+/* ============================ OYUNCU VERİTABANI ============================ */
+.player-db-toolbar { display: flex; gap: 9px; flex-wrap: wrap; }
+.player-db-toolbar input {
+  flex: 1; min-width: min(100%, 220px); background: #0b111c;
+  border: 1px solid var(--border-strong); border-radius: 8px; padding: 12px 13px;
+  color: var(--text); font-family: var(--font-body); font-size: 14px;
+}
+.player-db-toolbar input:focus { outline: none; border-color: var(--accent); }
+.player-db-toolbar select {
+  min-height: 46px; background: #0b111c; border: 1px solid var(--border-strong);
+  border-radius: 8px; padding: 12px 13px; color: var(--text-muted);
+  font-family: var(--font-body); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.player-db-toolbar select:focus { outline: none; border-color: var(--accent); }
+
+.pdb-table { width: 100%; border-collapse: collapse; }
+.pdb-table th {
+  position: sticky; top: 0; z-index: 1; background: #0b111c;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-faint);
+  text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border);
+}
+.pdb-table td { padding: 11px 12px; border-bottom: 1px solid rgba(255, 255, 255, .05); font-size: 12.5px; }
+.pdb-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, .012); }
+.pdb-table tbody tr:hover td { background: var(--card-hover); }
+.pdb-rating {
+  font-family: var(--font-display); font-weight: 800; font-size: 20px; line-height: 1;
+  color: var(--text); white-space: nowrap;
+}
+.pdb-name { font-size: 13.5px; font-weight: 600; }
+.pdb-pos {
+  display: inline-block; font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 7px;
+}
+.pdb-season { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; line-height: 1.5; }
+.pdb-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.pdb-icon-tag { color: var(--icon); }
+.pdb-source-tag {
+  display: inline-block; margin-left: 6px; font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 8.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--accent); border: 1px solid var(--accent-glow); border-radius: 3px; padding: 2px 5px;
+  vertical-align: middle;
+}
+
+/* ================================== ÇARK ================================== */
+.wheel-round { display: flex; flex-direction: column; gap: 14px; }
+.wheel-turn-banner {
+  font-family: var(--font-display); font-weight: 800; font-size: clamp(20px, 4vw, 30px);
+  line-height: 1.05; letter-spacing: .6px; text-transform: uppercase; text-align: center;
+  color: var(--text-muted); padding: 14px 12px;
+  background: #0b111c; border: 1px solid var(--border); border-radius: 12px;
+}
+.wheel-turn-banner.mine { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-glow); }
+.wheel-stage { margin: 0 auto; }
+.wheel-pointer { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .6)); }
+.wheel-pointer.landed { filter: drop-shadow(0 0 10px var(--accent-glow)); }
+
+.prep-wheel-turn-label {
+  font-family: var(--font-display); font-weight: 800; font-size: 22px;
+  letter-spacing: .8px; text-transform: uppercase; margin-bottom: 11px;
+}
+.prep-wheel-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.prep-wheel-actions .btn {
+  flex: 1; min-width: min(100%, 200px); min-height: 52px;
+  font-family: var(--font-display); font-weight: 800; font-size: 18px;
+  letter-spacing: 1.2px; text-transform: uppercase;
+}
+.prep-wheel-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 11px;
+  padding: 10px 12px; background: #0b111c; border: 1px solid var(--border);
+  border-radius: 9px; margin-bottom: 7px; font-size: 12.5px;
+}
+.prep-wheel-row span:last-child { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }
+.prep-wheel-row.current { background: var(--accent-soft); border-color: var(--accent-glow); }
+.prep-wheel-row.current span:last-child { color: var(--accent); font-weight: 700; }
+
+/* ---------- dar ekran ---------- */
+@media (max-width: 760px) {
+  .draft-header > .btn { margin-left: 0; }
+  .event-log.commentary-log { max-height: none; }
+}
+@media (max-width: 560px) {
+  .timer-label { font-size: 24px; }
+  .scoreline { padding: 14px 10px; gap: 8px; }
+  .fixture-tabs .tab { min-width: 0; }
+}
+
+
+/* ===================== Minyatür saha v2 (.pitch-dot / .pitch-phase / .pitch-team-tag) =====
+   [KULLANICI İSTEĞİ] "Maç anlatımındaki minyatür sahaya oyuncuları ve durum göstergesini ekle."
+   views.js'teki createMiniPitch v2 ile birlikte gelir (yeni DOM: 11+11 .pitch-dot, alt
+   .pitch-phase durum satırı, köşelerde .pitch-team-tag). Mevcut .pitch-field/.pitch-ball/
+   .pitch-caption/.pitch-flash kuralları BİREBİR korunur — bu blok sadece EKLER.
+   styles.css'in en sonuna (screens-v2.css'ten sonra) ekle. */
+
+.pitch-dot {
+  position: absolute; width: 9px; height: 9px; border-radius: 50%;
+  transform: translate(-50%, -50%); z-index: 1;
+  border: 1px solid rgba(7, 12, 20, .75);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .5);
+  transition: left .42s cubic-bezier(.3, .7, .2, 1);
+}
+.pitch-dot.home { background: var(--accent); }
+.pitch-dot.away { background: #93c5fd; }
+.pitch-dot.group-GK { background: #ffd166; width: 10px; height: 10px; }
+.pitch-dot.home.group-DF { background: #5eead4; }
+.pitch-dot.away.group-DF { background: #7dd3fc; }
+.pitch-dot.home.group-FW { background: #fb7185; }
+.pitch-dot.away.group-FW { background: #c4b5fd; }
+
+.pitch-team-tag {
+  position: absolute; top: 8px; z-index: 2;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.2px; text-transform: uppercase; color: rgba(255, 255, 255, .72);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pitch-team-tag.left { left: 10px; }
+.pitch-team-tag.right { right: 10px; }
+
+/* Pozisyonun hangi aşamada olduğunu söyleyen alt satır — .pitch-caption'ın (GOOOL!/KURTARDI!)
+   yerine geçmez, onun altında sürekli akan sakin bir durum göstergesidir. */
+.pitch-phase {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 2;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; font-weight: 700;
+  letter-spacing: .8px; white-space: nowrap; max-width: 92%; overflow: hidden;
+  text-overflow: ellipsis; color: rgba(255, 255, 255, .8);
+  background: rgba(7, 12, 20, .62); border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 20px; padding: 4px 11px;
+  opacity: 0; transition: opacity .2s ease, color .2s ease, border-color .2s ease;
+}
+.pitch-phase.show { opacity: 1; }
+.pitch-phase.goal { color: var(--accent); border-color: var(--accent-glow); }
+.pitch-phase.save { color: var(--success); border-color: var(--success-glow); }
+.pitch-phase.miss { color: var(--text-muted); }
+.pitch-phase.yellow { color: #ffd166; border-color: rgba(255, 209, 102, .45); }
+.pitch-phase.red { color: var(--danger); border-color: var(--danger-glow); }
+
+@media (max-width: 560px) {
+  .pitch-dot { width: 7px; height: 7px; }
+  .pitch-dot.group-GK { width: 8px; height: 8px; }
+  .pitch-phase { font-size: 8.5px; padding: 3px 9px; }
+}
+
+
+/* ============ Ek katman v3: bağlantı şeridi · ses düğmesi · bütçe uyarısı · draft geçmişi
+   ============ mobil teklif barı · lobi/bekleme hizalaması
+
+   [KULLANICI İSTEĞİ] "1, 2, 4, 5, 6, 7'yi yap" (3 hariç):
+     1 → lobi + bekleme odası dilini yeni ekranlarla hizala (aşağıdaki son bölüm)
+     2 → mobilde draft teklif barını alta sabitle (.bid-panel.sticky-mobile)
+     4 → draft geçmişi (.draft-history / .dh-*)
+     5 → bütçe & boş slot ön uyarısı (.bid-guard)
+     6 → yeniden bağlanma durumu (.conn-banner)
+     7 → ses/haptik (.sfx-toggle — sesin kendisi sfx.js'te, dosyasız WebAudio)
+
+   styles.css'in EN SONUNA, screens-v2.css ve mini-pitch-v2.css'ten SONRA ekle.
+   Saha blokları (.mini-pitch/.pitch-*, .lineup-pitch*, .lu-*) burada da değiştirilmiyor. */
+
+/* ---------------- 6) bağlantı durumu ---------------- */
+.conn-banner {
+  position: fixed; left: 50%; top: 0; transform: translate(-50%, -100%);
+  z-index: 9999; max-width: min(680px, calc(100% - 20px));
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 16px; border-radius: 0 0 12px 12px;
+  background: var(--danger-soft); border: 1px solid var(--danger-glow); border-top: none;
+  backdrop-filter: blur(8px);
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; font-weight: 600;
+  line-height: 1.45; color: var(--text); text-align: center;
+  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, .9);
+  transition: transform .25s var(--ease, ease);
+}
+.conn-banner.show { transform: translate(-50%, 0); }
+
+/* ---------------- 7) ses aç/kapat ---------------- */
+.sfx-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex: 0 0 auto; margin-left: 8px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--card); color: var(--text); font-size: 15px; line-height: 1; cursor: pointer;
+  transition: border-color .15s ease, color .15s ease;
+}
+.sfx-toggle:hover { border-color: var(--accent); }
+.sfx-toggle.off { color: var(--text-faint); border-color: var(--border); }
+
+/* ---------------- 5) bütçe & slot ön uyarısı ---------------- */
+.bid-guard {
+  display: flex; flex-direction: column; gap: 9px;
+  padding: 12px 13px; border-radius: 10px;
+  background: #0b111c; border: 1px solid var(--border);
+  transition: border-color .15s ease, background .15s ease;
+}
+.bid-guard.warn { border-color: var(--accent-glow); background: var(--accent-soft); }
+.bid-guard.danger { border-color: var(--danger-glow); background: var(--danger-soft); }
+.bid-guard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(50%, 120px), 1fr)); gap: 8px; }
+.bid-guard-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bid-guard-k {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.3px; text-transform: uppercase; color: var(--text-faint);
+}
+.bid-guard-v {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; font-weight: 700;
+  color: var(--text); white-space: nowrap;
+}
+.bid-guard.warn .bid-guard-v { color: var(--accent); }
+.bid-guard.danger .bid-guard-v { color: var(--danger); }
+.bid-guard-note {
+  font-size: 11.5px; line-height: 1.5; color: var(--text-muted); text-wrap: pretty;
+  padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, .07);
+}
+.bid-guard.warn .bid-guard-note, .bid-guard.danger .bid-guard-note { color: var(--text); }
+
+/* ---------------- 2) mobilde teklif barı altta sabit ----------------
+   Dar ekranda teklif alanı ekranın en altında kalıyordu (draft ekranı uzun) — teklif vermek
+   için her turda aşağı kaydırmak gerekiyordu. Artık teklif formu ekranın altına yapışır;
+   uyarı/tavan bilgisi normal akışta kalır (yapışan alan sadece giriş + buton). */
+@media (max-width: 760px) {
+  .bid-panel.sticky-mobile { padding-bottom: 4px; }
+  .bid-panel.sticky-mobile .bid-form {
+    position: sticky; bottom: 0; z-index: 30;
+    margin: 0 -14px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, rgba(11, 17, 28, .86) 0%, #0b111c 42%);
+    border-top: 1px solid var(--border-strong);
+    backdrop-filter: blur(10px);
+  }
+  .bid-panel.sticky-mobile .bid-form .btn { box-shadow: none; }
+  .view { padding-bottom: 12px; }
+}
+
+/* ---------------- 4) draft geçmişi ---------------- */
+.draft-history .dh-wrap { display: flex; flex-direction: column; gap: 11px; margin-top: 12px; }
+.dh-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 8px; }
+.dh-total {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 9px 11px; background: #0b111c; border: 1px solid var(--border); border-radius: 9px;
+}
+.dh-total.me { border-color: var(--accent-glow); background: var(--accent-soft); }
+.dh-total-name { font-size: 12px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh-total-v { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; font-weight: 700; color: var(--text-muted); }
+.dh-total.me .dh-total-v { color: var(--accent); }
+
+.dh-list { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; padding-right: 4px; }
+.dh-row {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) minmax(0, 96px) 82px;
+  align-items: center; gap: 10px;
+  padding: 9px 11px; background: #0b111c; border: 1px solid var(--border); border-radius: 9px;
+}
+.dh-row.me { border-color: var(--accent-glow); }
+.dh-player { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dh-player b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh-rating { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--text-faint); flex: 0 0 auto; }
+.dh-buyer {
+  font-size: 11.5px; color: var(--text-muted); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dh-price {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 700;
+  color: var(--accent); text-align: right;
+}
+.dh-price.free { color: var(--text-faint); font-weight: 500; }
+
+@media (max-width: 560px) {
+  .dh-row { grid-template-columns: 40px minmax(0, 1fr) 74px; row-gap: 4px; }
+  .dh-buyer { grid-column: 2 / 4; font-size: 10.5px; }
+}
+
+/* ---------------- 1) lobi + bekleme odası hizalaması ----------------
+   Yeni ekranlar (draft/dizilim/anlatım) akışkan auto-fit ızgaralar kullanıyor; lobi ve bekleme
+   odası ise sabit kolon genişlikleriyle (1fr 1fr / 1fr 372px) kalmıştı — ara genişliklerde
+   (tablet, yarım pencere) yeni ekranlarla aynı ritmi tutmuyordu. Aşağısı SADECE ızgara/tipografi
+   hizalaması; renkler, bileşen yapısı ve içerik aynı. */
+.lobby-mode-picker { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.lobby-features { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+.wr-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+.wr-title, .lobby-title { text-wrap: balance; }
+.lobby-sub, .wr-title-sub { text-wrap: pretty; }
+
+/* Bekleme odasındaki meta şeridi dar ekranda bölünürken kenar çizgileri kırılıyordu. */
+.wr-meta { flex-wrap: wrap; row-gap: 10px; }
+.wr-meta > div:first-child { padding-left: 0; border-left: none; }
+
+/* Lobi ve bekleme odası etiket/rozet ölçeği, yeni ekranlardaki mono etiketlerle aynı olsun. */
+.lobby-hero-badge, .wr-live, .wr-label {
+  font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: 2px; text-transform: uppercase;
+}
+.lobby-feature-code, .wr-row-sub, .wr-row-tag {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+
+/* ===================== Takas Turu (.trade / .trade-*) =====================
+   [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] "Kodlarını yaz, 3 mod için geçerli olsun,
+   çark gibi isteğe bağlı gelsin, açıklamaları ayarla, responsive olsun."
+   Sunucu: server/src/trade/TradeEngine.js + sockets/tradeSockets.js
+   İstemci: views.js renderTradeRound + app.js trade:* handler'ları
+
+   Kurallar ekranda görünür: 1↔1 · para yok · kaleci hariç · aynı kişiyle en fazla 2 takas ·
+   takastan sonra iki kadro da formasyon kurabilmeli · 5 dk (herkes "bitti" derse erken kapanır).
+
+   styles.css'in sonuna (extras-v2.css'ten sonra) ekle. Kırılma noktaları: 900px ve 560px. */
+
+.view.trade { display: flex; flex-direction: column; gap: 16px; }
+
+/* ---------- üst bar ---------- */
+.trade-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.trade-head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.trade-head-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.trade-live {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase; color: var(--success);
+}
+.trade-live::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 10px var(--success-glow); animation: dot-pulse 1.6s ease-in-out infinite;
+}
+.trade-badge {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--text-muted);
+  padding: 5px 9px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 5px;
+  line-height: 1.4;
+}
+.timer-wrap.trade-timer { min-width: 190px; margin: 0; }
+.trade-clock {
+  font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1;
+  color: var(--accent); text-align: right;
+}
+.timer-wrap.trade-timer.critical .trade-clock { color: var(--danger); }
+.trade-done-btn { min-height: 44px; }
+
+.trade-intro { display: flex; flex-direction: column; gap: 8px; }
+.trade-title {
+  margin: 0; font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(28px, 6vw, 42px); line-height: .95; letter-spacing: .6px; text-transform: uppercase;
+}
+.trade-sub { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.6; max-width: 76ch; text-wrap: pretty; }
+
+/* ---------- ana ızgara ---------- */
+.trade-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; align-items: start; }
+
+/* ---------- kadro listeleri ---------- */
+.trade-squad-hint {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-faint); margin: -6px 0 10px;
+}
+.trade-pair-limit { color: var(--text-faint); }
+.trade-pair-limit.full { color: var(--danger); }
+
+.trade-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 11px; }
+.trade-tab {
+  min-height: 38px; padding: 9px 14px; border: 1px solid var(--border);
+  border-radius: 7px; background: #0b111c; color: var(--text-muted);
+  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.trade-tab:hover { border-color: var(--accent-glow); color: var(--text); }
+.trade-tab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.trade-list { display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; padding-right: 4px; }
+.trade-row {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto 42px;
+  align-items: center; gap: 10px; width: 100%;
+  padding: 10px 11px; border: 1px solid var(--border); border-radius: 9px;
+  background: #0b111c; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.trade-row:hover { border-color: var(--accent-glow); }
+.trade-row.selected { border-color: var(--accent); background: var(--accent-soft); }
+.trade-row.disabled { opacity: .45; cursor: not-allowed; }
+.trade-row.disabled:hover { border-color: var(--border); }
+.trade-row-name {
+  font-size: 13px; font-weight: 600; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.trade-row-tag {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 8.5px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; white-space: nowrap;
+}
+.trade-row-tag.gk { color: var(--text-faint); }
+.trade-row-tag.locked { color: #ffd166; }
+.trade-row-rating {
+  font-family: var(--font-display); font-weight: 800; font-size: 19px; line-height: 1;
+  text-align: right; color: var(--text);
+}
+.trade-row-rating.hot { color: var(--accent); }
+
+/* ---------- gelen teklifler ---------- */
+.panel.trade-incoming { border-color: var(--accent-glow); background: var(--accent-soft); }
+.trade-offer-list { display: flex; flex-direction: column; gap: 9px; }
+.trade-offer {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px;
+  background: #0b111c; border: 1px solid var(--border-strong); border-radius: 11px; padding: 13px 14px;
+}
+.trade-offer-from {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-faint);
+}
+.trade-offer-pair { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.trade-offer-side { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.trade-offer-rating { font-family: var(--font-display); font-weight: 800; font-size: 19px; line-height: 1; color: var(--accent); }
+.trade-swap-icon { font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; color: var(--text-faint); }
+.trade-offer-note {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; line-height: 1.5;
+  color: var(--text-muted); margin-top: 8px;
+}
+.trade-offer-note.bad { color: var(--danger); }
+.trade-offer-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn.trade-accept { border-color: var(--success); color: var(--success); background: rgba(34, 197, 94, .14); }
+.btn.trade-accept:hover { background: rgba(34, 197, 94, .22); }
+
+/* ---------- teklif kurucu ---------- */
+.panel.trade-builder { background: linear-gradient(160deg, #152238 0%, #0c1421 62%); }
+.panel.trade-builder.ok { border-color: var(--accent-glow); }
+.panel.trade-builder.bad { border-color: var(--danger-glow); }
+.trade-builder-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch; gap: clamp(10px, 2vw, 16px);
+}
+.trade-slot {
+  display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 96px;
+  background: rgba(7, 12, 20, .6); border: 1px dashed var(--border-strong); border-radius: 11px; padding: 14px;
+}
+.trade-slot.filled { border-style: solid; border-color: var(--accent-glow); }
+.trade-slot-k {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint);
+}
+.trade-slot-name {
+  font-family: var(--font-display); font-weight: 800; font-size: clamp(20px, 3.4vw, 27px);
+  line-height: 1; letter-spacing: .5px; text-transform: uppercase; color: var(--text-faint);
+}
+.trade-slot.filled .trade-slot-name { color: var(--text); }
+.trade-slot-meta { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; color: var(--text-muted); }
+.trade-swap-big {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 800; font-size: 28px; color: var(--accent);
+}
+
+/* ---------- formasyon önizlemesi (takasın asıl amacı) ---------- */
+.trade-formations {
+  display: flex; flex-direction: column; gap: 11px; margin-top: 14px;
+  background: #0b111c; border: 1px solid var(--border); border-radius: 11px; padding: 13px 14px;
+}
+.trade-formations-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.trade-formations-k {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint);
+}
+.trade-valid { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; color: var(--text-faint); }
+.trade-valid.ok { color: var(--success); }
+.trade-valid.bad { color: var(--danger); }
+.trade-formation-pills { display: flex; gap: 7px; flex-wrap: wrap; }
+.trade-formation {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 7px;
+  border: 1px solid var(--border); background: #0b111c;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; font-weight: 700; letter-spacing: .8px;
+}
+.trade-formation.off { color: #3a4763; }
+.trade-formation.on { color: var(--accent); border-color: var(--accent-glow); background: var(--accent-soft); }
+.trade-formation.new { color: var(--success); border-color: rgba(34, 197, 94, .45); background: rgba(34, 197, 94, .1); }
+.trade-formation i {
+  font-style: normal; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: inherit;
+}
+.trade-formation.lost i { color: var(--danger); }
+.trade-formation-note { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; text-wrap: pretty; }
+
+.trade-send-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.btn.trade-send {
+  flex: 1; min-width: min(100%, 220px); min-height: 52px; padding: 14px 20px;
+  font-family: var(--font-display); font-weight: 800; font-size: 19px;
+  letter-spacing: 1.3px; text-transform: uppercase;
+}
+.btn.trade-send:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.trade-send-hint {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; color: var(--text-faint);
+  line-height: 1.5; max-width: 260px;
+}
+
+/* ---------- listeler ---------- */
+.trade-mini-list { display: flex; flex-direction: column; gap: 7px; }
+.trade-mini-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  background: #0b111c; border: 1px solid var(--border); border-radius: 9px; padding: 10px 11px;
+}
+.trade-mini-text { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-mini-sub { font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; color: var(--text-faint); margin-top: 3px; }
+.trade-done-row {
+  display: flex; align-items: center; gap: 10px; font-size: 12.5px; line-height: 1.45; text-wrap: pretty;
+  background: #0b111c; border: 1px solid var(--border); border-left: 3px solid var(--success);
+  border-radius: 9px; padding: 10px 12px;
+}
+.trade-done-tag {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 700;
+  letter-spacing: 1.2px; text-transform: uppercase; color: var(--success); flex: 0 0 auto;
+}
+.trade-empty { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }
+
+/* ---------- tur durumu ---------- */
+.trade-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 9px; }
+.trade-status-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; background: #0b111c; border: 1px solid var(--border); border-radius: 9px;
+}
+.trade-status-card.done { border-color: rgba(34, 197, 94, .3); background: rgba(34, 197, 94, .06); }
+.trade-status-name { font-size: 12.5px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-status-tag {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 9.5px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--accent); white-space: nowrap;
+}
+.trade-status-card.done .trade-status-tag { color: var(--success); }
+
+/* ---------- dar ekran ---------- */
+@media (max-width: 900px) {
+  .trade-offer { grid-template-columns: minmax(0, 1fr); }
+  .trade-offer-actions .btn { flex: 1; }
+  .trade-send-hint { max-width: none; }
+}
+@media (max-width: 560px) {
+  .trade-head-right { width: 100%; }
+  .timer-wrap.trade-timer { flex: 1; min-width: 0; }
+  .trade-clock { font-size: 22px; }
+  .trade-builder-row { grid-template-columns: minmax(0, 1fr); }
+  .trade-swap-big { transform: rotate(90deg); font-size: 22px; }
+  .trade-row { grid-template-columns: 40px minmax(0, 1fr) 40px; row-gap: 3px; }
+  .trade-row-tag { grid-column: 2 / 4; }
+  .trade-list { max-height: none; }
+}
+

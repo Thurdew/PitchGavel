@@ -4,13 +4,17 @@ const {
   WHEEL_SEGMENT_CATALOG, WHEEL_CUSTOM_PICK_COUNT,
 } = require('../shared/gameConfig');
 
-// Oda durum makinesi: lobby -> [prep_wheel ->] draft -> squad_select -> match -> finished
+// Oda durum makinesi: lobby -> [prep_wheel ->] draft -> [trade ->] squad_select -> match -> finished
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] `trade` isteğe bağlı bir ara faz (Hazırlık
+// Çarkı ile aynı desen) — sadece room.tradeRoundEnabled ise draft ile dizilim seçimi arasına
+// girer. ÜÇ draft modunda da geçerli (live/blind/wheel).
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] `prep_wheel` isteğe bağlı bir ara faz —
 // sadece room.prepWheelEnabled ise (host oda kurarken seçti) lobby ile draft arasına girer.
 const STATUS = {
   LOBBY: 'lobby',
   PREP_WHEEL: 'prep_wheel',
   DRAFT: 'draft',
+  TRADE: 'trade',
   SQUAD_SELECT: 'squad_select',
   MATCH: 'match',
   FINISHED: 'finished',
@@ -32,7 +36,7 @@ class RoomManager {
   // gelirse gelsin" — host'a hedef bir sayı SORULMUYOR. Oda sadece dokümandaki N ≤ 8 sınırına
   // kadar (MAX_ROOM_PLAYERS) katılım kabul eder; draftı ne zaman/kaç kişiyle başlatacağına
   // (herkes hazır olduktan sonra) oda sahibi (hostClientId) kendisi karar verir.
-  createRoom(hostClientId, hostName, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled) {
+  createRoom(hostClientId, hostName, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled) {
     let code;
     do { code = generateRoomCode(); } while (this.rooms.has(code));
 
@@ -56,6 +60,10 @@ class RoomManager {
       // istemci zaten bu seçeneği Çark Modu'nda hiç göstermiyor ama sunucu da asıl otorite
       // olduğu için burada garanti ediyor. Oda ömrü boyunca sabit.
       prepWheelEnabled: !!prepWheelEnabled && resolvedDraftMode !== 'wheel',
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] "Çark gibi isteğe bağlı özellik olarak
+      // gelsin, 3 modda da geçerli olsun." — Hazırlık Çarkı'nın aksine draftMode kısıtı YOK:
+      // çark modunda da draft sonunda kadrolar hazır olduğu için takas aynen anlamlı.
+      tradeRoundEnabled: !!tradeRoundEnabled,
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] Host'un elle işaretlediği çark
       // segmentleri (bkz. gameConfig.js WHEEL_SEGMENT_CATALOG/WHEEL_CUSTOM_PICK_COUNT) — TAM 10
       // geçerli/benzersiz `label` verilmediyse (istemci bunu zaten önden engelliyor, ama sunucu
@@ -74,6 +82,9 @@ class RoomManager {
       draft: null, // Faz 3
       squads: {}, // Faz 4: { [clientId]: { home: {...}, away: {...} } }
       matchState: null, // Faz 5
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Takas turu state'i (teklifler, tamamlanan
+      // takaslar, "bitti" oyları, çift başına takas sayacı) — bkz. trade/TradeEngine.js.
+      trade: null,
       // [KULLANICI İSTEĞİ] "Açık artırma/maç başlarken iki oyuncudan da onay al" — draftın
       // ve maçın başlaması için gereken "hazırım" oyları. Her faz geçişinde (draft başlayınca,
       // maç başlayınca) tüketilip sıfırlanır — bkz. draftSockets.js, matchSockets.js.
@@ -218,6 +229,8 @@ class RoomManager {
     room.squads = {};
     room.matchState = null;
     room.playbackSync = null; // bkz. matchSockets.js — bir sonraki maçta sıfırdan oy birliği
+    if (room.trade && room.trade.timer) clearTimeout(room.trade.timer);
+    room.trade = null; // bkz. TradeEngine — rematch'te takas turu sıfırdan
     room.prepWheel = null; // bkz. DraftEngine — bir sonraki draftta hazırlık çarkı sıfırdan başlar
     room.readyVotes = new Set();
     room.updatedAt = Date.now();
@@ -266,6 +279,13 @@ class RoomManager {
       hostClientId: room.hostClientId,
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI]
       prepWheelEnabled: !!room.prepWheelEnabled,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Bekleme odasında/draft başlığında
+      // "bu odada takas turu var" rozetini gösterebilmek için. Turun kendi detayı (teklifler)
+      // kişiye özel olduğu için burada DEĞİL, trade:state ile ayrı gönderiliyor.
+      tradeRoundEnabled: !!room.tradeRoundEnabled,
+      tradeRound: room.trade
+        ? { deadline: room.trade.deadline, completedCount: room.trade.completed.length, doneVotes: [...room.trade.doneVotes] }
+        : null,
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI, "TAM SÜRÜM"] Turn-based: `order`
       // (sabit sıra) + `cursor` (şu an kimin turu olduğu, order[cursor]) — bkz.
       // DraftEngine.openPrepWheelTurn. `order[0..cursor-1]` zaten karar vermiş (sonuçları

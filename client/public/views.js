@@ -1,3 +1,4 @@
+import { sfx } from './sfx.js';
 import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney, fmtRatingSource } from './helpers.js';
 
 // [KULLANICI İSTEĞİ] "Oyundayken oyundan çıkmak için bir şey ekle" — üst bardaki genel
@@ -15,8 +16,90 @@ function leaveGameButton(actions) {
 // [KULLANICI İSTEĞİ] "İki farklı kutu değilde tek kutuda göster. Oda kur veya odaya katıl
 // seçeneği koy. Değer seçildikten sonra ad ve kod yazma yeri gelsin." — önce tek bir kartta
 // mod seçimi (Oda Kur / Odaya Katıl), seçim yapılınca altında ilgili alanlar açılıyor.
+
+// [KULLANICI İSTEĞİ] "Son 3 saniye" sesi — geri sayım tick'i 150ms'de bir çalıştığı için
+// saniye başına tek bir bip çalınsın diye en son çalınan saniye hatırlanıyor.
+let lastTickSecond = null;
+function countdownTick(leftMs) {
+  const sec = Math.ceil(leftMs / 1000);
+  if (sec === lastTickSecond) return;
+  lastTickSecond = sec;
+  if (sec <= 0 || sec > 3) return;
+  sfx.play(sec === 1 ? 'tickLast' : 'tick');
+}
+
+// [KULLANICI İSTEĞİ] "Bütçe ve boş slot hatalarını önceden göster" — kullanıcı tavana çarpıp
+// 'Reddedildi' görmeden ÖNCE: kalan bütçe, kaç slot doldurulacak, her biri için ayrılan asgari
+// tutar ve güvenli tavan tek bir blokta; tavana yaklaşınca blok uyarı rengine geçer.
+function bidGuard({ state, cap, planned }) {
+  const d = state.draft;
+  const me = d && d.players ? d.players.find((p) => p.clientId === state.clientId) : null;
+  if (!me) return null;
+  const minPrice = state.config?.MIN_PLAYER_PRICE || 10;
+  const slotsLeft = Math.max(0, me.remainingSlots || 0);
+  const reserved = Math.max(0, (slotsLeft - 1)) * minPrice;
+  const ratio = cap > 0 && planned ? planned / cap : 0;
+  const level = cap <= minPrice ? 'danger' : ratio >= 1 ? 'danger' : ratio >= 0.8 ? 'warn' : '';
+
+  const rows = [
+    ['Kalan bütçe', fmtMoney(me.budget)],
+    ['Doldurulacak slot', `${slotsLeft} oyuncu`],
+    ['Diğer slotlara ayrılan', fmtMoney(reserved)],
+    ['Güvenli tavan', fmtMoney(Math.max(0, cap))],
+  ];
+  const notes = [];
+  if (cap <= minPrice) notes.push(`Bütçen bitti: kalan ${slotsLeft} slot için asgari fiyatı korumak zorundasın, bu turda yükselemezsin.`);
+  else if (ratio >= 1) notes.push('Yazdığın teklif güvenli tavanın üstünde — sunucu reddeder.');
+  else if (ratio >= 0.8) notes.push('Tavanın %80\'ini geçtin. Bu turu alırsan kalan slotlar için sadece asgari fiyat kalır.');
+  if (slotsLeft > 1) notes.push(`Kalan ${slotsLeft - 1} slot için ${fmtMoney(reserved)} bloke — bu tutara teklif veremezsin.`);
+
+  return el('div', { class: `bid-guard ${level}` }, [
+    el('div', { class: 'bid-guard-grid' }, rows.map(([k, val]) => el('div', { class: 'bid-guard-cell' }, [
+      el('span', { class: 'bid-guard-k' }, k),
+      el('span', { class: 'bid-guard-v' }, val),
+    ]))),
+    notes.length ? el('div', { class: 'bid-guard-note' }, notes.join(' ')) : null,
+  ]);
+}
+
+// [KULLANICI İSTEĞİ] "Draft geçmişi — kim neyi kaça aldı" — sunucu geçmiş tutmadığı için
+// app.js draft:update sırasında biriktiriyor (state.draftHistory). Hem draft sırasında hem
+// draft bittikten sonra (dizilim ekranı) aynı panel kullanılıyor.
+export function draftHistoryPanel(state, { open = false } = {}) {
+  const items = (state.draftHistory || []).slice().reverse();
+  const nameOf = (id) => (state.room?.players.find((p) => p.clientId === id) || {}).name || '?';
+  if (!state.draftUi) state.draftUi = { squadsOpen: false, historyOpen: open };
+  const spent = {};
+  for (const h of items) spent[h.clientId] = (spent[h.clientId] || 0) + (h.price || 0);
+
+  return el('details', {
+    class: 'panel draft-history',
+    open: state.draftUi.historyOpen ? '' : undefined,
+    ontoggle: (e) => { state.draftUi.historyOpen = e.target.open; },
+  }, [
+    el('summary', {}, `Draft Geçmişi (${items.length} tur)`),
+    items.length === 0
+      ? el('div', { class: 'muted', style: 'margin-top:10px' }, 'Henüz tamamlanmış bir tur yok.')
+      : el('div', { class: 'dh-wrap' }, [
+          el('div', { class: 'dh-totals' }, Object.keys(spent).map((id) => el('div', { class: `dh-total ${id === state.clientId ? 'me' : ''}` }, [
+            el('span', { class: 'dh-total-name' }, nameOf(id) + (id === state.clientId ? ' (sen)' : '')),
+            el('span', { class: 'dh-total-v' }, fmtMoney(spent[id])),
+          ]))),
+          el('div', { class: 'dh-list' }, items.map((h) => el('div', { class: `dh-row ${h.clientId === state.clientId ? 'me' : ''}` }, [
+            el('span', { class: `pos-badge pos-${slotGroup(h.slot || (h.player && h.player.position) || 'CM')}` }, h.slot || (h.player && h.player.position) || '—'),
+            el('span', { class: 'dh-player' }, [
+              el('b', {}, h.player ? h.player.name : '—'),
+              el('span', { class: 'dh-rating' }, h.player ? String(h.player.rating) : ''),
+            ]),
+            el('span', { class: 'dh-buyer' }, nameOf(h.clientId) + (h.clientId === state.clientId ? ' (sen)' : '')),
+            el('span', { class: `dh-price ${!h.price ? 'free' : ''}` }, h.price ? fmtMoney(h.price) : (h.band ? h.band : 'ücretsiz')),
+          ]))),
+        ]),
+  ]);
+}
+
 export function renderLobby({ state, actions }) {
-  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all', wheelSegments: [], prepWheelEnabled: false };
+  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all', wheelSegments: [], prepWheelEnabled: false, tradeRoundEnabled: false };
   const ui = state.lobbyUi;
 
   const nameInput = el('input', {
@@ -40,7 +123,7 @@ export function renderLobby({ state, actions }) {
       if (ui.draftMode === 'wheel' && picked.length > 0 && picked.length !== need) {
         return toast(`Çark segmentlerinde ya tam ${need} tane seç ya da hiç seçme (sistem dengeli bir çark kursun).`);
       }
-      actions.createRoom(nameInput.value.trim(), ui.draftMode, ui.playerPool, picked, ui.prepWheelEnabled);
+      actions.createRoom(nameInput.value.trim(), ui.draftMode, ui.playerPool, picked, ui.prepWheelEnabled, ui.tradeRoundEnabled);
     } else {
       if (!codeInput.value.trim()) return toast('Oda kodunu gir.');
       actions.joinRoom(nameInput.value.trim(), codeInput.value.trim());
@@ -191,6 +274,14 @@ export function renderLobby({ state, actions }) {
     [true, '🎡 Açık', 'Formasyon kurasından önce herkes SIRAYLA (bir bir) İSTEĞE BAĞLI bir perk çarkı çevirir — çıkan bütçe/kalkan/joker gibi iyi/kötü etkiler herkese açık gösterilir. Çevirmek zorunlu değil, risksiz başlamak da her zaman mümkün'],
   ], !!ui.prepWheelEnabled, (v) => { ui.prepWheelEnabled = v; actions.route(); }) : null;
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] "Çark gibi isteğe bağlı özellik olarak
+  // gelsin, 3 modda da geçerli olsun." — Hazırlık Çarkı'nın aksine mod kısıtı YOK; çark modunda
+  // da draft sonunda kadrolar hazır olduğu için takas aynen anlamlı.
+  const tradeRoundToggle = ui.mode === 'create' ? pillToggle('Takas Turu', [
+    [false, 'Kapalı', 'Draft bitince doğrudan dizilim seçimine geçilir'],
+    [true, '⇄ Açık', 'Draft bitince 5 dakikalık bir takas turu açılır: kadrondan bir oyuncu verip rakipten bir oyuncu alırsın (1↔1, para yok, kaleci hariç). Mevki serbest — orta saha verip forvet alıp formasyonunu değiştirebilirsin. Herkes "bitti" derse tur erken kapanır'],
+  ], !!ui.tradeRoundEnabled, (v) => { ui.tradeRoundEnabled = v; actions.route(); }) : null;
+
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kullanıcı oynayacağını lobide sorma" — oda
   // kurulurken bir hedef oyuncu sayısı SORULMUYOR; oda kaç kişi gelirse gelsin (2-8) katılım
   // kabul eder, host odadaki herkes hazır olunca kendisi başlatır (bkz. renderWaitingRoom).
@@ -202,6 +293,7 @@ export function renderLobby({ state, actions }) {
     playerPoolPicker,
     wheelSegmentPickerEl,
     prepWheelToggle,
+    tradeRoundToggle,
     el('button', { class: 'btn block', onclick: submit }, ui.mode === 'create' ? 'Oda Kur' : 'Katıl'),
     el('button', { class: 'lobby-back', onclick: () => actions.selectLobbyMode(null) }, '← Geri'),
   ]) : null;
@@ -615,6 +707,7 @@ export function renderPrepWheel({ state, actions }) {
       timerFill.style.width = `${Math.min(100, (left / nominalMs) * 100)}%`;
       timerWrap.classList.toggle('urgent', left <= 5000 && left > 2000);
       timerWrap.classList.toggle('critical', left <= 2000);
+      countdownTick(left);
       if (left <= 0) clearInterval(timerInterval);
     };
     tick();
@@ -870,6 +963,7 @@ export function renderDraft({ state, actions }) {
         timerFill.style.width = `${Math.min(100, (left / nominalMs) * 100)}%`;
         timerWrap.classList.toggle('urgent', left <= 5000 && left > 2000);
         timerWrap.classList.toggle('critical', left <= 2000);
+        countdownTick(left);
         if (left <= 0) clearInterval(timerInterval);
       };
       tick();
@@ -991,7 +1085,13 @@ export function renderDraft({ state, actions }) {
       // turdaki DİĞER tüm katılımcıların kilitleme durumu listelenir (miktar hâlâ hiç sızmıyor).
       const others = participants.filter((p) => p.clientId !== state.clientId);
 
-      roundPanel.appendChild(el('div', { class: 'bid-panel' }, [
+      // Teklif yazılırken uyarı bloğu canlı güncellenir (tavana yaklaşma/aşma anında görülsün).
+      let guardEl = bidGuard({ state, cap, planned: Number(bidInput.value) || 0 });
+      if (guardEl) bidInput.addEventListener('input', () => {
+        const next = bidGuard({ state, cap, planned: Number(bidInput.value) || 0 });
+        if (next && guardEl.parentNode) { guardEl.replaceWith(next); guardEl = next; }
+      });
+      roundPanel.appendChild(el('div', { class: 'bid-panel sticky-mobile' }, [
         el('div', { class: 'bid-current' }, [
           el('div', {}, state.blindBidUi.myAmount != null
             ? ['Kilitlediğin teklif: ', el('b', {}, fmtMoney(state.blindBidUi.myAmount))]
@@ -1022,7 +1122,7 @@ export function renderDraft({ state, actions }) {
             },
           }, iSubmitted ? 'Teklifi Güncelle' : 'Teklifi Kilitle'),
         ]),
-        el('div', { class: 'bid-cap' }, `Kişisel güvenli teklif tavanın: ${fmtMoney(Math.max(0, cap))} (bütçen diğer boş slotların için korunuyor)`),
+        guardEl,
         errorText,
       ]));
     } else {
@@ -1067,7 +1167,13 @@ export function renderDraft({ state, actions }) {
       const bidAmountEl = el('b', {});
       countUpMoney(bidAmountEl, prevBid, round.highestBid);
 
-      roundPanel.appendChild(el('div', { class: 'bid-panel' }, [
+      // Teklif yazılırken uyarı bloğu canlı güncellenir (tavana yaklaşma/aşma anında görülsün).
+      let guardEl = bidGuard({ state, cap, planned: Number(bidInput.value) || 0 });
+      if (guardEl) bidInput.addEventListener('input', () => {
+        const next = bidGuard({ state, cap, planned: Number(bidInput.value) || 0 });
+        if (next && guardEl.parentNode) { guardEl.replaceWith(next); guardEl = next; }
+      });
+      roundPanel.appendChild(el('div', { class: 'bid-panel sticky-mobile' }, [
         el('div', { class: 'bid-current' }, round.highestBid > 0
           ? ['Güncel en yüksek teklif: ', bidAmountEl, ` (${bidderName})`]
           : 'Henüz teklif yok'),
@@ -1084,7 +1190,7 @@ export function renderDraft({ state, actions }) {
             },
           }, 'Teklif Ver'),
         ]),
-        el('div', { class: 'bid-cap' }, `Kişisel güvenli teklif tavanın: ${fmtMoney(Math.max(0, cap))} (bütçen diğer boş slotların için korunuyor)`),
+        guardEl,
         errorText,
       ]));
     }
@@ -1110,6 +1216,9 @@ export function renderDraft({ state, actions }) {
       el('div', { class: 'squad-grid' }, p.squad.map((s) => squadChip(s))),
     ])),
   ]));
+
+  // [KULLANICI İSTEĞİ] Draft geçmişi — "kim neyi kaça aldı" draft bitince kaybolmasın.
+  root.appendChild(draftHistoryPanel(state));
 
   return root;
 }
@@ -1235,6 +1344,7 @@ function renderWheelRound({ state, actions, round, paused }) {
       timerFill.style.width = `${Math.min(100, (left / nominalMs) * 100)}%`;
       timerWrap.classList.toggle('urgent', left <= 5000 && left > 2000);
       timerWrap.classList.toggle('critical', left <= 2000);
+      countdownTick(left);
       if (left <= 0) clearInterval(timerInterval);
     };
     tick();
@@ -1515,6 +1625,308 @@ function renderRoundResultPanel(event, state) {
   return wrap;
 }
 
+
+// ============================== TAKAS TURU ==============================
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Kurallar ve sunucu tarafı: bkz.
+// server/src/trade/TradeEngine.js. Bu ekran sadece o kuralları GÖSTERİR ve teklif kurar:
+//   · 1↔1, para yok, kaleci takas edilemez, mevki serbest.
+//   · Teklif kurulurken "takastan sonra kurabileceğin formasyonlar" CANLI hesaplanır (aşağıdaki
+//     canBuildFormation — sunucudaki lineup.js ile aynı bipartite eşleştirme mantığı, sadece
+//     önizleme için; asıl doğrulama her zaman sunucuda).
+//   · Aynı kişiyle en fazla maxPerPair (2) takas; bekleyen teklifteki oyuncular kilitli.
+//   · 5 dk geri sayım, herkes "bitti" derse erken kapanır.
+
+// Sunucudaki maxBipartiteMatching'in kompakt istemci karşılığı (sadece önizleme).
+function canBuildFormation(entries, slotInstances) {
+  if (!slotInstances || entries.length !== slotInstances.length) return false;
+  const elig = entries.map((e) => new Set((e.eligibleSlots || []).map((x) => x.slot)));
+  const slotToPlayer = new Array(slotInstances.length).fill(-1);
+  const tryAssign = (pIdx, visited) => {
+    for (let s = 0; s < slotInstances.length; s++) {
+      if (visited[s] || !elig[pIdx].has(slotInstances[s])) continue;
+      visited[s] = true;
+      if (slotToPlayer[s] === -1 || tryAssign(slotToPlayer[s], visited)) { slotToPlayer[s] = pIdx; return true; }
+    }
+    return false;
+  };
+  let matched = 0;
+  for (let p = 0; p < entries.length; p++) {
+    if (tryAssign(p, new Array(slotInstances.length).fill(false))) matched++;
+  }
+  return matched === slotInstances.length;
+}
+
+function buildableKeys(state, entries) {
+  const F = state.config?.FORMATIONS || {};
+  return Object.keys(F).filter((key) => canBuildFormation(entries, F[key]));
+}
+
+function tradeSquadRow({ entry, selected, locked, disabled, onPick }) {
+  const isGK = entry.position === 'GK';
+  const tag = isGK ? 'Takas edilemez' : locked ? 'Teklifte' : '';
+  return el('button', {
+    type: 'button',
+    class: `trade-row ${selected ? 'selected' : ''} ${disabled ? 'disabled' : ''}`,
+    disabled: disabled ? 'disabled' : undefined,
+    onclick: disabled ? null : onPick,
+  }, [
+    el('span', { class: `pos-badge pos-${slotGroup(entry.position)}` }, entry.position),
+    el('span', { class: 'trade-row-name' }, entry.name + (entry.isIcon ? ' ⭐' : '')),
+    tag ? el('span', { class: `trade-row-tag ${isGK ? 'gk' : 'locked'}` }, tag) : el('span', {}),
+    el('span', { class: `trade-row-rating ${entry.rating >= 90 ? 'hot' : ''}` }, String(entry.rating)),
+  ]);
+}
+
+export function renderTradeRound({ state, actions }) {
+  const root = el('div', { class: 'view trade' });
+  const room = state.room;
+  const t = state.trade;
+
+  if (!t || !t.squads) {
+    root.appendChild(el('div', { class: 'panel' }, 'Takas turu yükleniyor...'));
+    actions.syncTrade();
+    return root;
+  }
+
+  if (!state.tradeUi) state.tradeUi = { rival: null, give: null, get: null };
+  const ui = state.tradeUi;
+  const rivals = room.players.filter((p) => p.clientId !== state.clientId);
+  if (!ui.rival || !rivals.find((p) => p.clientId === ui.rival)) ui.rival = rivals[0]?.clientId || null;
+
+  const mySquad = t.squads[state.clientId] || [];
+  const rivalSquad = ui.rival ? (t.squads[ui.rival] || []) : [];
+  const nameOf = (id) => (room.players.find((p) => p.clientId === id) || {}).name || '?';
+  const lockedIds = new Set(t.lockedPlayerIds || []);
+  const maxPerPair = t.maxPerPair || state.config?.TRADE_MAX_PER_PAIR || 2;
+  const pairUsed = (t.pairCounts || {})[ui.rival] || 0;
+  const pairFull = pairUsed >= maxPerPair;
+  const iAmDone = (t.doneVotes || []).includes(state.clientId);
+
+  // ---------- üst bar: geri sayım + "bitti" oyu ----------
+  const clockLabel = el('div', { class: 'trade-clock' }, '—');
+  const clockFill = el('div', { class: 'timer-fill', style: 'width:100%' });
+  const clockWrap = el('div', { class: 'timer-wrap trade-timer' }, [el('div', { class: 'timer-bar' }, clockFill), clockLabel]);
+  clearInterval(timerInterval);
+  const totalMs = (state.config?.TRADE_ROUND_DURATION_SECONDS || 300) * 1000;
+  const tick = () => {
+    const left = Math.max(0, (t.deadline || 0) - Date.now());
+    const mm = Math.floor(left / 60000);
+    const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, '0');
+    clockLabel.textContent = `${mm}:${ss}`;
+    clockFill.style.width = `${Math.min(100, (left / totalMs) * 100)}%`;
+    clockWrap.classList.toggle('critical', left <= 30000);
+    if (left <= 0) clearInterval(timerInterval);
+  };
+  tick();
+  timerInterval = setInterval(tick, 500);
+
+  root.appendChild(el('div', { class: 'trade-head' }, [
+    el('div', { class: 'trade-head-left' }, [
+      el('span', { class: 'trade-live' }, 'Takas turu açık'),
+      el('span', { class: 'trade-badge' }, `Para yok · 1↔1 · kaleci hariç · aynı kişiyle en fazla ${maxPerPair}`),
+    ]),
+    el('div', { class: 'trade-head-right' }, [
+      clockWrap,
+      el('button', {
+        type: 'button', class: `btn small ${iAmDone ? '' : 'secondary'} trade-done-btn`,
+        onclick: () => actions.toggleTradeDone(),
+      }, iAmDone
+        ? `✓ Bitti dedin (${(t.doneVotes || []).length}/${room.players.length})`
+        : 'Takas turunu bitir'),
+    ]),
+  ]));
+
+  root.appendChild(el('div', { class: 'trade-intro' }, [
+    el('h1', { class: 'trade-title' }, 'Takas Turu'),
+    el('p', { class: 'trade-sub' }, 'Kadrondan bir oyuncu verip rakipten bir oyuncu al. Mevki serbest — verdiğin orta saha yerine forvet alıp formasyonunu değiştirebilirsin. Tek şart: takastan sonra iki kadro da en az bir formasyon kurabilmeli. Herkes "bitti" derse tur süre dolmadan kapanır.'),
+  ]));
+
+  // ---------- gelen teklifler ----------
+  const incoming = t.incoming || [];
+  if (incoming.length) {
+    root.appendChild(el('div', { class: 'panel trade-incoming' }, [
+      el('h3', {}, `Gelen Teklifler (${incoming.length})`),
+      el('div', { class: 'trade-offer-list' }, incoming.map((o) => {
+        const after = mySquad.filter((e) => e.playerId !== o.get.playerId).concat([o.give]);
+        const keys = buildableKeys(state, after);
+        return el('div', { class: 'trade-offer' }, [
+          el('div', { class: 'trade-offer-body' }, [
+            el('div', { class: 'trade-offer-from' }, `${nameOf(o.fromClientId)} teklif etti`),
+            el('div', { class: 'trade-offer-pair' }, [
+              el('span', { class: 'trade-offer-side' }, [
+                el('span', { class: `pos-badge pos-${slotGroup(o.give.position)}` }, o.give.position),
+                el('b', {}, o.give.name), el('span', { class: 'trade-offer-rating' }, String(o.give.rating)),
+              ]),
+              el('span', { class: 'trade-swap-icon' }, '⇄'),
+              el('span', { class: 'trade-offer-side' }, [
+                el('span', { class: `pos-badge pos-${slotGroup(o.get.position)}` }, o.get.position),
+                el('b', {}, o.get.name), el('span', { class: 'trade-offer-rating' }, String(o.get.rating)),
+              ]),
+            ]),
+            el('div', { class: `trade-offer-note ${keys.length ? '' : 'bad'}` }, keys.length
+              ? `Kabul edersen kurabileceğin formasyonlar: ${keys.join(', ')}`
+              : 'Kabul edilemez — kadron geçerli bir formasyon kuramaz.'),
+          ]),
+          el('div', { class: 'trade-offer-actions' }, [
+            el('button', { type: 'button', class: 'btn small trade-accept', onclick: () => actions.acceptTrade(o.id) }, 'Kabul et'),
+            el('button', { type: 'button', class: 'btn small secondary', onclick: () => actions.cancelTrade(o.id) }, 'Reddet'),
+          ]),
+        ]);
+      })),
+    ]));
+  }
+
+  // ---------- kadrolar ----------
+  const giveEntry = mySquad.find((e) => e.playerId === ui.give) || null;
+  const getEntry = rivalSquad.find((e) => e.playerId === ui.get) || null;
+
+  root.appendChild(el('div', { class: 'trade-grid' }, [
+    el('div', { class: 'panel trade-squad' }, [
+      el('h3', {}, 'Kadron'),
+      el('div', { class: 'trade-squad-hint' }, 'Vereceğin oyuncuyu seç'),
+      el('div', { class: 'trade-list' }, mySquad.map((entry) => tradeSquadRow({
+        entry,
+        selected: ui.give === entry.playerId,
+        locked: lockedIds.has(entry.playerId),
+        disabled: entry.position === 'GK' || lockedIds.has(entry.playerId),
+        onPick: () => { ui.give = entry.playerId; actions.route(); },
+      }))),
+    ]),
+    el('div', { class: 'panel trade-squad' }, [
+      el('h3', {}, 'Rakip Kadrosu'),
+      el('div', { class: 'trade-squad-hint' }, [
+        el('span', {}, 'Almak istediğin oyuncuyu seç'),
+        el('span', { class: `trade-pair-limit ${pairFull ? 'full' : ''}` }, `${nameOf(ui.rival)} ile ${pairUsed}/${maxPerPair} takas`),
+      ]),
+      el('div', { class: 'trade-tabs' }, rivals.map((p) => el('button', {
+        type: 'button', class: `trade-tab ${ui.rival === p.clientId ? 'active' : ''}`,
+        onclick: () => { ui.rival = p.clientId; ui.get = null; actions.route(); },
+      }, p.name + (p.connected ? '' : ' (kopuk)')))),
+      el('div', { class: 'trade-list' }, rivalSquad.map((entry) => tradeSquadRow({
+        entry,
+        selected: ui.get === entry.playerId,
+        locked: lockedIds.has(entry.playerId),
+        disabled: entry.position === 'GK' || lockedIds.has(entry.playerId) || pairFull,
+        onPick: () => { ui.get = entry.playerId; actions.route(); },
+      }))),
+    ]),
+  ]));
+
+  // ---------- teklif kurucu + formasyon önizlemesi ----------
+  const complete = !!(giveEntry && getEntry);
+  const before = buildableKeys(state, mySquad);
+  const afterMine = complete
+    ? buildableKeys(state, mySquad.filter((e) => e.playerId !== giveEntry.playerId).concat([getEntry]))
+    : before;
+  const afterRival = complete
+    ? buildableKeys(state, rivalSquad.filter((e) => e.playerId !== getEntry.playerId).concat([giveEntry]))
+    : [];
+  const bothValid = complete && afterMine.length > 0 && afterRival.length > 0;
+  const canSend = bothValid && !pairFull;
+
+  const F = state.config?.FORMATIONS || {};
+  root.appendChild(el('div', { class: `panel trade-builder ${complete ? (bothValid ? 'ok' : 'bad') : ''}` }, [
+    el('h3', {}, 'Teklif'),
+    el('div', { class: 'trade-builder-row' }, [
+      el('div', { class: `trade-slot ${giveEntry ? 'filled' : ''}` }, [
+        el('div', { class: 'trade-slot-k' }, 'Verdiğin'),
+        el('div', { class: 'trade-slot-name' }, giveEntry ? giveEntry.name : 'Seçilmedi'),
+        el('div', { class: 'trade-slot-meta' }, giveEntry
+          ? `${giveEntry.position} · reyting ${giveEntry.rating}`
+          : 'Kadrondan bir oyuncu seç'),
+      ]),
+      el('div', { class: 'trade-swap-big' }, '⇄'),
+      el('div', { class: `trade-slot ${getEntry ? 'filled' : ''}` }, [
+        el('div', { class: 'trade-slot-k' }, 'Aldığın'),
+        el('div', { class: 'trade-slot-name' }, getEntry ? getEntry.name : 'Seçilmedi'),
+        el('div', { class: 'trade-slot-meta' }, getEntry
+          ? `${getEntry.position} · reyting ${getEntry.rating} · ${nameOf(ui.rival)}`
+          : `${nameOf(ui.rival)} kadrosundan bir oyuncu seç`),
+      ]),
+    ]),
+    el('div', { class: 'trade-formations' }, [
+      el('div', { class: 'trade-formations-head' }, [
+        el('span', { class: 'trade-formations-k' }, 'Takastan sonra kurabileceğin formasyonlar'),
+        el('span', { class: `trade-valid ${!complete ? '' : bothValid ? 'ok' : 'bad'}` }, !complete
+          ? 'Teklif tamamlanmadı'
+          : bothValid ? 'İki kadro da geçerli ✓' : 'Geçersiz — bir taraf dizilim kuramıyor'),
+      ]),
+      el('div', { class: 'trade-formation-pills' }, Object.keys(F).map((key) => {
+        const on = afterMine.includes(key);
+        const isNew = complete && on && !before.includes(key);
+        const lost = complete && !on && before.includes(key);
+        return el('span', { class: `trade-formation ${on ? 'on' : 'off'} ${isNew ? 'new' : ''} ${lost ? 'lost' : ''}` }, [
+          el('b', {}, key),
+          isNew ? el('i', {}, 'yeni') : lost ? el('i', {}, 'kapandı') : null,
+        ]);
+      })),
+      el('div', { class: 'trade-formation-note' }, !complete
+        ? 'Mevki serbest: orta saha verip forvet alabilirsin. Kaleciler takas edilemez.'
+        : bothValid
+          ? `Bu takas ${nameOf(ui.rival)} için de geçerli — onun kurabileceği formasyonlar: ${afterRival.join(', ')}.`
+          : 'Sunucu bu takası reddeder: takastan sonra taraflardan biri hiçbir formasyon kuramıyor.'),
+    ]),
+    el('div', { class: 'trade-send-row' }, [
+      el('button', {
+        type: 'button', class: 'btn trade-send',
+        disabled: canSend ? undefined : 'disabled',
+        onclick: async () => {
+          const res = await actions.sendTradeOffer(ui.rival, ui.give, ui.get);
+          if (res && res.ok) { ui.give = null; ui.get = null; actions.route(); }
+        },
+      }, pairFull ? `${nameOf(ui.rival)} ile limit doldu` : 'Teklifi Gönder'),
+      el('button', {
+        type: 'button', class: 'btn small secondary',
+        onclick: () => { ui.give = null; ui.get = null; actions.route(); },
+      }, 'Temizle'),
+      el('div', { class: 'trade-send-hint' }, pairFull
+        ? `Aynı kişiyle en fazla ${maxPerPair} takas yapılabilir. Başka rakip seç.`
+        : 'Teklif açıkken iki oyuncu da kilitlenir. Karşı taraf onaylarsa takas anında işlenir.'),
+    ]),
+  ]));
+
+  // ---------- gönderilen teklifler + tamamlananlar + tur durumu ----------
+  const outgoing = t.outgoing || [];
+  const completed = t.completed || [];
+  root.appendChild(el('div', { class: 'trade-grid' }, [
+    el('div', { class: 'panel' }, [
+      el('h3', {}, 'Gönderdiğin Teklifler'),
+      outgoing.length
+        ? el('div', { class: 'trade-mini-list' }, outgoing.map((o) => el('div', { class: 'trade-mini-row' }, [
+            el('div', {}, [
+              el('div', { class: 'trade-mini-text' }, `${o.give.name} ⇄ ${o.get.name}`),
+              el('div', { class: 'trade-mini-sub' }, `${nameOf(o.toClientId)} · onay bekliyor`),
+            ]),
+            el('button', { type: 'button', class: 'btn small secondary', onclick: () => actions.cancelTrade(o.id) }, 'Geri çek'),
+          ])))
+        : el('div', { class: 'muted trade-empty' }, 'Henüz teklif göndermedin.'),
+    ]),
+    el('div', { class: 'panel' }, [
+      el('h3', {}, 'Tamamlanan Takaslar'),
+      completed.length
+        ? el('div', { class: 'trade-mini-list' }, completed.map((c) => el('div', { class: 'trade-done-row' }, [
+            el('span', { class: 'trade-done-tag' }, 'Tamam'),
+            el('span', {}, `${c.aName} → ${c.aGave.name} (${c.aGave.rating}) · ${c.bName} → ${c.bGave.name} (${c.bGave.rating})`),
+          ])))
+        : el('div', { class: 'muted trade-empty' }, 'Bu turda henüz takas tamamlanmadı.'),
+    ]),
+  ]));
+
+  root.appendChild(el('div', { class: 'panel trade-status' }, [
+    el('h3', {}, 'Tur Durumu'),
+    el('div', { class: 'trade-status-grid' }, room.players.map((p) => {
+      const done = (t.doneVotes || []).includes(p.clientId);
+      return el('div', { class: `trade-status-card ${done ? 'done' : ''}` }, [
+        el('span', { class: 'trade-status-name' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
+        el('span', { class: 'trade-status-tag' }, !p.connected ? 'bağlantı kopuk' : done ? 'bitti' : 'pazarlıkta'),
+      ]);
+    })),
+  ]));
+
+  root.appendChild(draftHistoryPanel(state));
+  return root;
+}
+
 // ============================== LINEUP ==============================
 // v2 — bkz. handoff/lineup-v2.css (.lu-*)
 
@@ -1663,6 +2075,7 @@ export function renderLineup({ state, actions }) {
           ? 'Değişiklik yaparsan tekrar kaydet.'
           : 'Formasyon, tarz ve taktik birlikte kaydedilir.'),
       ]),
+      draftHistoryPanel(state),
       room.status === 'match'
         ? el('button', {
             type: 'button',
@@ -2019,11 +2432,65 @@ function spawnConfetti(container, count = 24) {
   }
 }
 
-function createMiniPitch(onGoalImpact) {
+// [KULLANICI İSTEĞİ] Minyatür saha v2 — "sadece top" yerine SAHA: iki takımın 11+11 oyuncusu
+// gerçek dizilimden (lineupHome/lineupAway slot'ları) noktalar halinde çizilir, atak sırasında
+// atak yapan takımın hatları hafifçe öne kayar, altta pozisyonun hangi aşamada olduğunu söyleyen
+// bir durum satırı akar. Arayüz DEĞİŞMEDİ: { el, playEvent, reset, cardFlash } — anlatım akışı,
+// gol konfetisi, kart titremesi ve top yolu (waypoint + kale ağzı hedefleme) birebir korundu.
+// opts: { homeSlots: ['GK','LB',...], awaySlots: [...], homeName, awayName }
+const PITCH_LANE_X = { GK: 6, DF: 20, MF: 38, FW: 49 };
+const PITCH_SLOT_RANK = { GK: 50, LB: 10, CB: 50, RB: 90, DM: 50, CM: 50, AM: 50, LM: 14, RM: 86, LW: 14, ST: 50, RW: 86 };
+
+function pitchDotPositions(slots) {
+  const lanes = {};
+  (slots || []).forEach((slot, idx) => {
+    const g = slotGroup(slot);
+    (lanes[g] = lanes[g] || []).push({ slot, idx });
+  });
+  const out = [];
+  Object.keys(lanes).forEach((g) => {
+    const items = lanes[g].slice().sort((a, b) =>
+      (PITCH_SLOT_RANK[a.slot] ?? 50) - (PITCH_SLOT_RANK[b.slot] ?? 50) || a.idx - b.idx);
+    const n = items.length;
+    const spread = n >= 5 ? 74 : n >= 4 ? 68 : 56;
+    items.forEach((item, i) => {
+      out.push({
+        slot: item.slot,
+        group: g,
+        x: PITCH_LANE_X[g] ?? 38,
+        y: n === 1 ? 50 : (100 - spread) / 2 + i * (spread / (n - 1)),
+      });
+    });
+  });
+  return out;
+}
+
+function createMiniPitch(onGoalImpact, opts = {}) {
   const ball = el('div', { class: 'pitch-ball' });
   const caption = el('div', { class: 'pitch-caption' });
+  const phase = el('div', { class: 'pitch-phase' });
   const flashLeft = el('div', { class: 'pitch-flash left' });
   const flashRight = el('div', { class: 'pitch-flash right' });
+
+  // --- oyuncu noktaları (ev sahibi solda/sağa oynar, deplasman aynalanır) ---
+  const homeDots = [];
+  const awayDots = [];
+  function buildTeam(slots, side, bag) {
+    return pitchDotPositions(slots.length ? slots : ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CM', 'CM', 'LW', 'ST', 'RW'])
+      .map((p) => {
+        const x = side === 'home' ? p.x : 100 - p.x;
+        const node = el('span', {
+          class: `pitch-dot ${side} group-${p.group}`,
+          title: p.slot,
+          style: `left:${x}%; top:${p.y}%`,
+        });
+        bag.push({ node, baseX: x, side });
+        return node;
+      });
+  }
+  const homeNodes = buildTeam(opts.homeSlots || [], 'home', homeDots);
+  const awayNodes = buildTeam(opts.awaySlots || [], 'away', awayDots);
+
   const field = el('div', { class: 'pitch-field' }, [
     el('div', { class: 'pitch-halfline' }),
     el('div', { class: 'pitch-circle' }),
@@ -2031,10 +2498,15 @@ function createMiniPitch(onGoalImpact) {
     el('div', { class: 'pitch-box right' }),
     el('div', { class: 'pitch-goal left' }),
     el('div', { class: 'pitch-goal right' }),
+    el('div', { class: 'pitch-team-tag left' }, opts.homeName || 'Ev sahibi'),
+    el('div', { class: 'pitch-team-tag right' }, opts.awayName || 'Deplasman'),
+    ...homeNodes,
+    ...awayNodes,
     flashLeft,
     flashRight,
     ball,
     caption,
+    phase,
   ]);
   const root = el('div', { class: 'mini-pitch' }, [field]);
 
@@ -2059,6 +2531,17 @@ function createMiniPitch(onGoalImpact) {
     ball.style.top = `${yPct}%`;
   }
 
+  // Atak yapan takımın hatları öne, rakip hatları geriye kayar; pozisyon bitince nötre döner.
+  function shiftTeams(attackingSide) {
+    const apply = (bag, delta) => bag.forEach((d) => {
+      d.node.style.left = `${Math.max(3, Math.min(97, d.baseX + delta))}%`;
+    });
+    if (!attackingSide) { apply(homeDots, 0); apply(awayDots, 0); return; }
+    const push = attackingSide === 'home' ? 9 : -9;
+    apply(homeDots, attackingSide === 'home' ? push : push * 0.45);
+    apply(awayDots, attackingSide === 'away' ? push : push * 0.45);
+  }
+
   function flashGoal(side) {
     const node = side === 'right' ? flashRight : flashLeft;
     node.classList.remove('flash');
@@ -2072,6 +2555,7 @@ function createMiniPitch(onGoalImpact) {
     field.classList.remove('card-flash-yellow', 'card-flash-red');
     void field.offsetWidth;
     field.classList.add(kind === 'red' ? 'card-flash-red' : 'card-flash-yellow');
+    showPhase(kind === 'red' ? 'Kırmızı kart — oyun durdu' : 'Faul — sarı kart', kind === 'red' ? 'red' : 'yellow');
   }
 
   function showCaption(text, kind) {
@@ -2080,10 +2564,17 @@ function createMiniPitch(onGoalImpact) {
     setTimeout(() => { caption.className = 'pitch-caption'; }, 1300);
   }
 
+  function showPhase(text, kind = '') {
+    phase.textContent = text;
+    phase.className = `pitch-phase show ${kind}`;
+  }
+
   function reset() {
     seq += 1;
     setBall(50, 50, 0);
     caption.className = 'pitch-caption';
+    shiftTeams(null);
+    showPhase('Orta sahada mücadele');
   }
   reset();
 
@@ -2092,8 +2583,9 @@ function createMiniPitch(onGoalImpact) {
   function runPath(mySeq, waypoints, i, done) {
     if (mySeq !== seq) return;
     if (i >= waypoints.length) { if (done) done(); return; }
-    const [x, y, dur] = waypoints[i];
+    const [x, y, dur, note] = waypoints[i];
     setBall(x, y, dur);
+    if (note) showPhase(note);
     setTimeout(() => runPath(mySeq, waypoints, i + 1, done), dur);
   }
 
@@ -2106,6 +2598,8 @@ function createMiniPitch(onGoalImpact) {
     const attackRight = ev.team === 'home';
     const targetSide = attackRight ? 'right' : 'left';
     const isGoal = ev.type === 'goal';
+    const attackerName = (attackRight ? opts.homeName : opts.awayName) || (attackRight ? 'Ev sahibi' : 'Deplasman');
+    const defenderName = (attackRight ? opts.awayName : opts.homeName) || (attackRight ? 'Deplasman' : 'Ev sahibi');
 
     // [KULLANICI İSTEĞİ] "Top dışarı çıkıyor gibi görünüyor ama gol diyor" bug'ının düzeltmesi:
     // artık şutun hedef Y'si sonucu YANSITIYOR — gol/kurtarış kale ağzı aralığına, auta giden
@@ -2129,24 +2623,33 @@ function createMiniPitch(onGoalImpact) {
     const x3 = attackRight ? 79 : 21; // ceza sahasına giriş
 
     setBall(50, 50, 0); // orta sahaya sıfırla
+    shiftTeams(ev.team);
 
     requestAnimationFrame(() => {
       runPath(mySeq, [
-        [x1, buildY1, 260],
-        [x2, buildY2, 250],
-        [x3, boxY, 280],
+        [x1, buildY1, 260, `${attackerName} arkadan çıkıyor`],
+        [x2, buildY2, 250, 'Orta sahada paslaşma'],
+        [x3, boxY, 280, `${defenderName} ceza sahasında`],
       ], 0, () => {
         setBall(shotX, shotY, 300); // şut
+        showPhase('Vuruyor!');
         setTimeout(() => {
           if (mySeq !== seq) return;
           flashGoal(targetSide);
           if (isGoal) {
             showCaption('GOOOL! ⚽', 'goal');
+            showPhase(`Gol — ${defenderName} kalesi`, 'goal');
             if (onGoalImpact) onGoalImpact();
           } else {
             showCaption(saved ? 'KURTARDI! 🧤' : 'AUT! 📛', saved ? 'save' : 'miss');
+            showPhase(saved ? `Kaleci kurtardı — ${defenderName}` : 'Top auta gitti', saved ? 'save' : 'miss');
           }
-          setTimeout(() => { if (mySeq === seq) setBall(50, 50, 500); }, 800);
+          setTimeout(() => {
+            if (mySeq !== seq) return;
+            setBall(50, 50, 500);
+            shiftTeams(null);
+            showPhase('Orta sahada mücadele');
+          }, 800);
         }, 300);
       });
     });
@@ -2234,10 +2737,16 @@ export function renderMatchPlayback({ state, actions }) {
   // Gol anında hem konfeti (liveSide'a bindirilir) hem de tüm anlatım kutusunda kısa bir
   // ekran sallanması tetikler — [KULLANICI İSTEĞİ] "enerjik/oyun gibi" hissi.
   const pitch = createMiniPitch(() => {
+    sfx.play('goal');
     spawnConfetti(liveSide);
     layoutEl.classList.remove('shake');
     void layoutEl.offsetWidth;
     layoutEl.classList.add('shake');
+  }, {
+    // Saha noktaları gerçek dizilimden çizilir (bkz. createMiniPitch v2).
+    homeSlots: (m.lineupHome || []).map((e) => e.slot),
+    awaySlots: (m.lineupAway || []).map((e) => e.slot),
+    homeName, awayName,
   });
 
   if (pb.shown.length === 0) {
@@ -2345,6 +2854,7 @@ export function renderMatchPlayback({ state, actions }) {
       logEl.appendChild(el('div', { class: `row ${rowClassFor(ev.type)}` }, text));
       logEl.scrollTop = logEl.scrollHeight;
       pitch.cardFlash(ev.type);
+      sfx.play('card');
     }
     if (!finishMinuteUpdate()) scheduleNextTick();
   }

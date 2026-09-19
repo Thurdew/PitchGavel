@@ -8,7 +8,10 @@ const { registerRoomSockets } = require('./sockets/roomSockets');
 const { registerDraftSockets } = require('./sockets/draftSockets');
 const { registerLineupSockets } = require('./sockets/lineupSockets');
 const { registerMatchSockets } = require('./sockets/matchSockets');
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU]
+const { registerTradeSockets } = require('./sockets/tradeSockets');
 const { DraftEngine } = require('./draft/DraftEngine');
+const { TradeEngine } = require('./trade/TradeEngine');
 const { loadPlayerData } = require('./playerData');
 
 const PORT = process.env.PORT || 3000;
@@ -51,6 +54,10 @@ app.get('/api/config', (req, res) => {
     // oda kurma formunda "hangi perkler olabilir" ipucu için gerekiyor) — WHEEL_SEGMENT_CATALOG
     // ile aynı mantık.
     PREP_WHEEL_SEGMENTS: cfg.PREP_WHEEL_SEGMENTS,
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] İstemci geri sayımı ve "x/2 takas"
+    // limitini bu sabitlerden okur.
+    TRADE_ROUND_DURATION_SECONDS: cfg.TRADE_ROUND_DURATION_SECONDS,
+    TRADE_MAX_PER_PAIR: cfg.TRADE_MAX_PER_PAIR,
     FORMATIONS,
   });
 });
@@ -112,13 +119,18 @@ app.get(/^\/(?!api|socket\.io).*/, (req, res) => {
 
 const roomManager = new RoomManager();
 const draftEngine = new DraftEngine(io, roomManager);
-const ctx = { roomManager, draftEngine };
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Draft bitince (host açtıysa) takas turunu
+// TradeEngine açar — DraftEngine'e setter ile enjekte ediliyor (döngüsel require yok).
+const tradeEngine = new TradeEngine(io, roomManager);
+draftEngine.setTradeEngine(tradeEngine);
+const ctx = { roomManager, draftEngine, tradeEngine };
 
 io.on('connection', (socket) => {
   registerRoomSockets(io, socket, ctx);
   registerDraftSockets(io, socket, ctx);
   registerLineupSockets(io, socket, ctx);
   registerMatchSockets(io, socket, ctx);
+  registerTradeSockets(io, socket, ctx);
 });
 
 // Sunucu başlarken veri setini bir kez belleğe al (eksikse net hata ver).

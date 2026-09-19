@@ -1,5 +1,7 @@
 import { el, toast } from './helpers.js';
-import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay } from './views.js';
+// [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
+import { sfx } from './sfx.js';
+import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay } from './views.js';
 
 const LS_CLIENT_ID = 'kk_clientId';
 const LS_NAME = 'kk_name';
@@ -41,7 +43,26 @@ const state = {
   // tüketim durumu — bkz. views.js blindFirstRoundActive.
   blindFirstRoundConsumed: false,
   blindFirstRoundKey: null,
+  // [KULLANICI İSTEĞİ] "Draft geçmişi / kim neyi kaça aldı" — sunucu geçmiş tutmuyor, her
+  // draft:update yalnızca O ANKİ event'i taşıyor; burada istemci tarafında biriktiriliyor
+  // (bkz. views.js draftHistoryPanel). Draft bitince de duruyor: dizilim ekranında da okunuyor.
+  draftHistory: [],
+  // [KULLANICI İSTEĞİ] "Bağlantı koparsa kullanıcı ne gördüğünü bilmiyor" — kopuş anındaki
+  // toplam seçim sayısı burada saklanıp bağlantı dönünce farkı "N tur sen yokken tamamlandı"
+  // olarak bildiriliyor.
+  offlineSnapshot: null,
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Sunucudan gelen kişiye özel takas görünümü
+  // (teklifler pazarlık aşamasında sadece iki tarafa gönderilir) — bkz. server trade/TradeEngine.
+  trade: null,
+  tradeUi: null,
+  lastHighBidder: null, // teklifin geçilmesini (outbid sesi) tespit etmek için
 };
+
+// Odadaki TÜM kadrolardaki oyuncu sayısı — "ben yokken kaç tur tamamlandı" farkı için.
+function totalPicks(draft) {
+  if (!draft || !draft.players) return 0;
+  return draft.players.reduce((n, p) => n + (p.squad ? p.squad.length : 0), 0);
+}
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "İlk maç x-y oluyor sonra y-x oluyor sonra diğer maçlara
 // geçiyor — öyle yapma, karışık şekilde oynat, hep değiştir." — N>2 odada anlatım eskiden her
@@ -304,7 +325,50 @@ function emitAck(event, payload) {
 // skoru ve geri sayım BİLEREK tekrarlanmadı: ikisi de kendi ekranlarında (bkz. .scoreline,
 // .timer-wrap) DOM'u route() dışında doğrudan mutasyonla güncelleniyor — buraya da bağlamak
 // ayrı bir senkron yolu ve gerçek bir "stale veri" riski katardı.
+// [KULLANICI İSTEĞİ] "Bağlanıyor" durumu — kopuşta ekranın üstünde kalıcı, net bir şerit
+// (toast kaybolur, bu kalır) + geri döndüğünde kısa bir "bağlandı" bildirimi.
+let connBanner = null;
+function updateConnBanner() {
+  if (!connBanner) {
+    connBanner = el('div', { class: 'conn-banner', role: 'status' });
+    document.body.appendChild(connBanner);
+  }
+  const offline = !state.connected;
+  connBanner.className = `conn-banner ${offline ? 'show' : ''}`;
+  if (offline) {
+    connBanner.textContent = state.room
+      ? '🔌 Bağlantı koptu — yeniden bağlanılıyor. Sıra sana gelirse sunucu otomatik oynar.'
+      : '🔌 Bağlantı koptu — yeniden bağlanılıyor...';
+  }
+}
+
+// İlk bağlantı ile GERÇEK bir yeniden bağlanma ayrımı — sayfa ilk açılışta da
+// state.connected false olduğu için, bu flag olmadan her açılış "bağlantı geri geldi" derdi.
+let everConnected = false;
+
+// Ses aç/kapat — üst bara bir kez enjekte edilir (bkz. sfx.js).
+let sfxBtn = null;
+function ensureSfxButton() {
+  if (sfxBtn) return;
+  const host = document.getElementById('topbarStatus');
+  if (!host || !host.parentElement) return;
+  sfxBtn = el('button', {
+    type: 'button', class: 'sfx-toggle', title: 'Ses efektleri',
+    onclick: () => { sfx.toggle(); syncSfxButton(); },
+  });
+  host.parentElement.appendChild(sfxBtn);
+  syncSfxButton();
+}
+function syncSfxButton() {
+  if (!sfxBtn) return;
+  const on = sfx.isEnabled();
+  sfxBtn.textContent = on ? '🔊' : '🔇';
+  sfxBtn.classList.toggle('off', !on);
+}
+
 function updateTopbar() {
+  ensureSfxButton();
+  updateConnBanner();
   const bits = [];
   bits.push(state.connected ? '🟢 bağlı' : '🔴 bağlantı yok');
   if (state.code) bits.push(`Oda: ${state.code}`);
@@ -436,6 +500,11 @@ function route() {
     case 'draft':
       appRoot.appendChild(renderDraft({ state, actions }));
       break;
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Draft ile dizilim seçimi arasındaki
+    // isteğe bağlı faz (host oda kurarken açtıysa, üç draft modunda da).
+    case 'trade':
+      appRoot.appendChild(renderTradeRound({ state, actions }));
+      break;
     case 'squad_select':
     case 'match':
       appRoot.appendChild(renderLineup({ state, actions }));
@@ -457,14 +526,14 @@ const actions = {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] wheelSegmentLabels: host'un elle
   // işaretlediği tam WHEEL_CUSTOM_PICK_COUNT etiket (bkz. views.js renderLobby wheel checklist'i)
   // ya da boş dizi/undefined (işaretlemediyse — sunucu auto-balance'a düşer).
-  async createRoom(name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled) {
+  async createRoom(name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled) {
     state.name = name;
     sessionStorage.setItem(LS_NAME, name);
-    const res = await emitAck('room:create', { clientId: state.clientId, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled });
+    const res = await emitAck('room:create', { clientId: state.clientId, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled });
     if (res.error) return toast('Oda oluşturulamadı: ' + res.error);
     state.room = res.room;
     setCode(res.room.code);
-    pushDataLayer('room_create', { draft_mode: draftMode, player_pool: playerPool });
+    pushDataLayer('room_create', { draft_mode: draftMode, player_pool: playerPool, trade_round: !!tradeRoundEnabled });
     syncUrlToRoomMode(res.room);
     route();
   },
@@ -545,8 +614,8 @@ const actions = {
   },
   async submitBid(amount) {
     const res = await emitAck('draft:bid', { code: state.code, amount });
-    if (res.error) toast('Teklif reddedildi: ' + res.error);
-    else pushDataLayer('bid_placed', { amount });
+    if (res.error) { sfx.play('error'); toast('Teklif reddedildi: ' + res.error); }
+    else { sfx.play('bid'); pushDataLayer('bid_placed', { amount }); }
     return res;
   },
   // [KULLANICI İSTEĞİ] "Açık arttırmada durdurma gelsin, iki oyuncu da onayladığında oyun
@@ -579,6 +648,35 @@ const actions = {
   async requestWheelAutoPick() {
     const res = await emitAck('draft:wheelAutoPick', { code: state.code });
     if (res.error) toast('Otomatik seçim yapılamadı: ' + res.error);
+    return res;
+  },
+  // ---------------- [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] ----------------
+  // Tüm kural/doğrulama sunucuda (bkz. trade/TradeEngine.js); istemci sadece istek gönderir ve
+  // kendi görünümünü 'trade:state' ile alır.
+  async syncTrade() {
+    const res = await emitAck('trade:sync', { code: state.code });
+    if (res && res.error && res.error !== 'TRADE_ROUND_NOT_ACTIVE') toast('Takas turu alınamadı: ' + res.error);
+    return res;
+  },
+  async sendTradeOffer(toClientId, givePlayerId, getPlayerId) {
+    const res = await emitAck('trade:offer', { code: state.code, toClientId, givePlayerId, getPlayerId });
+    if (res.error) { sfx.play('error'); toast('Teklif gönderilemedi: ' + (TRADE_ERRORS[res.error] || res.error)); }
+    else { sfx.play('bid'); toast('Teklif gönderildi — onay bekleniyor.'); }
+    return res;
+  },
+  async acceptTrade(offerId) {
+    const res = await emitAck('trade:accept', { code: state.code, offerId });
+    if (res.error) { sfx.play('error'); toast('Takas yapılamadı: ' + (TRADE_ERRORS[res.error] || res.error)); }
+    return res;
+  },
+  async cancelTrade(offerId) {
+    const res = await emitAck('trade:cancel', { code: state.code, offerId });
+    if (res.error) toast('İşlem başarısız: ' + (TRADE_ERRORS[res.error] || res.error));
+    return res;
+  },
+  async toggleTradeDone() {
+    const res = await emitAck('trade:doneToggle', { code: state.code });
+    if (res.error) toast('İşlem başarısız: ' + (TRADE_ERRORS[res.error] || res.error));
     return res;
   },
   async fetchLineupOptions() {
@@ -654,6 +752,10 @@ const actions = {
 // kalıntısı kalmasın diye tüm eşleşme-özel istemci durumu sıfırlanır.
 function resetMatchLocalState() {
   state.draft = null;
+  state.draftHistory = [];
+  state.lastHighBidder = null;
+  state.trade = null;
+  state.tradeUi = null;
   state.blindBidUi = null;
   state.lineupOptions = null;
   state.lineupUi = null;
@@ -669,7 +771,10 @@ function resetMatchLocalState() {
 }
 
 socket.on('connect', async () => {
+  const wasOffline = everConnected && state.connected === false;
+  everConnected = true;
   state.connected = true;
+  if (wasOffline) { sfx.play('online'); toast('🟢 Bağlantı geri geldi.'); }
   if (!state.config) {
     try { state.config = await fetch('/api/config').then((r) => r.json()); } catch (e) { /* ignore */ }
   }
@@ -688,7 +793,13 @@ socket.on('connect', async () => {
   route();
 });
 
-socket.on('disconnect', () => { state.connected = false; updateTopbar(); });
+socket.on('disconnect', () => {
+  state.connected = false;
+  // Kopuş anındaki seçim sayısını sakla (sadece gerçekten bağlanmışken anlamlı) — bağlantı dönünce "kaç tur kaçırdım" farkı için.
+  if (state.draft) state.offlineSnapshot = { picks: totalPicks(state.draft), at: Date.now() };
+  sfx.play('offline');
+  updateTopbar();
+});
 
 socket.on('room:state', (room) => { state.room = room; route(); });
 
@@ -718,6 +829,8 @@ socket.on('prepWheel:resolved', ({ clientId, perk, auto }) => {
 });
 
 socket.on('draft:started', ({ formation }) => {
+  state.draftHistory = [];
+  sfx.play('start');
   toast(`Kura: ${formation} formasyonu ile draft başlıyor!`);
   pushDataLayer('draft_start', { formation, draft_mode: state.room?.draftMode, player_pool: state.room?.playerPool });
 });
@@ -732,7 +845,41 @@ function nameOf(clientId) {
 }
 socket.on('draft:update', (msg) => {
   state.draft = msg;
+
+  // [KULLANICI İSTEĞİ] Bağlantı kopukken tamamlanan turlar — fark ilk gelen güncellemede bildirilir.
+  if (state.offlineSnapshot) {
+    const missed = totalPicks(msg) - state.offlineSnapshot.picks;
+    if (missed > 0) toast(`⏭ Bağlantın kopukken ${missed} tur tamamlandı — geçmişten bakabilirsin.`);
+    state.offlineSnapshot = null;
+  }
+
+  // [KULLANICI İSTEĞİ] Teklifin geçilince sesli/haptik uyarı (canlı açık arttırma).
+  const round = msg.round;
+  const highBidder = round ? round.highestBidderClientId : null;
+  if (state.lastHighBidder === state.clientId && highBidder && highBidder !== state.clientId) {
+    sfx.play('outbid');
+  }
+  state.lastHighBidder = highBidder || null;
+
   if (msg.event) {
+    // [KULLANICI İSTEĞİ] "Kim neyi kaça aldı" — tur sonuçları istemcide biriktirilir.
+    const ev = msg.event;
+    const entry = { type: ev.type, at: Date.now(), slot: ev.slotType || null };
+    if (ev.type === 'auction_resolved' || ev.type === 'blind_auction_resolved') {
+      entry.clientId = ev.winnerClientId; entry.player = ev.main; entry.price = ev.price; entry.bids = ev.bids || null;
+    } else if (ev.type === 'one_sided_assigned') {
+      entry.clientId = ev.clientId; entry.player = ev.player; entry.price = ev.price;
+    } else if (ev.type === 'joker_used') {
+      entry.clientId = ev.clientId; entry.player = ev.player; entry.price = 0;
+    } else if (ev.type === 'wheel_turn_resolved') {
+      entry.clientId = ev.clientId; entry.player = ev.player; entry.price = 0; entry.band = ev.band || ev.revealValue || null;
+    }
+    if (entry.player) {
+      state.draftHistory.push(entry);
+      if (state.draftHistory.length > 80) state.draftHistory.shift();
+      sfx.play(entry.clientId === state.clientId ? 'win' : 'sold');
+    }
+
     if (msg.event.type === 'auction_resolved' || msg.event.type === 'blind_auction_resolved') {
       const prefix = msg.event.type === 'blind_auction_resolved' ? '🔓 ' : '';
       const backupsText = (msg.event.backups || []).length
@@ -768,6 +915,63 @@ socket.on('draft:update', (msg) => {
 socket.on('draft:complete', () => {
   toast('Draft tamamlandı! Dizilim seçim aşamasına geçiliyor.');
   pushDataLayer('draft_complete');
+});
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Sunucu hata kodlarının Türkçe karşılıkları —
+// kullanıcı "GOALKEEPER_NOT_TRADABLE" değil, ne olduğunu okumalı.
+const TRADE_ERRORS = {
+  TRADE_ROUND_NOT_ACTIVE: 'Takas turu kapalı.',
+  TRADE_ROUND_OVER: 'Takas turunun süresi doldu.',
+  INVALID_TARGET: 'Geçersiz rakip.',
+  PLAYER_NOT_FOUND: 'Oyuncu bulunamadı.',
+  PLAYER_NOT_IN_SQUAD: 'Bu oyuncu artık o kadroda değil.',
+  PAIR_LIMIT_REACHED: 'Bu kişiyle takas limitin doldu.',
+  GOALKEEPER_NOT_TRADABLE: 'Kaleciler takas edilemez.',
+  PLAYER_LOCKED_IN_OFFER: 'Bu oyuncu başka bir teklifte kilitli.',
+  PLAYER_ALREADY_TRADED: 'Oyuncu az önce takas edildi — teklif düştü.',
+  SENDER_LINEUP_IMPOSSIBLE: 'Bu takastan sonra senin kadron hiçbir formasyon kuramaz.',
+  RECEIVER_LINEUP_IMPOSSIBLE: 'Bu takastan sonra rakibin kadrosu hiçbir formasyon kuramaz.',
+  OFFER_NOT_FOUND: 'Teklif bulunamadı.',
+  NOT_YOUR_OFFER: 'Bu teklif sana ait değil.',
+};
+
+socket.on('trade:started', () => {
+  sfx.play('start');
+  toast('⇄ Takas turu açıldı — 5 dakika (herkes bitti derse daha erken kapanır).');
+  route();
+});
+
+// Kişiye özel görünüm (pazarlık gizli) — bkz. TradeEngine.emitTrade.
+socket.on('trade:state', (msg) => { state.trade = msg; route(); });
+
+socket.on('trade:incoming', ({ from, give, get }) => {
+  sfx.play('outbid');
+  toast(`⇄ ${from} teklif etti: ${give} ⇄ ${get}`);
+});
+
+socket.on('trade:resolved', (record) => {
+  const mine = record.aClientId === state.clientId || record.bClientId === state.clientId;
+  sfx.play(mine ? 'win' : 'sold');
+  toast(`⇄ ${record.aName} ⇄ ${record.bName}: ${record.aGave.name} ⇄ ${record.bGave.name}`);
+  // Kadro değişti — dizilim seçenekleri (varsa) baştan alınmalı.
+  state.lineupOptions = null;
+  state.lineupUi = null;
+  route();
+});
+
+socket.on('trade:cancelled', ({ give, get }) => {
+  toast(`Teklifin düştü (${give} ⇄ ${get}) — oyuncu başka bir takasa gitti.`);
+});
+
+socket.on('trade:complete', ({ reason }) => {
+  toast(reason === 'unanimous'
+    ? 'Takas turu herkesin onayıyla kapandı — dizilim seçimine geçiliyor.'
+    : 'Takas turu bitti — dizilim seçimine geçiliyor.');
+  state.tradeUi = null;
+  // Takaslar sonrası kadro değişmiş olabilir; dizilim seçenekleri taze çekilsin.
+  state.lineupOptions = null;
+  state.lineupUi = null;
+  route();
 });
 
 socket.on('lineup:update', (msg) => {

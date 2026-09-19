@@ -1,3 +1,8 @@
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Tur süresi 5 dk, ama herkes "bitti" derse
+// hemen kapanır (bkz. trade/TradeEngine.js toggleDone). Aynı kişiyle en fazla 2 takas.
+const TRADE_ROUND_DURATION_SECONDS = 300;
+const TRADE_MAX_PER_PAIR = 2;
+
 // Oyun dengesi sabitleri. AUCTION-GAME-CLAUDE.md'de rakam olarak netleşmemiş noktalar
 // ([AÇIK KARAR]) burada, dokümandaki önerilen varsayımlarla çözülüp tek yerde toplandı.
 
@@ -52,6 +57,9 @@ const WHEEL_SPECIAL_SEGMENTS = [
 ];
 
 module.exports = {
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU]
+  TRADE_ROUND_DURATION_SECONDS,
+  TRADE_MAX_PER_PAIR,
   SQUAD_SIZE: 11,
 
   // Sanal bütçe birimi ("bütçe puanı") — gerçek para değildir, sadece oyun içi bir
