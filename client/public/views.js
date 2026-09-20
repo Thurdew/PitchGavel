@@ -3157,7 +3157,17 @@ function ratingTier(rating) {
 // lineup: [{slot, player, matchRating}] (bkz. server/src/match/ratings.js).
 function renderMatchLineupPitch(lineup, title) {
   const slots = lineup.map((entry) => entry.slot);
-  const positions = computeLineupPositions(slots);
+  // [DÜZELTİLDİ — BUG, KULLANICI GERİ BİLDİRİMİ] "Simülasyon bittikten sonraki detay ekranı
+  // açılmıyor" — kök neden: "Dizilim & Taktik ekranını v2 tasarımla yeniden kur" turunda (bkz.
+  // git eced3d3) dizilim SEÇİM ekranındaki eski `computeLineupPositions` fonksiyonu silinip
+  // yerine `layout` konmuştu, ama bu fonksiyon MAÇ SONUCU ekranındaki (bambaşka bir yer —
+  // renderMatchLineupPitch, "Maç Performansı" mini sahası) bir çağrısı gözden kaçmış, silinen
+  // isme bakmaya devam ediyordu. Sonuç: maç bitip renderMatch çizilmeye çalışınca `computeLineup
+  // Positions is not defined` ReferenceError'ı fırlatıyordu — route() DOM'u önceden temizlediği
+  // için ekran TAMAMEN BOŞ kalıyordu (konsolda sessiz bir hata, kullanıcıya hiçbir şey
+  // gösterilmiyordu). `layout(slots)` aynı `{x,y,...}` şeklini (fazlasıyla) döndürüyor — doğrudan
+  // yerine kullanılabiliyor, görsel bir fark yaratmıyor (GROUP_Y değerleri neredeyse özdeş).
+  const positions = layout(slots);
 
   const chips = lineup.map((entry, i) => {
     const pos = positions[i];
