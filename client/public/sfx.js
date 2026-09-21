@@ -20,21 +20,31 @@
 //  · Tercih localStorage'da ('kk_sfx'); kapalıysa hiçbir şey çalmaz, titreşim de olmaz.
 //  · play() ASLA throw etmez — ses desteklenmeyen ortamda oyun sessizce devam eder.
 //  · Tüm efektler master gain üzerinden çıkar; UI sesleri (click) kısık, maç sesleri dolgun.
+// [KULLANICI İSTEĞİ] "Ses seviyesi sadece aç/kapa — kısma yok, 'ya tam açık ya kapalı' fazla
+// keskin." Artık 0-100 arası kalıcı bir seviye var; master gain'e uygulanıyor, yani TÜM
+// efektler (gol, düdük, buton) tek yerden ölçekleniyor. 0 = sessiz (aç/kapa ile aynı etki).
 const LS_KEY = 'kk_sfx';
+const LS_VOL = 'kk_sfx_vol';
 let ctx = null;
 let master = null;
 let noiseBuffer = null;
 let enabled = (() => {
   try { return localStorage.getItem(LS_KEY) !== 'off'; } catch (e) { return true; }
 })();
+let volume = (() => {
+  try {
+    const v = parseFloat(localStorage.getItem(LS_VOL));
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.8;
+  } catch (e) { return 0.8; }
+})();
 
 function ac() {
-  if (!enabled) return null;
+  if (!enabled || volume <= 0) return null;
   try {
     if (!ctx) {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       master = ctx.createGain();
-      master.gain.value = 0.9;
+      master.gain.value = volume;
       master.connect(ctx.destination);
     }
     if (ctx.state === 'suspended') ctx.resume();
@@ -146,7 +156,7 @@ function crowd({ dur = 1.1, gain = 0.16, delay = 0, up = true }) {
 }
 
 function buzz(ms) {
-  if (!enabled) return;
+  if (!enabled || volume <= 0) return;
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* desteklenmiyor */ }
 }
 
@@ -199,16 +209,24 @@ const SOUNDS = {
     buzz([60, 60, 60, 60, 160]);
   },
   whistleKick: () => { whistle({ dur: 0.26, gain: 0.15 }); crowd({ dur: 0.9, gain: 0.1, delay: 0.1, up: true }); buzz(40); },
+  // [KULLANICI İSTEĞİ] "Kart görünce düdük sesi" — hakemin gerçek jest dilini taklit eden
+  // çift kısa "vırt-vırt" düdük (sarı kartta hakemler genelde iki kısa öttürür), sonra kart
+  // gösterme anını temsil eden metalik ton. Eski tek/kısık düdükten belirgin şekilde daha yüksek.
   yellow: () => {
-    whistle({ dur: 0.16, gain: 0.12 });
-    tone({ freq: 300, dur: 0.2, type: 'square', gain: 0.09, delay: 0.14 });
-    buzz(50);
+    whistle({ dur: 0.14, gain: 0.22 });
+    whistle({ dur: 0.14, gain: 0.22, delay: 0.19 });
+    tone({ freq: 300, dur: 0.2, type: 'square', gain: 0.09, delay: 0.38 });
+    buzz([40, 40, 40]);
   },
+  // Kırmızı kart: aynı çift düdüğün ardından hakemin ısrarcı/uzun kapanış öttürüşü —
+  // sarıdan bariz ayrışsın, "ciddiyet" hissi versin.
   red: () => {
-    whistle({ dur: 0.2, gain: 0.14 });
-    tone({ freq: 190, to: 120, dur: 0.5, type: 'square', gain: 0.12, delay: 0.16 });
-    crowd({ dur: 1.1, gain: 0.14, delay: 0.2, up: true }); // tribün homurtusu
-    buzz([70, 50, 120]);
+    whistle({ dur: 0.14, gain: 0.24 });
+    whistle({ dur: 0.14, gain: 0.24, delay: 0.19 });
+    whistle({ dur: 0.55, gain: 0.22, delay: 0.4 });
+    tone({ freq: 190, to: 120, dur: 0.5, type: 'square', gain: 0.12, delay: 0.98 });
+    crowd({ dur: 1.1, gain: 0.14, delay: 1.02, up: true }); // tribün homurtusu
+    buzz([50, 40, 50, 40, 170]);
   },
   card: () => SOUNDS.yellow(), // geriye uyumluluk (eski sfx.play('card') çağrıları)
 
@@ -249,7 +267,7 @@ const SOUNDS = {
 
 export const sfx = {
   play(kind) {
-    if (!enabled) return;
+    if (!enabled || volume <= 0) return;
     const fn = SOUNDS[kind];
     if (!fn) return;
     try { fn(); } catch (e) { /* ses yok — oyun devam */ }
@@ -261,4 +279,13 @@ export const sfx = {
     if (enabled) this.play('toggle');
   },
   toggle() { this.setEnabled(!enabled); return enabled; },
+  getVolume() { return volume; },
+  // v: 0-1. Seviye master gain'e canlı uygulanır (çalan sesler de anında etkilenir) ve
+  // kalıcılaşır. Kaydırıcıyı 0'a çekmek sesi kapatmakla aynı — ayrıca 🔇'ya basmak gerekmez.
+  setVolume(v, preview = true) {
+    volume = Math.min(1, Math.max(0, Number(v) || 0));
+    try { localStorage.setItem(LS_VOL, String(volume)); } catch (e) { /* yok say */ }
+    if (master) master.gain.value = volume;
+    if (preview && volume > 0 && enabled) this.play('click');
+  },
 };

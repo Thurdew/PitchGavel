@@ -2437,3 +2437,181 @@ button:disabled, .btn:disabled {
 .dh-player b, .trade-row-name, .pdb-name { flex: 0 1 auto; min-width: 0; }
 /* Uzun açıklama satırları (etiket + metin) hizada kalsın. */
 .big-gap-badge, .bid-guard-note, .trade-offer-note, .lu-warn { min-width: 0; }
+
+/* ============ v3: foil icon kartları + ses seviyesi + draft ipuçları ============
+   [KULLANICI İSTEĞİ] 1) Icon kartları normal karttan az ayrışıyor → foil çerçeve.
+                      2) Ses sadece aç/kapa → seviye kaydırıcısı.
+                      3) Draft ekranına ilk kez gelen kavramlarda kayboluyor → ipucu katmanı.
+   styles.css'in EN SONUNA eklenir. Yeni renk token'ı yok — mevcut var(--icon) moru kullanılıyor. */
+
+/* ---------- 1) foil icon kartı ---------- */
+@keyframes foil-sweep {
+  0%   { transform: translateX(-120%) rotate(8deg); }
+  100% { transform: translateX(220%) rotate(8deg); }
+}
+
+.player-card.icon {
+  position: relative;
+  overflow: hidden;
+  /* Çift çerçeve: içte mor, dışta altın — normal kartın tek gri kenarından net ayrışır. */
+  border-color: var(--icon, #a855f7);
+  background:
+    radial-gradient(120% 90% at 50% -10%, rgba(168, 85, 247, .26), transparent 60%),
+    linear-gradient(170deg, #1b1330 0%, #120e20 55%, #0d0a17 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 214, 122, .38),
+    0 8px 26px rgba(120, 50, 200, .3),
+    inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+
+/* Taranan parıltı — foil hissi. Çok yavaş ve düşük opaklık: dikkat dağıtmaz. */
+.player-card.icon::before {
+  content: '';
+  position: absolute;
+  top: -20%; left: 0;
+  width: 42%; height: 140%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .14), transparent);
+  animation: foil-sweep 5.5s ease-in-out infinite;
+  pointer-events: none;
+}
+/* Üst köşede altın bir kırpma — "özel seri" işareti. */
+.player-card.icon::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 46px; height: 46px;
+  background: linear-gradient(225deg, rgba(255, 214, 122, .55), transparent 62%);
+  pointer-events: none;
+}
+.player-card.icon .rating { color: #ffd67a; }
+.player-card.icon .name { color: #f3ecff; }
+.player-card.icon .club { color: #c4b5fd; }
+.player-card.icon .icon-flag {
+  background: linear-gradient(135deg, #ffd67a, #a855f7);
+  color: #1b1030;
+  font-weight: 800;
+  border: none;
+  box-shadow: 0 2px 10px rgba(168, 85, 247, .45);
+}
+/* Kadro chip'i ve veritabanı satırı da aynı dili konuşsun (dizilim sahasındaki mor glow ile eşleşir). */
+.squad-chip.icon {
+  border-color: rgba(168, 85, 247, .45);
+  background: linear-gradient(120deg, rgba(168, 85, 247, .12), transparent 70%);
+}
+.squad-chip.icon .n { color: #e9ddff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .player-card.icon::before { animation: none; opacity: .5; }
+}
+
+/* ---------- 2) ses seviyesi paneli ---------- */
+.sfx-wrap { position: relative; display: inline-flex; align-items: center; gap: 2px; }
+.sfx-vol-btn {
+  min-width: 18px; height: 26px; padding: 0 3px;
+  border: none; background: none; cursor: pointer;
+  color: #93a0b8; font-size: 10px; line-height: 1;
+}
+.sfx-vol-btn:hover { color: var(--accent); }
+
+.sfx-pop {
+  display: none;
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  width: 216px; padding: 12px 13px;
+  background: #0e1826;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .5);
+}
+.sfx-pop.open { display: block; }
+.sfx-pop-title {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase;
+  color: #56617a; white-space: nowrap; margin-bottom: 9px;
+}
+.sfx-pop-row { display: flex; align-items: center; gap: 9px; }
+.sfx-pop-ico { font-size: 13px; }
+.sfx-pop-val {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px; font-weight: 700; color: var(--accent);
+  min-width: 34px; text-align: right; white-space: nowrap;
+}
+.sfx-pop-note {
+  margin-top: 9px; font-size: 10.5px; color: #56617a; line-height: 1.45;
+}
+.sfx-range {
+  flex: 1; min-width: 0; height: 22px;
+  -webkit-appearance: none; appearance: none; background: none; cursor: pointer;
+}
+.sfx-range::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 3px; background: rgba(255, 255, 255, .14);
+}
+.sfx-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 15px; height: 15px; margin-top: -5.5px;
+  border-radius: 50%; background: var(--accent); border: none;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .5);
+}
+.sfx-range::-moz-range-track { height: 4px; border-radius: 3px; background: rgba(255, 255, 255, .14); }
+.sfx-range::-moz-range-thumb {
+  width: 15px; height: 15px; border: none; border-radius: 50%; background: var(--accent);
+}
+@media (max-width: 560px) {
+  /* Dar ekranda panel üst bardan taşmasın. */
+  .sfx-pop { right: -6px; width: min(216px, calc(100vw - 28px)); }
+}
+
+/* ---------- 3) draft ipucu katmanı ---------- */
+.coach {
+  margin: 12px 0 0;
+  background: linear-gradient(135deg, rgba(255, 149, 0, .07), transparent 62%), #0e1826;
+  border: 1px solid rgba(255, 149, 0, .26);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.coach-summary {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; cursor: pointer; list-style: none;
+  min-height: 44px;
+}
+.coach-summary::-webkit-details-marker { display: none; }
+.coach-summary::after {
+  content: '▾'; margin-left: auto; color: #56617a; font-size: 11px;
+  transition: transform .18s ease;
+}
+.coach[open] .coach-summary::after { transform: rotate(180deg); }
+.coach-badge {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase;
+  color: #2b1400; background: var(--accent);
+  padding: 4px 8px; border-radius: 5px; white-space: nowrap;
+}
+.coach-summary-text { font-size: 13px; font-weight: 600; color: #cbd5e1; }
+.coach-body {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 10px; padding: 0 14px 12px;
+}
+.coach-tip {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: #0b111c; border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 9px; padding: 11px 12px;
+}
+.coach-ico { font-size: 15px; line-height: 1.2; flex-shrink: 0; }
+.coach-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.coach-text b { font-size: 12.5px; color: #f1f5f9; }
+.coach-text span { font-size: 11.5px; line-height: 1.5; color: #93a0b8; text-wrap: pretty; }
+.coach-dismiss { margin: 0 14px 14px; }
+
+/* ---------- 4) reyting kaynağı rozeti: EA mi, EA'ya kalibre mi ----------
+   [KULLANICI İSTEĞİ — TEK ÖLÇEK] Havuzda tek cetvel var ama iki güven seviyesi: doğrudan EA
+   verisi (turuncu, kesin) ve EA ölçeğine oturtulmuş tahmin (soluk, kesikli kenar). Ayrımın
+   görünür olması draftta "bu sayı nereden geldi" sorusunu ortadan kaldırıyor. */
+.rating-source-badge.calibrated {
+  color: #93a0b8;
+  border: 1px dashed rgba(255, 255, 255, .22);
+  background: rgba(255, 255, 255, .04);
+}
+.pdb-source-tag.calibrated {
+  color: #93a0b8;
+  border: 1px dashed rgba(255, 255, 255, .22);
+  background: rgba(255, 255, 255, .04);
+}

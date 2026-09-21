@@ -346,25 +346,75 @@ function updateConnBanner() {
 // state.connected false olduğu için, bu flag olmadan her açılış "bağlantı geri geldi" derdi.
 let everConnected = false;
 
-// Ses aç/kapat — üst bara bir kez enjekte edilir (bkz. sfx.js).
+// Ses aç/kapat + SEVİYE — üst bara bir kez enjekte edilir (bkz. sfx.js).
+// [KULLANICI İSTEĞİ] "Ses seviyesi sadece aç/kapa, kısma yok." Düğme artık ikiye ayrıldı:
+// hoparlör ikonu sesi kapatır/açar, yanındaki oka basınca küçük bir panelde kaydırıcı açılır.
+// Panel state tutmuyor — değer sfx.js içinde kalıcı, bu yüzden her açılışta oradan okunuyor.
 let sfxBtn = null;
+let sfxPop = null;
+let sfxRange = null;
 function ensureSfxButton() {
   if (sfxBtn) return;
   const host = document.getElementById('topbarStatus');
   if (!host || !host.parentElement) return;
+
   sfxBtn = el('button', {
     type: 'button', class: 'sfx-toggle', title: 'Ses efektleri (gol, düdük, direk, teklif)',
     'data-sfx': 'off', 'aria-label': 'Ses efektlerini aç/kapat',
     onclick: () => { sfx.toggle(); syncSfxButton(); },
   });
-  host.parentElement.appendChild(sfxBtn);
+
+  const volBtn = el('button', {
+    type: 'button', class: 'sfx-vol-btn', 'data-sfx': 'off',
+    title: 'Ses seviyesi', 'aria-label': 'Ses seviyesi',
+    onclick: (e) => { e.stopPropagation(); toggleSfxPop(); },
+  }, '▾');
+
+  sfxRange = el('input', {
+    type: 'range', min: '0', max: '100', step: '5', class: 'sfx-range',
+    'aria-label': 'Ses seviyesi',
+    oninput: (e) => {
+      sfx.setVolume(Number(e.target.value) / 100, false);
+      syncSfxButton();
+    },
+    // Bırakınca kısa bir örnek ses çalsın — kullanıcı seviyeyi kulakla ayarlayabilsin.
+    onchange: () => sfx.play('click'),
+  });
+
+  sfxPop = el('div', { class: 'sfx-pop', onclick: (e) => e.stopPropagation() }, [
+    el('div', { class: 'sfx-pop-title' }, 'Ses seviyesi'),
+    el('div', { class: 'sfx-pop-row' }, [
+      el('span', { class: 'sfx-pop-ico' }, '🔈'),
+      sfxRange,
+      el('span', { class: 'sfx-pop-val' }, '80%'),
+    ]),
+    el('div', { class: 'sfx-pop-note' }, 'Gol, düdük, kart ve buton sesleri'),
+  ]);
+
+  const wrap = el('div', { class: 'sfx-wrap' }, [sfxBtn, volBtn, sfxPop]);
+  host.parentElement.appendChild(wrap);
+
+  // Panel dışına tıklayınca kapansın (tek kez bağlanır).
+  document.addEventListener('click', () => { if (sfxPop) sfxPop.classList.remove('open'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && sfxPop) sfxPop.classList.remove('open'); });
   syncSfxButton();
+}
+function toggleSfxPop() {
+  if (!sfxPop) return;
+  sfxPop.classList.toggle('open');
+  if (sfxPop.classList.contains('open')) syncSfxButton();
 }
 function syncSfxButton() {
   if (!sfxBtn) return;
-  const on = sfx.isEnabled();
-  sfxBtn.textContent = on ? '🔊' : '🔇';
+  const vol = sfx.getVolume();
+  const on = sfx.isEnabled() && vol > 0;
+  sfxBtn.textContent = !on ? '🔇' : vol < 0.35 ? '🔈' : vol < 0.7 ? '🔉' : '🔊';
   sfxBtn.classList.toggle('off', !on);
+  if (sfxRange) sfxRange.value = String(Math.round(vol * 100));
+  if (sfxPop) {
+    const val = sfxPop.querySelector('.sfx-pop-val');
+    if (val) val.textContent = `${Math.round(vol * 100)}%`;
+  }
 }
 
 // [KULLANICI İSTEĞİ] "Butonları dahil hallet" — oyundaki TÜM butonlara kısık bir dokunma sesi.

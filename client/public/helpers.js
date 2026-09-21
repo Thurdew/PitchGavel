@@ -35,19 +35,37 @@ export function slotGroup(slot) { return GROUP_BY_SLOT[slot] || 'MF'; }
 // çıkan iki oyuncudan biri EA verisiyle, diğeri bizim formülümüzle hesaplanmış olabilir, şeffaf
 // olsun" isteğiyle küçük bir rozete çevrildi. Bilinmeyen/gelecekteki bir kaynak değeri de (ham
 // haliyle) gösterilsin diye jenerik bırakıldı — sadece bilinen 'fc26-2026-27' kısaltılıyor.
+// [KULLANICI İSTEĞİ — TEK ÖLÇEK] Artık üç değil iki durum var: reyting ya doğrudan EA FC26
+// verisi ('FC26'), ya da EA dosyasında bulunmayan bir oyuncu için o ligin EA dağılımına
+// oturtulmuş değer ('≈EA' — bkz. server/src/etl/eaCalibration.js). Kendi formülümüzün ham
+// sayısı artık hiçbir oyuncuda görünmüyor, bu yüzden ayrı bir etiketi de yok.
 export function fmtRatingSource(source) {
   if (!source) return null;
   if (source === 'fc26-2026-27') return 'FC26';
+  if (source === 'fc26-2026-27-kalibre') return '≈EA';
   return source;
+}
+
+export function ratingSourceTitle(source) {
+  if (source === 'fc26-2026-27') return 'Bu reyting doğrudan EA Sports FC 26 verisinden alınmıştır.';
+  if (source === 'fc26-2026-27-kalibre') return 'Bu oyuncu EA FC 26 kadro listesinde yok. Reytingi, kendi değer+performans sıralamamız kullanılarak ligin EA dağılımına oturtuldu — yani EA ölçeğinde bir tahmin.';
+  return null;
 }
 
 export function playerCard(player, { slot, extraClass = '', tag = '' } = {}) {
   const group = slotGroup(slot || player.position);
   const sourceLabel = fmtRatingSource(player.ratingOverrideSource);
-  return el('div', { class: `player-card ${extraClass}` }, [
+  // [KULLANICI İSTEĞİ] "Icon (efsane) oyuncu kartları normal karttan çok az ayrışıyor — 38
+  // kişilik özel bir kategori olduğu için kartın kendisine foil/özel çerçeve eklensin."
+  // Rozet kaldı, ama ayrım artık kartın TAMAMINDA: mor-altın foil kenar, taranan parıltı,
+  // koyu mor zemin (bkz. styles.css .player-card.icon).
+  return el('div', { class: `player-card ${player.isIcon ? 'icon' : ''} ${extraClass}` }, [
     el('div', { class: `pos-badge pos-${group}` }, slot || player.position),
     el('div', { class: 'rating' }, String(player.rating)),
-    sourceLabel ? el('div', { class: 'rating-source-badge', title: 'Bu reyting EA Sports FC resmi verisinden alınmıştır (kendi formülümüzden değil)' }, sourceLabel) : null,
+    sourceLabel ? el('div', {
+      class: `rating-source-badge ${player.ratingOverrideSource === 'fc26-2026-27-kalibre' ? 'calibrated' : ''}`,
+      title: ratingSourceTitle(player.ratingOverrideSource) || '',
+    }, sourceLabel) : null,
     player.isIcon ? el('div', { class: 'icon-flag' }, '⭐ ICON') : null,
     el('div', { class: 'name' }, player.name),
     el('div', { class: 'club' }, player.isIcon ? `Icon · ${player.nation}` : `${player.club} · ${player.league}`),
@@ -57,7 +75,7 @@ export function playerCard(player, { slot, extraClass = '', tag = '' } = {}) {
 
 export function squadChip(entry) {
   const group = slotGroup(entry.slot);
-  return el('div', { class: 'squad-chip' }, [
+  return el('div', { class: `squad-chip ${entry.player.isIcon ? 'icon' : ''}` }, [
     el('div', { class: `badge pos-${group}` }, entry.slot),
     el('div', { class: 'info' }, [
       el('div', { class: 'n' }, entry.player.name + (entry.player.isIcon ? ' ⭐' : '')),

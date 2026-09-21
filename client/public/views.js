@@ -1,5 +1,5 @@
 import { sfx } from './sfx.js';
-import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney, fmtRatingSource } from './helpers.js';
+import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney, fmtRatingSource, ratingSourceTitle } from './helpers.js';
 
 // [KULLANICI İSTEĞİ] "Oyundayken oyundan çıkmak için bir şey ekle" — üst bardaki genel
 // "🏠 Ana Sayfa" butonuna (bkz. index.html/app.js) ek olarak, oyunun İÇİNDEYKEN (draft/dizilim)
@@ -887,6 +887,57 @@ function blindFirstRoundActive(state, round) {
   return true;
 }
 
+// [KULLANICI İSTEĞİ] "Draft/lobi dışında gerçek bir onboarding yok — draft ekranına ilk kez
+// gelen biri kaskad, büyük-fark rozeti, anti-snipe gibi kavramlarda kafası karışabilir."
+// Nasıl Oynanır sayfasını tekrarlamayan, SADECE bu ekranda görünen kavramların kısa karşılığı.
+// İlk 3 draftta açık gelir, sonra kendiliğinden kapanır; "Anladım"a basılırsa hemen biter —
+// kapatıldıktan sonra da başlıktan tekrar açılabilir (kalıcı olarak kaybolmaz).
+const COACH_KEY = 'kk_draft_coach_seen';
+function coachSeen() { try { return parseInt(localStorage.getItem(COACH_KEY) || '0', 10) || 0; } catch (e) { return 99; } }
+function bumpCoachSeen(n) { try { localStorage.setItem(COACH_KEY, String(n)); } catch (e) { /* yok say */ } }
+
+// Draft ekranındaki kavram sözlüğü. Mod'a göre içerik değişir: çark modunda kaskad/teklif
+// kavramları hiç yok, kör draftta gizli teklif var.
+function draftCoach(mode) {
+  const TIPS = mode === 'wheel' ? [
+    ['🎡', 'Çark', 'Sıra sana gelince çarkı çevirirsin. Çıkan bant (reyting aralığı, lig, ülke, icon) o turda kimler arasından seçebileceğini belirler.'],
+    ['🧊', 'Bant', 'Bant daraldıkça aday listesi kısalır. Beğenmediysen "kararsızım"a basıp seçimi sisteme bırakabilirsin.'],
+    ['💸', 'Bütçe yok', 'Bu modda para harcanmaz — herkes 11 tur çevirir, kadro tamamen çarkın getirdiğinden kurulur.'],
+  ] : [
+    ['🪜', 'Kaskad', 'Bir pozisyon için sırayla birden fazla oyuncu açık arttırmaya çıkar. Ana oyuncuyu kaçırırsan altındaki sıra sana kalabilir — son sıradaki oyuncu rakipsiz kalana bedelsiz gider.'],
+    ['📈', 'Büyük fark', 'Bu rozet, ana oyuncu ile bir alttaki arasında ciddi bir reyting uçurumu olduğunu söyler. Yani bu turu kaçırmanın bedeli yüksek.'],
+    ['🛡️', 'Anti-snipe', 'Son saniyede gelen teklif süreyi uzatır. Bekleyip bir anda vurmak işe yaramaz; gerçekten en yükseği veren alır.'],
+    mode === 'blind'
+      ? ['🙈', 'Gizli teklif', 'Kör draftta rakibin teklifini görmezsin. Tek şansın var — ne kadar vereceğine kör karar verirsin.']
+      : ['⏸', 'Duraklatma', 'Herkes onaylarsa draft durur. Sırada beklerken kimse mağdur olmaz.'],
+  ];
+
+  const seen = coachSeen();
+  const open = seen < 3;
+  if (open) bumpCoachSeen(seen + 1);
+
+  const body = el('div', { class: 'coach-body' }, TIPS.map(([ico, term, desc]) => el('div', { class: 'coach-tip' }, [
+    el('span', { class: 'coach-ico' }, ico),
+    el('div', { class: 'coach-text' }, [
+      el('b', {}, term),
+      el('span', {}, desc),
+    ]),
+  ])));
+
+  const wrap = el('details', { class: 'coach', ...(open ? { open: 'open' } : {}) }, [
+    el('summary', { class: 'coach-summary' }, [
+      el('span', { class: 'coach-badge' }, 'İlk kez mi?'),
+      el('span', { class: 'coach-summary-text' }, 'Bu ekrandaki kavramlar'),
+    ]),
+    body,
+    el('button', {
+      class: 'btn small secondary coach-dismiss',
+      onclick: (e) => { e.preventDefault(); bumpCoachSeen(99); wrap.open = false; },
+    }, 'Anladım, bir daha gösterme'),
+  ]);
+  return wrap;
+}
+
 export function renderDraft({ state, actions }) {
   const d = state.draft;
   const root = el('div', { class: 'view' });
@@ -928,6 +979,8 @@ export function renderDraft({ state, actions }) {
     }, pauseLabel),
     leaveGameButton(actions),
   ]));
+
+  root.appendChild(draftCoach(state.room.draftMode));
 
   if (d.paused) {
     root.appendChild(el('div', { class: 'warning-banner' }, '⏸ Draft duraklatıldı — devam etmek için taraflardan biri "Devam Et"e basmalı.'));
@@ -3372,9 +3425,14 @@ export function renderPlayerDatabase({ state, actions }) {
         el('tbody', {}, shown.map((p) => el('tr', {}, [
           el('td', { class: 'pdb-rating' }, [
             String(p.rating),
-            // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — REYTİNG KAYNAĞI ŞEFFAFLIĞI] bkz. helpers.js fmtRatingSource.
+            // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — REYTİNG KAYNAĞI ŞEFFAFLIĞI] bkz. helpers.js
+            // fmtRatingSource/ratingSourceTitle — FC26 (doğrudan EA verisi) vs ≈EA (EA ölçeğine
+            // kalibre edilmiş tahmin) ayrımı burada da görünsün diye.
             fmtRatingSource(p.ratingOverrideSource)
-              ? el('span', { class: 'pdb-source-tag', title: 'Bu reyting EA Sports FC resmi verisinden alınmıştır (kendi formülümüzden değil)' }, fmtRatingSource(p.ratingOverrideSource))
+              ? el('span', {
+                class: `pdb-source-tag ${p.ratingOverrideSource === 'fc26-2026-27-kalibre' ? 'calibrated' : ''}`,
+                title: ratingSourceTitle(p.ratingOverrideSource) || '',
+              }, fmtRatingSource(p.ratingOverrideSource))
               : null,
           ]),
           el('td', { class: 'pdb-name' }, [p.name, p.isIcon ? el('span', { class: 'pdb-icon-tag' }, ' ⭐') : null]),

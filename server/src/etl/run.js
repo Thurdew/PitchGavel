@@ -18,6 +18,11 @@ const MANUAL_POSITIONS = require('./manualPositionOverrides');
 // dosya başı notu — 2026-27 için EA FC26 reytingleri (Süper Lig + büyük 5 Avrupa ligi) kullanıcı
 // onayıyla DOĞRUDAN uygulanıyor.
 const { resolveFc26Overrides, normName } = require('./fc26RatingOverrides');
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TEK ÖLÇEK] "Tamamen EA'ya geç." Eşleşmeyen oyuncular
+// için reyting ARTIK kendi formülümüzden değil, ligin EA dağılımından okunuyor (quantile
+// kalibrasyonu). Formül yalnızca SIRALAMA sinyali olarak kalıyor — teşhis ve gerekçe için
+// bkz. eaCalibration.js dosya başı notu.
+const { calibrateToEaScale } = require('./eaCalibration');
 
 const RAW_DIR = path.join(__dirname, '..', '..', 'data', 'raw');
 const OUT_DIR = path.join(__dirname, '..', '..', 'data', 'processed');
@@ -935,10 +940,17 @@ async function main() {
   const FC26_RATING_FILES = [
     { file: 'super_lig_2026_2027_fc26_reytingleri.md', label: 'Süper Lig', leagueCode: 'TR1', clubAliases: SUPER_LIG_CLUB_ALIASES, nameAliases: SUPER_LIG_NAME_ALIASES },
     { file: 'premier_league_2026_2027_fc26_reytingleri.md', label: 'Premier League', leagueCode: 'GB1', nameAliases: PREMIER_LEAGUE_NAME_ALIASES },
-    { file: 'la_liga_2026_2027_fc26_reytingleri.md', label: 'La Liga', leagueCode: 'ES1', nameAliases: LA_LIGA_NAME_ALIASES },
-    { file: 'bundesliga_2026_2027_fc26_reytingleri.md', label: 'Bundesliga', leagueCode: 'L1', nameAliases: BUNDESLIGA_NAME_ALIASES },
-    { file: 'serie_a_2026_2027_fc26_reytingleri.md', label: 'Serie A', leagueCode: 'IT1', nameAliases: SERIE_A_NAME_ALIASES },
-    { file: 'ligue_1_2026_2027_fc26_reytingleri.md', label: 'Ligue 1', leagueCode: 'FR1' },
+    { file: 'la_liga_2026_2027_fc26_reytingleri.md', label: 'La Liga', leagueCode: 'ES1', nameAliases: { ...LA_LIGA_NAME_ALIASES, 'abdessamad ezzalzouli': 'abde ezzalzouli' } },
+    // [DÜZELTİLDİ — EŞLEME HATASI] Kalibrasyon teşhisi (eaCalibration.js "suspects" listesi),
+    // EA dosyasında AÇIKÇA bulunan ama yazım farkı yüzünden eşleşmeyen yüksek değerli oyuncuları
+    // ortaya çıkardı. Bunlar kalibre edilmek yerine GERÇEK EA reytingini almalı:
+    //   'Kim Min Jae' (EA) ↔ 'Min-jae Kim' (Transfermarkt)
+    //   'Illia Zabarnyi' ↔ 'Ilya Zabarnyi'
+    //   'Abdessamad Ezzalzouli' ↔ 'Abde Ezzalzouli'
+    //   'Yann Aurel Bisseck' ↔ 'Yann Bisseck'
+    { file: 'bundesliga_2026_2027_fc26_reytingleri.md', label: 'Bundesliga', leagueCode: 'L1', nameAliases: { ...BUNDESLIGA_NAME_ALIASES, 'kim min jae': 'min-jae kim' } },
+    { file: 'serie_a_2026_2027_fc26_reytingleri.md', label: 'Serie A', leagueCode: 'IT1', nameAliases: { ...SERIE_A_NAME_ALIASES, 'yann aurel bisseck': 'yann bisseck' } },
+    { file: 'ligue_1_2026_2027_fc26_reytingleri.md', label: 'Ligue 1', leagueCode: 'FR1', nameAliases: { 'illia zabarnyi': 'ilya zabarnyi' } },
   ];
 
   // [KULLANICI İSTEĞİ, "2026-2027 yılında yapılan transferleri uygula" + "diğer ligler içinde
@@ -1040,12 +1052,38 @@ async function main() {
   }
   console.log(`[etl] Manuel transfer TOPLAM: ${manualTransfersApplied}/${MANUAL_TRANSFERS_2026_27.length}`);
 
+  // --- EA ÖLÇEĞİNE KALİBRASYON ---
+  // Bu, reyting akışının SON adımı: FC26 override'ları VE club/league güncellemelerinin
+  // (transfer bloğu + yukarıdaki manuel Süper Lig transferleri) TAMAMI uygulandıktan sonra hâlâ
+  // kendi formülümüzün sayısını taşıyan oyuncular, ligin EA dağılımına oturtuluyor. Böylece
+  // havuzda tek bir cetvel kalıyor (bkz. eaCalibration.js — ölçülen 19 puanlık uçurum bu
+  // yüzden vardı). [DÜZELTİLDİ] Orijinal patch bu adımı manuel transfer bloğundan ÖNCEYE
+  // koymuştu — Greenwood/Aké/Muriqi gibi ligi burada değişen ama rating'i formülde kalan
+  // oyuncular o sırada hâlâ ESKİ liglerinin (dolayısıyla yanlış) EA cetveline göre kalibre
+  // edilirdi. Kalibrasyon, oyuncu hangi ligin cetveline göre oturtulacağını GÜNCEL liginden
+  // aldığı için mutlaka TÜM club/league güncellemelerinden sonra çalışmalı.
+  const calib = calibrateToEaScale(activePlayers);
+  console.log(`[etl] EA kalibrasyonu: ${calib.calibrated} oyuncu ligin EA dağılımına oturtuldu`);
+  for (const [lg, s] of Object.entries(calib.byLeague)) {
+    console.log(`[etl]   ${lg}: EA=${s.eaCount}, kalibre=${s.calibratedCount}, bant=${s.band[0]}-${s.band[1]}${s.usedGlobalTable ? ' (global cetvel)' : ''}`);
+  }
+  if (calib.suspects.length) {
+    console.log('[etl]   ⚠ muhtemel İSİM EŞLEME HATASI (EA dosyasında bulunamadı ama piyasa değeri 20M€+ — alias eklenirse gerçek EA reytingini alır):');
+    for (const s of calib.suspects) {
+      console.log(`    - ${s.name} (${s.club}, ${s.league}) ${(s.value / 1e6).toFixed(0)}M€ → kalibre ${s.rating}`);
+    }
+  }
+  for (const p of activePlayers) delete p.ratingBeforeCalibration;
+
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(OUT_FILE, JSON.stringify({
     generatedAt: new Date().toISOString(),
     seasonSnapshot: maxSeason,
     ratingScale: {
-      method: 'value+performance percentile blend, piecewise curve', // bkz. dosya başı [GERÇEKÇİLİK DÜZELTMESİ v4] notu
+      // [KULLANICI İSTEĞİ — TEK ÖLÇEK] Aktif oyuncularda tek cetvel: EA FC26. Eşleşenler doğrudan
+      // EA değerini, eşleşmeyenler ligin EA dağılımına kalibre edilmiş değeri taşır. Kendi
+      // formülümüz (değer+performans harmanı) artık sadece kalibrasyonun SIRALAMA sinyali.
+      method: 'EA FC26 (eşleşenler) + lig bazlı quantile kalibrasyonu (eşleşmeyenler)',
       activeMin: RATING_FLOOR, activeMax: RATING_CEIL,
       iconMin: ICON_RATING_FLOOR, iconMax: ICON_RATING_CEIL,
       valueWeight: VALUE_WEIGHT, performanceWeight: PERFORMANCE_WEIGHT,
