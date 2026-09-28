@@ -1,5 +1,5 @@
 import { sfx } from './sfx.js';
-import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney, fmtRatingSource, ratingSourceTitle } from './helpers.js';
+import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney } from './helpers.js';
 
 // [KULLANICI İSTEĞİ] "Oyundayken oyundan çıkmak için bir şey ekle" — üst bardaki genel
 // "🏠 Ana Sayfa" butonuna (bkz. index.html/app.js) ek olarak, oyunun İÇİNDEYKEN (draft/dizilim)
@@ -98,8 +98,25 @@ export function draftHistoryPanel(state, { open = false } = {}) {
   ]);
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4, "Yabancılarla Online
+// Eşleşme"] Kuyrukta beklerken lobinin normal formu yerine gösterilen ekran.
+function renderQuickMatchSearching(state, actions) {
+  const modeLabels = { live: '⏱️ Canlı Açık Arttırma', blind: '🙈 Kör Draft' };
+  const poolLabels = { all: '🌍 Tüm Ligler', 'super-lig': '🇹🇷 Süper Lig' };
+  const mm = state.matchmaking;
+  return el('div', { class: 'view' }, [
+    el('div', { class: 'panel', style: 'text-align:center' }, [
+      el('h2', {}, '🔎 Rakip aranıyor...'),
+      el('p', { class: 'muted' }, `${modeLabels[mm.draftMode] || mm.draftMode} · ${poolLabels[mm.playerPool] || mm.playerPool}`),
+      el('p', { class: 'muted' }, 'Aynı tercihlerde bekleyen biri bulununca draft otomatik başlayacak — host/hazır onayı gerekmiyor.'),
+      el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => actions.cancelQuickMatch() }, 'İptal Et'),
+    ]),
+  ]);
+}
+
 export function renderLobby({ state, actions }) {
-  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all', wheelSegments: [], prepWheelEnabled: false, tradeRoundEnabled: false };
+  if (state.matchmaking) return renderQuickMatchSearching(state, actions);
+  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all', wheelSegments: [], prepWheelEnabled: false, tradeRoundEnabled: false, bankedPerksEnabled: false };
   const ui = state.lobbyUi;
 
   const nameInput = el('input', {
@@ -123,7 +140,9 @@ export function renderLobby({ state, actions }) {
       if (ui.draftMode === 'wheel' && picked.length > 0 && picked.length !== need) {
         return toast(`Çark segmentlerinde ya tam ${need} tane seç ya da hiç seçme (sistem dengeli bir çark kursun).`);
       }
-      actions.createRoom(nameInput.value.trim(), ui.draftMode, ui.playerPool, picked, ui.prepWheelEnabled, ui.tradeRoundEnabled);
+      actions.createRoom(nameInput.value.trim(), ui.draftMode, ui.playerPool, picked, ui.prepWheelEnabled, ui.tradeRoundEnabled, ui.bankedPerksEnabled);
+    } else if (ui.mode === 'quick') {
+      actions.quickMatch(nameInput.value.trim(), ui.draftMode, ui.playerPool);
     } else {
       if (!codeInput.value.trim()) return toast('Oda kodunu gir.');
       actions.joinRoom(nameInput.value.trim(), codeInput.value.trim());
@@ -142,6 +161,12 @@ export function renderLobby({ state, actions }) {
     ui.draftMode = draftMode;
     actions.navigateToPage(draftMode === 'wheel' ? 'mode-wheel' : draftMode === 'blind' ? 'mode-blind' : 'mode-live');
   }
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4] `selectDraftMode` bir
+  // mod-URL'ine (ör. /kor-draft) navigate ediyor — `navigateToPage` → `syncLobbyUiForPage`
+  // `ui.mode`'u HER ZAMAN 'create'e zorluyor (bkz. app.js). Hızlı Eşleş'in kendi URL'i yok, bu
+  // yüzden AYNI davranışı miras alırsa kullanıcıyı sessizce 'create'e geri sürükler — burada
+  // sadece yerel state'i değiştirip route() çağıran ayrı, URL-siz bir seçici kullanılıyor.
+  function selectDraftModeQuick(draftMode) { ui.draftMode = draftMode; actions.route(); }
   function selectPlayerPool(playerPool) { ui.playerPool = playerPool; actions.route(); }
 
   // [KULLANICI İSTEĞİ] "Oda kur/katıl ekranları güzel gözükmüyor, çok kalabalık duruyor" —
@@ -176,6 +201,9 @@ export function renderLobby({ state, actions }) {
   const modePicker = ui.mode ? null : el('div', { class: 'lobby-mode-picker' }, [
     lobbyModeCard('🔨', 'Oda Kur', 'Yeni bir açık arttırma başlat, kodu rakibine gönder', () => selectMode('create'), true),
     lobbyModeCard('🎫', 'Odaya Katıl', 'Rakibinden aldığın kodla gir', () => selectMode('join'), true),
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4, "Yabancılarla Online
+    // Eşleşme"] Oda kur/katıl akışına dokunmuyor — üçüncü, bağımsız bir yol.
+    lobbyModeCard('⚡', 'Hızlı Eşleş', 'Rastgele bir rakiple anında eşleş, draft otomatik başlar', () => selectMode('quick'), true),
   ]);
 
   // Kompakt hap-düğme grubu — bkz. yukarıdaki not. Dizilim ekranındaki `.formation-pick`/
@@ -200,16 +228,19 @@ export function renderLobby({ state, actions }) {
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft / Çark Modu — sadece host, oda kurarken seçer;
   // oda ömrü boyunca sabit kalır (bkz. claude.md "Ek Mod Fikirleri" / RoomManager.createRoom).
-  const draftModePicker = ui.mode === 'create' ? pillToggle('Draft Modu', [
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4] Hızlı Eşleş'te de aynı
+  // bileşen reuse ediliyor — SADECE Çark Modu seçeneği YOK (Matchmaker'da desteklenmiyor, bkz.
+  // claude.md — bütçesiz/kendi mekaniğine sahip bir mod, MVP kapsamı dışı).
+  const draftModePicker = (ui.mode === 'create' || ui.mode === 'quick') ? pillToggle('Draft Modu', [
     ['live', '⏱️ Canlı Açık Arttırma', 'Teklifler anlık görünür, süre bitene kadar yükselir'],
     ['blind', '🙈 Kör Draft', 'Tek seferlik gizli teklif — rakibinkini göremezsin'],
-    ['wheel', '🎡 Çark Modu', 'Bütçe yok — sırayla çark çevirip çıkan reyting bandından ücretsiz seç'],
-  ], ui.draftMode, selectDraftMode) : null;
+    ...(ui.mode === 'create' ? [['wheel', '🎡 Çark Modu', 'Bütçe yok — sırayla çark çevirip çıkan reyting bandından ücretsiz seç']] : []),
+  ], ui.draftMode === 'wheel' && ui.mode === 'quick' ? 'live' : ui.draftMode, ui.mode === 'quick' ? selectDraftModeQuick : selectDraftMode) : null;
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Tek Lig Modu — draftMode'dan bağımsız ikinci bir
   // anahtar: havuzu Süper Lig + Türk icon'lara daraltır (bkz. claude.md "Ek Mod Fikirleri" /
   // RoomManager.createRoom / draft/pool.js).
-  const playerPoolPicker = ui.mode === 'create' ? pillToggle('Oyuncu Havuzu', [
+  const playerPoolPicker = (ui.mode === 'create' || ui.mode === 'quick') ? pillToggle('Oyuncu Havuzu', [
     ['all', '🌍 Tüm Ligler', 'Süper Lig + büyük 5 Avrupa ligi + tüm icon\'lar'],
     ['super-lig', '🇹🇷 Süper Lig', 'Sadece Süper Lig kadroları + Türk icon\'lar'],
   ], ui.playerPool, selectPlayerPool) : null;
@@ -282,6 +313,14 @@ export function renderLobby({ state, actions }) {
     [true, '⇄ Açık', 'Draft bitince 5 dakikalık bir takas turu açılır: kadrondan bir oyuncu verip rakipten bir oyuncu alırsın (1↔1, para yok, kaleci hariç). Mevki serbest — orta saha verip forvet alıp formasyonunu değiştirebilirsin. Herkes "bitti" derse tur erken kapanır'],
   ], !!ui.tradeRoundEnabled, (v) => { ui.tradeRoundEnabled = v; actions.route(); }) : null;
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] Hazırlık Çarkı KAPALIYKEN
+  // anlamsız (redeem noktası o turun içi) — sadece prepWheelEnabled açıkken gösteriliyor,
+  // sunucu da aynı kısıtı zorluyor (bkz. RoomManager.createRoom).
+  const bankedPerksToggle = (ui.mode === 'create' && ui.prepWheelEnabled) ? pillToggle('Envanter Kullanımı', [
+    [false, 'Kapalı', 'Hazırlık Çarkı sırasında sadece Çevir/Atla seçenekleri olur'],
+    [true, '🎒 Açık', 'Kayıtlı oyuncular, Hazırlık Çarkı sıraları geldiğinde günlük ödül çarkından (bkz. Günlük Ödül sayfası) biriktirdikleri bir perk\'i şansa bırakmadan doğrudan kullanabilir'],
+  ], !!ui.bankedPerksEnabled, (v) => { ui.bankedPerksEnabled = v; actions.route(); }) : null;
+
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kullanıcı oynayacağını lobide sorma" — oda
   // kurulurken bir hedef oyuncu sayısı SORULMUYOR; oda kaç kişi gelirse gelsin (2-8) katılım
   // kabul eder, host odadaki herkes hazır olunca kendisi başlatır (bkz. renderWaitingRoom).
@@ -293,8 +332,10 @@ export function renderLobby({ state, actions }) {
     playerPoolPicker,
     wheelSegmentPickerEl,
     prepWheelToggle,
+    bankedPerksToggle,
     tradeRoundToggle,
-    el('button', { class: 'btn block', onclick: submit }, ui.mode === 'create' ? 'Oda Kur' : 'Katıl'),
+    el('button', { class: 'btn block', onclick: submit },
+      ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Eşleş' : 'Katıl'),
     el('button', { class: 'lobby-back', onclick: () => actions.selectLobbyMode(null) }, '← Geri'),
   ]) : null;
 
@@ -303,7 +344,8 @@ export function renderLobby({ state, actions }) {
   // ekranında (mod seçilmeden önceki hâlde) kullanıyoruz.
   if (ui.mode) {
     const hero = el('div', { class: 'lobby-hero' }, [
-      el('h1', { class: 'lobby-title compact' }, ui.mode === 'create' ? 'Oda Kur' : 'Odaya Katıl'),
+      el('h1', { class: 'lobby-title compact' },
+        ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Hızlı Eşleş' : 'Odaya Katıl'),
     ]);
     return el('div', { class: 'lobby-shell' }, [
       hero,
@@ -430,6 +472,452 @@ export function renderHowToPlay({ state, actions }) {
   return root;
 }
 
+// ============================== GİRİŞ / KAYIT ==============================
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] `players`/`how-to-play` ile AYNI
+// desen: kendi URL'i (/giris), üst bar butonu. Kayıt olmadan oynama akışı (state.clientId) hiç
+// değişmedi — bu SADECE isteğe bağlı, ayrı bir hesap katmanı. Perk/ödül/reklam mantığının
+// HİÇBİRİ bu fazda yok — sadece kayıt/giriş/çıkış/"ben kimim".
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA ZORUNLULUĞU] Giriş yapılmış ama
+// e-postası doğrulanmamış bir kullanıcı, aktif bir oyunun içinde DEĞİLKEN, `app.js route()`
+// tarafından HER ŞEYİN yerine gösterilen tam ekran duvar — kendi "tekrar gönder"/"çıkış yap"
+// düğmelerini taşıyor (ayrı bir sayfaya gitmesine gerek yok).
+// [TASARIM v3, KULLANICI İSTEĞİ — masaüstündeki "Lobi ekranı tasarım alternatifleri6.zip"
+// entegre edildi] "Menajer Lisansı" kartı burada "Onay bekliyor" durumunda (bkz. buildLicenseCard
+// `pending`), 3 adımlı bir açıklama + "Tekrar Gönder" düğmesinde İSTEMCİ TARAFI 30 sn'lik bir
+// bekleme (sunucudaki ResendVerificationRateLimiter'a çarpmadan önce kullanıcıyı yavaşlatır —
+// route() çağırmadan doğrudan DOM üzerinden sayıyor, gereksiz yeniden render yok).
+export function renderVerifyGate({ state, actions }) {
+  const email = state.user.email;
+  const lic = buildLicenseCard({
+    name: state.user.displayName, email, pending: true, large: true,
+    footLeft: 'Envanter · kilitli', footRight: 'Onay bekliyor',
+  });
+  const resendLabel = el('span', { class: 'ticket-btn-label' }, 'Tekrar Gönder');
+  const resendBtn = el('button', { class: 'btn ticket-btn', type: 'button' }, [
+    el('span', { class: 'ticket-btn-icon' }, '📧'), resendLabel,
+  ]);
+  resendBtn.onclick = async () => {
+    if (resendBtn.disabled) return;
+    resendBtn.disabled = true;
+    await actions.resendVerification();
+    let left = 30;
+    const tick = () => {
+      if (!resendBtn.isConnected) return;
+      if (left <= 0) { resendBtn.disabled = false; resendLabel.textContent = 'Tekrar Gönder'; return; }
+      resendLabel.textContent = `Tekrar gönder · ${left} sn`;
+      left -= 1; setTimeout(tick, 1000);
+    };
+    tick();
+  };
+  const steps = [
+    ['Gelen kutunu aç', email],
+    ['PitchGavel\'den gelen linke tıkla', 'Link 24 saat geçerli'],
+    ['Lisansın aktifleşir', 'Link seni siteye geri getirir, kaldığın yerden devam edersin'],
+  ];
+  return el('div', { class: 'view auth-view vg-view' }, [
+    el('div', { class: 'vg-grid' }, [
+      el('div', { class: 'vg-card' }, [lic.card]),
+      el('div', { class: 'vg-main' }, [
+        el('div', { class: 'auth-intro-text' }, [
+          el('div', { class: 'eyebrow' }, 'Son adım'),
+          el('h1', { class: 'auth-hero' }, 'E-postanı doğrula'),
+          el('p', { class: 'auth-lead' }, [
+            el('strong', { class: 'vg-email' }, email), ' adresine bir doğrulama linki gönderdik. Devam etmek için linke tıkla.',
+          ]),
+        ]),
+        el('ol', { class: 'auth-benefits vg-steps' }, steps.map(([t, s], i) => el('li', {}, [
+          el('span', { class: 'auth-benefit-n' }, String(i + 1).padStart(2, '0')),
+          el('span', { class: 'vg-step' }, [el('span', { class: 'vg-step-t' }, t), el('span', { class: 'vg-step-s' }, s)]),
+        ]))),
+        el('div', { class: 'acct-actions' }, [
+          resendBtn,
+          el('button', { class: 'btn secondary', type: 'button', onclick: () => actions.logout() }, 'Çıkış Yap'),
+        ]),
+        el('div', { class: 'auth-note vg-note' }, [el('span', {}, '📬'), el('span', {}, 'Gelen kutunda göremiyorsan spam/gereksiz klasörüne bak. Yanlış adres yazdıysan çıkış yapıp yeniden kayıt olabilirsin.')]),
+      ]),
+    ]),
+  ]);
+}
+
+// [TASARIM v2, KULLANICI İSTEĞİ — masaüstündeki "Lobi ekranı tasarım alternatifleri5.zip"
+// entegre edildi] "Menajer Lisansı" kartı + sekmeli form. Kart, kayıt modunda yazılan ad/e-postayla
+// route() ÇAĞRILMADAN (input odağı kaybolmasın diye) doğrudan DOM üzerinden güncelleniyor.
+const AUTH_BENEFITS = [
+  'Günlük ödül çarkını çevir — sonuç her zaman olumlu',
+  'Kazandığın perk\'ler envanterinde birikir',
+  'Hazırlık Çarkı\'nda sıra sana gelince birini şansa bırakmadan kullan',
+];
+
+function inventoryTotal(inv) {
+  return Object.values(inv || {}).reduce((a, b) => a + (b || 0), 0);
+}
+
+function buildLicenseCard({ name, email, footLeft, footRight, active, pending, large }) {
+  const nameEl = el('div', { class: `lic-name ${name ? '' : 'empty'}` }, name || 'Adın burada');
+  const emailEl = el('div', { class: 'lic-email' }, email || 'e-posta@adresin.com');
+  const card = el('div', { class: `lic-card ${large ? 'large' : ''} ${active ? 'active' : ''} ${pending ? 'pending' : ''}` }, [
+    el('div', { class: 'lic-strip' }, [el('span', {}, 'Menajer Lisansı'), el('span', { class: 'lic-code' }, 'PG-2026')]),
+    el('img', { class: 'lic-logo', src: '/assets/icon.png', alt: '' }),
+    el('div', { class: 'lic-body' }, [
+      pending
+        ? el('div', { class: 'lic-status pending' }, [el('span', { class: 'lic-dot' }), 'Onay bekliyor'])
+        : active
+          ? el('div', { class: 'lic-status' }, [el('span', { class: 'lic-dot' }), 'Aktif'])
+          : el('div', { class: 'lic-kicker' }, 'Görünen ad'),
+      nameEl, emailEl,
+    ]),
+    el('div', { class: 'lic-foot' }, [el('span', {}, footLeft), el('span', { class: 'lic-foot-accent' }, footRight)]),
+  ]);
+  return { card, nameEl, emailEl };
+}
+
+function authField(label, input, hint) {
+  return el('label', { class: 'auth-field' }, [
+    el('span', { class: 'auth-label' }, [el('span', {}, label), hint ? el('span', { class: 'auth-hint' }, hint) : null]),
+    input,
+  ]);
+}
+
+export function renderLogin({ state, actions }) {
+  const root = el('div', { class: 'view auth-view' });
+  root.appendChild(el('button', {
+    class: 'btn small secondary', style: 'align-self:flex-start',
+    onclick: () => actions.navigateToPage(null),
+  }, '← Geri dön'));
+
+  if (state.user) {
+    if (!state.dailyReward) actions.fetchDailyReward().then(() => { if (state.page === 'login') actions.route(); });
+    const dr = state.dailyReward;
+    const total = dr ? inventoryTotal(dr.inventory) : null;
+    const { card } = buildLicenseCard({
+      name: state.user.displayName, email: state.user.email,
+      active: !!state.user.emailVerified, pending: !state.user.emailVerified, large: true,
+      footLeft: `Envanter · ${total ?? '–'} perk`,
+      footRight: dr ? `Bugün ${dr.spinsUsedToday} çevirme` : '',
+    });
+    const stat = (k, v, accent) => el('div', { class: 'acct-stat' }, [
+      el('span', { class: 'acct-stat-k' }, k),
+      el('span', { class: `acct-stat-v ${accent ? 'accent' : ''}` }, v),
+    ]);
+    root.appendChild(el('div', { class: 'acct-grid' }, [
+      card,
+      el('div', { class: 'acct-side' }, [
+        el('div', { class: 'acct-head' }, [
+          el('h2', { class: 'acct-title' }, 'Hesabın'),
+          el('p', { class: 'muted' }, [
+            'Giriş yaptın: ', el('strong', {}, state.user.displayName), ` (${state.user.email})`,
+          ]),
+          // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] Bilgilendirici bir hatırlatma —
+          // doğrulanmışsa hiç gösterilmiyor (temiz kalsın), doğrulanmamışsa tekrar gönder düğmesi.
+          state.user.emailVerified ? null : el('div', { class: 'acct-verify' }, [
+            el('span', { class: 'acct-verify-icon' }, '📧'),
+            el('div', { class: 'acct-verify-text' }, [
+              el('strong', {}, 'E-postanı henüz doğrulamadın'),
+              el('span', {}, 'Gelmezse spam/gereksiz klasörüne bak.'),
+            ]),
+            el('button', { class: 'btn small secondary', onclick: () => actions.resendVerification() }, 'Tekrar gönder'),
+          ]),
+        ]),
+        dr ? el('div', { class: 'acct-stats' }, [
+          stat('Biriken perk', String(total)),
+          stat('Bugünkü hak', `${dr.spinsUsedToday}/${dr.spinsPerDay}`, dr.spinAvailable),
+        ]) : null,
+        el('div', { class: 'acct-actions' }, [
+          el('button', { class: 'btn ticket-btn', onclick: () => actions.navigateToPage('dailyReward') }, [
+            el('span', { class: 'ticket-btn-icon' }, '🎁'), el('span', { class: 'ticket-btn-label' }, 'Günlük Ödül\'e git'),
+          ]),
+          el('button', { class: 'btn secondary', onclick: () => actions.logout() }, 'Çıkış Yap'),
+        ]),
+      ]),
+    ]));
+    return root;
+  }
+
+  if (!state.authUi) state.authUi = { mode: 'login', email: '', password: '', displayName: '' };
+  const ui = state.authUi;
+  const isReg = ui.mode === 'register';
+
+  const lic = buildLicenseCard({
+    name: isReg ? ui.displayName.trim() : '', email: ui.email.trim(),
+    footLeft: 'Envanter · 0 perk', footRight: 'Taslak',
+  });
+  if (!isReg) { lic.nameEl.textContent = 'Menajer'; }
+
+  const emailInput = el('input', {
+    class: 'auth-input', type: 'email', placeholder: 'E-posta', value: ui.email, autocomplete: 'email',
+    oninput: (e) => { ui.email = e.target.value; lic.emailEl.textContent = ui.email.trim() || 'e-posta@adresin.com'; },
+  });
+
+  const bars = [0, 1, 2, 3].map(() => el('span', { class: 'pw-bar' }));
+  const paintStrength = () => {
+    const n = ui.password.length;
+    const s = n === 0 ? 0 : n < 8 ? 1 : n < 11 ? 2 : n < 14 ? 3 : 4;
+    bars.forEach((b, i) => { b.className = `pw-bar ${i < s ? (s <= 1 ? 'weak' : 'ok') : ''}`; });
+  };
+  const passwordInput = el('input', {
+    class: 'auth-input has-toggle', type: 'password', placeholder: 'Parola (en az 8 karakter)', value: ui.password,
+    autocomplete: isReg ? 'new-password' : 'current-password',
+    oninput: (e) => { ui.password = e.target.value; paintStrength(); },
+  });
+  const pwToggle = el('button', {
+    class: 'pw-toggle', type: 'button',
+    onclick: () => {
+      const show = passwordInput.type === 'password';
+      passwordInput.type = show ? 'text' : 'password';
+      pwToggle.textContent = show ? 'GİZLE' : 'GÖSTER';
+    },
+  }, 'GÖSTER');
+  paintStrength();
+
+  const nameCount = el('span', {}, `${ui.displayName.length}/24`);
+  const nameInput = el('input', {
+    class: 'auth-input', type: 'text', maxlength: '24', placeholder: 'Görünen ad', value: ui.displayName, autocomplete: 'nickname',
+    oninput: (e) => {
+      ui.displayName = e.target.value;
+      nameCount.textContent = `${ui.displayName.length}/24`;
+      const v = ui.displayName.trim();
+      lic.nameEl.textContent = v || 'Adın burada';
+      lic.nameEl.classList.toggle('empty', !v);
+    },
+  });
+
+  function submit(e) {
+    if (e) e.preventDefault();
+    if (!ui.email.trim() || !ui.password) { toast('E-posta ve parola gerekli.'); return; }
+    if (ui.mode === 'register') {
+      if (!ui.displayName.trim()) { toast('Görünen ad gerekli.'); nameInput.focus(); return; }
+      actions.register(ui.email.trim(), ui.password, ui.displayName.trim());
+    } else {
+      actions.login(ui.email.trim(), ui.password);
+    }
+  }
+  const setMode = (m) => { ui.mode = m; actions.route(); };
+
+  const form = el('form', { class: 'auth-form', onsubmit: submit }, [
+    authField('E-posta', emailInput),
+    authField('Parola', el('span', { class: 'pw-wrap' }, [passwordInput, pwToggle]), 'en az 8 karakter'),
+    isReg ? el('span', { class: 'pw-strength' }, bars) : null,
+    isReg ? el('label', { class: 'auth-field' }, [
+      el('span', { class: 'auth-label' }, [el('span', {}, 'Görünen ad'), el('span', { class: 'auth-hint' }, nameCount)]),
+      nameInput,
+    ]) : null,
+    el('button', { class: 'btn block ticket-btn', type: 'submit' }, [
+      el('span', { class: 'ticket-btn-icon' }, '🔑'),
+      el('span', { class: 'ticket-btn-label' }, isReg ? 'Kayıt Ol' : 'Giriş Yap'),
+    ]),
+    el('div', { class: 'auth-switch' }, [
+      el('span', {}, isReg ? 'Zaten hesabın var mı?' : 'Hesabın yok mu?'),
+      el('button', { type: 'button', class: 'auth-link', onclick: () => setMode(isReg ? 'login' : 'register') },
+        isReg ? 'Giriş yap' : 'Kayıt ol'),
+    ]),
+  ]);
+
+  root.appendChild(el('div', { class: 'auth-grid' }, [
+    el('div', { class: 'auth-intro' }, [
+      el('div', { class: 'auth-intro-text' }, [
+        el('div', { class: 'eyebrow' }, 'İsteğe bağlı hesap'),
+        el('h1', { class: 'auth-hero' }, 'Menajer lisansını çıkar'),
+        el('p', { class: 'auth-lead' }, 'Hesap, her gün çarktan perk biriktirip odada kullanmanı sağlar. Oyun akışı hesapsız da aynı.'),
+      ]),
+      lic.card,
+      el('ol', { class: 'auth-benefits' }, AUTH_BENEFITS.map((t, i) => el('li', {}, [
+        el('span', { class: 'auth-benefit-n' }, String(i + 1).padStart(2, '0')), el('span', {}, t),
+      ]))),
+    ]),
+    el('div', { class: 'auth-panel' }, [
+      el('div', { class: 'auth-tabs', role: 'tablist' }, [
+        el('button', { type: 'button', role: 'tab', class: `auth-tab ${!isReg ? 'active' : ''}`, onclick: () => setMode('login') }, 'Giriş Yap'),
+        el('button', { type: 'button', role: 'tab', class: `auth-tab ${isReg ? 'active' : ''}`, onclick: () => setMode('register') }, 'Kayıt Ol'),
+      ]),
+      form,
+      el('div', { class: 'auth-note' }, [el('span', {}, '🎮'), el('span', {}, 'Kayıt olmadan da oynayabilirsin — bu sadece isteğe bağlı bir hesap.')]),
+    ]),
+  ]));
+
+  return root;
+}
+
+// ============================== GÜNLÜK ÖDÜL ÇARKI ==============================
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] Kayıtlı kullanıcılar günlük olarak
+// "reklam izle → çark çevir" yapıp bir odada harcayabilecekleri perk'leri biriktirebilir
+// (bkz. claude.md, server/src/rewards/RewardsService.js). Çark görseli Hazırlık Çarkı'nın
+// `wheelGeometry`/`buildWheelDiskEl` fonksiyonlarını reuse ediyor (ağırlıklı dilimler sunucuyla aynı).
+// [TASARIM v2] Solda büyük çark (boştayken de görünür), sağda reklam biletleri + çevirme bedeli
+// merdiveni, altta açıklamalı envanter kartları; son kazanılan perk yeşille vurgulanıyor.
+const dailyRewardSpinAnimated = new Map();
+const dailyRewardSpinStartedAt = new Map();
+const dailyRewardSpinScheduled = new Set();
+
+function dailyRewardSegmentsFor(state) {
+  // Sunucudaki RewardsService.REWARD_SEGMENTS ile AYNI filtre (pool==='iyi').
+  return (state.config?.PREP_WHEEL_SEGMENTS || []).filter((s) => s.pool === 'iyi');
+}
+const splitPerkLabel = (label) => {
+  const m = String(label || '').match(/^(\p{Extended_Pictographic}️?)\s*(.*)$/u);
+  return m ? { emoji: m[1], name: m[2] } : { emoji: '🎁', name: label };
+};
+
+function dailyWheelEl(state, spinKey, targetLabel, { spinning = false, landed = false, locked = false } = {}) {
+  const geo = wheelGeometry(dailyRewardSegmentsFor(state));
+  const disk = buildWheelDiskEl(geo, spinKey, targetLabel, dailyRewardSpinAnimated, dailyRewardSpinStartedAt);
+  return el('div', { class: `dr-wheel ${locked ? 'locked' : ''} ${landed ? 'landed' : ''}` }, [
+    el('div', { class: `wheel-stage ${spinning ? 'spinning' : ''}` }, [
+      el('div', { class: `wheel-pointer ${landed ? 'landed' : ''}` }), disk,
+    ]),
+    el('div', { class: 'dr-hub' }, locked ? '🔒' : el('img', { src: '/assets/icon.png', alt: '' })),
+  ]);
+}
+
+function dailyRewardHeader(extra) {
+  return el('div', { class: 'dr-head' }, [
+    el('div', { class: 'dr-head-text' }, [
+      el('h1', { class: 'dr-title' }, '🎁 Günlük Ödül'),
+      el('p', { class: 'dr-lead' }, 'Her gün ücretsiz bir kez çarkı çevir, ileride bir odada kullanabileceğin perk\'ler biriktir. Kazandığın perk her zaman olumlu bir şey — kötü bir sonuç çıkmaz.'),
+    ]),
+    extra || null,
+  ]);
+}
+
+export function renderDailyReward({ state, actions }) {
+  const root = el('div', { class: 'view dr-view' });
+  root.appendChild(el('button', {
+    class: 'btn small secondary', style: 'align-self:flex-start',
+    onclick: () => actions.navigateToPage(null),
+  }, '← Geri dön'));
+
+  if (!state.user) {
+    const segs = dailyRewardSegmentsFor(state);
+    root.appendChild(el('div', { class: 'dr-grid' }, [
+      dailyWheelEl(state, 'daily-locked', null, { locked: true }),
+      el('div', { class: 'dr-guest' }, [
+        el('div', { class: 'eyebrow' }, '🎁 Günlük Ödül'),
+        el('h1', { class: 'auth-hero' }, 'Çark kayıtlı menajerlere açık'),
+        el('p', { class: 'auth-lead' }, 'Bu özellik sadece kayıtlı kullanıcılar için — kayıt olmadan da oynayabilirsin, bu tamamen isteğe bağlı bir ek.'),
+        segs.length ? el('div', { class: 'dr-guest-perks' }, [
+          el('div', { class: 'dr-kicker' }, 'Çarkta neler var'),
+          el('div', { class: 'dr-chips' }, segs.map((s) => el('span', { class: 'dr-chip' }, s.label))),
+        ]) : null,
+        el('button', { class: 'btn ticket-btn', style: 'align-self:flex-start', onclick: () => actions.navigateToPage('login') }, [
+          el('span', { class: 'ticket-btn-icon' }, '🔑'), el('span', { class: 'ticket-btn-label' }, 'Giriş Yap / Kayıt Ol'),
+        ]),
+      ]),
+    ]));
+    return root;
+  }
+
+  if (!state.dailyReward) {
+    actions.fetchDailyReward().then(() => actions.route());
+    root.appendChild(el('div', { class: 'panel' }, 'Yükleniyor...'));
+    return root;
+  }
+
+  const dr = state.dailyReward;
+  const spin = state.dailyRewardSpin;
+  const spinElapsed = spin ? Date.now() - spin.startedAt : Infinity;
+  const spinActive = spin && spinElapsed < PREP_WHEEL_SPIN_HOLD_MS;
+  if (spin && !spinActive) {
+    // Çark durdu — sonucu kaybetmemek için hatırla (banner + envanterde vurgu).
+    state.dailyRewardLastWin = { ...spin.perk, spinKey: `daily-${spin.startedAt}` };
+    state.dailyRewardSpin = null;
+  }
+  const lastWin = state.dailyRewardLastWin;
+
+  root.appendChild(dailyRewardHeader(el('div', { class: 'dr-reset' }, [
+    el('span', { class: 'dr-kicker' }, 'Sıfırlanma'), el('span', { class: 'dr-reset-v' }, '00:00 UTC'),
+  ])));
+
+  let wheel;
+  let side;
+  if (spinActive) {
+    const revealReady = spinElapsed >= WHEEL_SPIN_DURATION_MS;
+    const spinKey = `daily-${spin.startedAt}`;
+    wheel = dailyWheelEl(state, spinKey, spin.perk.label, { spinning: !revealReady, landed: revealReady });
+    if (!dailyRewardSpinScheduled.has(spinKey)) {
+      dailyRewardSpinScheduled.add(spinKey);
+      setTimeout(() => actions.route(), PREP_WHEEL_SPIN_HOLD_MS - spinElapsed + 30);
+      if (!revealReady) setTimeout(() => actions.route(), WHEEL_SPIN_DURATION_MS - spinElapsed + 20);
+    }
+    const p = splitPerkLabel(spin.perk.label);
+    side = el('div', { class: 'dr-side' }, [
+      revealReady
+        ? el('div', { class: 'dr-win big' }, [
+          el('div', { class: 'dr-win-kicker' }, [el('span', { class: 'lic-dot' }), 'Çark durdu']),
+          el('div', { class: 'dr-win-title' }, `🎯 ${p.name} kazandın!`),
+          spin.perk.description ? el('p', { class: 'dr-win-desc' }, spin.perk.description) : null,
+          spin.perk.kind && dr.inventory && dr.inventory[spin.perk.kind]
+            ? el('span', { class: 'dr-win-badge' }, `Envanterde ×${dr.inventory[spin.perk.kind]}`) : null,
+        ])
+        : el('div', { class: 'panel dr-spinning' }, [
+          el('div', { class: 'dr-win-kicker accent' }, [el('span', { class: 'lic-dot' }), `Çevirme #${dr.spinsUsedToday}`]),
+          el('div', { class: 'dr-win-title' }, 'Çark dönüyor…'),
+          el('p', { class: 'dr-win-desc' }, 'Sonuç birazdan — kazandığın perk envanterine kendiliğinden eklenir.'),
+          el('div', { class: 'dr-spin-bar' }, el('span', { style: `animation-duration:${Math.max(0, WHEEL_SPIN_DURATION_MS - spinElapsed)}ms` })),
+        ]),
+    ]);
+  } else {
+    // Son çevirmedeki sonucu (varsa) sabit bir çark konumunda göster.
+    const lastKey = lastWin ? lastWin.spinKey : null;
+    wheel = dailyWheelEl(state, lastKey || 'daily-idle', lastWin ? lastWin.label : null);
+
+    const canSpin = !!dr.spinAvailable;
+    const lw = lastWin ? splitPerkLabel(lastWin.label) : null;
+
+    side = el('div', { class: 'dr-side' }, [
+      lw ? el('div', { class: 'dr-win' }, [
+        el('span', { class: 'dr-win-emoji' }, lw.emoji),
+        el('span', { class: 'dr-win-text' }, [
+          el('span', { class: 'dr-win-title small' }, `🎯 ${lw.name} kazandın!`),
+          el('span', { class: 'muted' }, 'Envanterine eklendi.'),
+        ]),
+      ]) : null,
+      el('div', { class: 'panel dr-progress' }, [
+        el('div', { class: 'dr-progress-head' }, [
+          el('span', { class: 'dr-progress-title' }, 'Bugünkü hakkın'),
+          el('span', { class: 'dr-progress-count' }, `${dr.spinsUsedToday} / ${dr.spinsPerDay}`),
+        ]),
+        el('div', { class: 'muted dr-progress-text' },
+          canSpin ? 'Bugün için ücretsiz çevirme hakkın hazır.' : 'Bugünkü ücretsiz çevirmeni kullandın — 00:00 UTC\'de sıfırlanır.'),
+        el('button', {
+          class: `btn block ticket-btn ${canSpin ? '' : 'is-locked'}`,
+          disabled: !canSpin ? true : undefined,
+          onclick: () => { state.dailyRewardLastWin = null; actions.spinDailyReward(); },
+        }, [
+          el('span', { class: 'ticket-btn-icon' }, '🎡'),
+          el('span', { class: 'ticket-btn-label' }, canSpin ? 'Çevir' : 'Yarın tekrar gel'),
+        ]),
+      ]),
+    ]);
+  }
+
+  root.appendChild(el('div', { class: 'dr-grid' }, [wheel, side]));
+
+  const segs = dailyRewardSegmentsFor(state);
+  const inv = dr.inventory || {};
+  const known = new Set(segs.map((s) => s.kind));
+  const extras = Object.keys(inv).filter((k) => !known.has(k)).map((k) => ({ kind: k, label: k, description: '' }));
+  root.appendChild(el('div', { class: 'dr-inv' }, [
+    el('div', { class: 'dr-inv-head' }, [
+      el('h3', {}, 'Envanterin'),
+      el('span', { class: 'dr-inv-sub' }, `${inventoryTotal(inv)} perk · Hazırlık Çarkı'nda sıra sana gelince kullanılır`),
+    ]),
+    el('div', { class: 'dr-inv-grid' }, [...segs, ...extras].map((s) => {
+      const count = inv[s.kind] || 0;
+      const p = splitPerkLabel(s.label);
+      const fresh = !spinActive && lastWin && lastWin.kind === s.kind;
+      return el('div', { class: `dr-perk ${count ? 'has' : 'empty'} ${fresh ? 'fresh' : ''}` }, [
+        el('div', { class: 'dr-perk-top' }, [
+          el('span', { class: 'dr-perk-emoji' }, p.emoji),
+          el('span', { class: 'dr-perk-count' }, `×${count}`),
+        ]),
+        el('span', { class: 'dr-perk-name' }, p.name),
+        s.description ? el('span', { class: 'dr-perk-desc' }, s.description) : null,
+      ]);
+    })),
+  ]));
+
+  return root;
+}
+
 // Draft modu kartlarını tıklanabilir yapar — direkt o modun URL'ine (bkz. app.js
 // navigateToPage/DRAFT_MODE_BY_PAGE) götürüp Oda Kur formunu o mod seçiliyken açar.
 function lobbyModeCardLink(actions, emoji, title, desc, page) {
@@ -474,10 +962,11 @@ export function renderWaitingRoom({ state, actions }) {
     try { await navigator.clipboard.writeText(text); toast(ok); }
     catch (e) { toast('Kopyalanamadı — elle seçip kopyalayabilirsin'); }
   };
-  // [NOT] app.js'te oda kodunu URL'den okuyan bir yol YOK (bkz. app.js route()) — o yüzden
-  // "davet" bir deep link değil, paylaşıma hazır KISA BİR METİN: adres + kod. Deep link
-  // eklenirse (örn. ?oda=KOD) burayı tek satırda URL'e çevirebilirsin.
-  const inviteText = `PitchGavel'de oda kurdum — ${location.origin} adresine gir, oda kodu: ${room.code}`;
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — KULLANICI ÇEKME] Artık gerçek bir deep link (bkz.
+  // app.js `join` query param okuma) — arkadaşın bu linke tıklayınca "Odaya Katıl" formu, kod
+  // alanı ÖNCEDEN DOLU olarak açılıyor, elle kod yazması gerekmiyor.
+  const inviteLink = `${location.origin}/?join=${room.code}`;
+  const inviteText = `PitchGavel'de oda kurdum, gel oynayalım 👉 ${inviteLink}`;
 
   const metaCell = (k, v) => el('div', {}, [
     el('div', { class: 'wr-meta-k' }, k),
@@ -554,10 +1043,10 @@ export function renderWaitingRoom({ state, actions }) {
             }, 'Kodu kopyala'),
             el('button', {
               type: 'button', class: 'btn secondary',
-              onclick: () => copyText(inviteText, 'Davet metni kopyalandı'),
+              onclick: () => copyText(inviteText, 'Davet linki kopyalandı'),
             }, 'Daveti kopyala'),
           ]),
-          el('div', { class: 'wr-hint' }, 'Arkadaşların ana sayfadan "Odaya Katıl" ile bu kodu girer.'),
+          el('div', { class: 'wr-hint' }, 'Daveti WhatsApp/Discord\'a yapıştır — arkadaşın linke tıklayınca kod alanı önceden dolu gelir, tek yapması gereken adını yazıp katılmak.'),
         ]),
 
         el('div', { class: 'wr-card pad wr-ready' }, [
@@ -715,12 +1204,29 @@ export function renderPrepWheel({ state, actions }) {
     timerInterval = setInterval(tick, 150);
   }
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] "Çevir"/"Atla" yanında üçüncü
+  // seçenek: sırası gelen, giriş yapmış bir oyuncu, Faz 2'de biriktirdiği bir perk'i şansa
+  // bırakmadan doğrudan kullanabilir (host bunu açtıysa). Envanter bilgisi olmadan düğme
+  // gösteremeyiz — `renderDailyReward`'daki AYNI on-demand-fetch deseni.
+  if (isMyTurn && room.bankedPerksEnabled && state.user && !state.dailyReward) {
+    actions.fetchDailyReward().then(() => actions.route());
+  }
+  const bankedPerkButtons = (isMyTurn && room.bankedPerksEnabled && state.user && state.dailyReward)
+    ? Object.entries(state.dailyReward.inventory || {}).filter(([, count]) => count > 0).map(([kind, count]) => {
+      const seg = prepWheelSegmentsFor(state).find((s) => s.kind === kind);
+      return el('button', {
+        class: 'btn secondary', onclick: () => actions.redeemBankedPerk(kind),
+      }, `🎒 ${seg ? seg.label : kind} kullan (${count})`);
+    })
+    : [];
+
   const turnBody = isMyTurn
     ? [
         el('div', { class: 'prep-wheel-turn-label' }, 'Sıra sende!'),
         el('div', { class: 'prep-wheel-actions' }, [
           el('button', { class: 'btn', onclick: () => actions.spinPrepWheel() }, '🎡 Çevir (risk var)'),
           el('button', { class: 'btn secondary', onclick: () => actions.skipPrepWheel() }, '⏭ Risk Almadan Devam Et'),
+          ...bankedPerkButtons,
         ]),
         timerWrap,
       ]
@@ -3179,11 +3685,31 @@ export function renderMatch({ state, actions }) {
     el('p', { class: 'muted', style: 'text-align:center;margin-top:6px' }, 'Her maç kendi başına puanlanır (galibiyet 3, beraberlik 1) — lig usülü, yukarıdaki puan tablosuna öyle işlendi.'),
   ]));
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — KULLANICI ÇEKME] "Sonucu Paylaş" — maçtan sonra sosyal
+  // medyada/arkadaş grubunda organik bir reklam olsun diye. Mobilde `navigator.share` varsa
+  // gerçek paylaşım sayfası (WhatsApp/Instagram vb.) açılır; yoksa (masaüstü) metin panoya
+  // kopyalanır — ikisi de aynı düğme, kullanıcı hangisinin desteklendiğini bilmek zorunda değil.
+  const myStanding = r.standings.find((s) => s.clientId === state.clientId);
+  const myRank = r.standings.findIndex((s) => s.clientId === state.clientId) + 1;
+  const iWon = r.winnerClientId === state.clientId;
+  const shareText = iWon
+    ? `🏆 PitchGavel'de şampiyon oldum${myStanding ? ` (${myStanding.points} puan)` : ''}! Sen de dene:`
+    : `⚽ PitchGavel'de bir maç oynadım — ${winnerName} şampiyon oldu${myStanding ? `, ben ${myRank}. sıradayım (${myStanding.points} puan)` : ''}. Sen de dene:`;
+  async function shareResult() {
+    if (navigator.share) {
+      try { await navigator.share({ title: 'PitchGavel', text: shareText, url: location.origin }); return; }
+      catch (e) { /* kullanıcı paylaşım penceresini iptal etti — panoya kopyalamaya düş */ }
+    }
+    try { await navigator.clipboard.writeText(`${shareText} ${location.origin}`); toast('Kopyalandı — istediğin yere yapıştırabilirsin!'); }
+    catch (e) { toast('Kopyalanamadı — elle seçip kopyalayabilirsin'); }
+  }
+
   // [KULLANICI İSTEĞİ] "Maç bittikten sonra tekrar oyna butonu gelsin." — aynı rakiple, oda
   // kodunu yeniden paylaşmadan sıfırdan bir draft başlatır (bkz. actions.rematch).
   root.appendChild(el('div', { style: 'display:flex; gap:10px; flex-wrap:wrap' }, [
     el('button', { class: 'btn', onclick: () => actions.rematch() }, '🔁 Tekrar Oyna'),
     el('button', { class: 'btn secondary', onclick: () => actions.leaveRoom() }, 'Yeni Oda Kur'),
+    el('button', { class: 'btn secondary', onclick: shareResult }, '📤 Sonucu Paylaş'),
   ]));
   return root;
 }
@@ -3390,7 +3916,10 @@ export function renderPlayerDatabase({ state, actions }) {
   const shown = filtered.slice(0, PDB_RESULT_LIMIT);
 
   root.appendChild(el('div', { class: 'panel' }, [
-    el('h3', {}, `Oyuncu Veritabanı (${all.length})`),
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — SEO] Sayfanın gerçek konusunu taşıyan tek başlık artık
+    // <h1> — bu proje boyunca hiçbir sayfa <h1> taşımıyordu (bkz. styles.css `.panel h1` — aynı
+    // görsel stili `.panel h3` ile paylaşacak şekilde genişletildi, görünüm DEĞİŞMEDİ).
+    el('h1', {}, `Oyuncu Veritabanı (${all.length})`),
     el('div', { class: 'player-db-toolbar' }, [
       el('input', {
         type: 'text', placeholder: '🔍 İsim ara...', value: ui.search,
@@ -3423,18 +3952,7 @@ export function renderPlayerDatabase({ state, actions }) {
           el('th', {}, 'Reyting'), el('th', {}, 'İsim'), el('th', {}, 'Poz'), el('th', {}, 'Kulüp'), el('th', {}, 'Lig'), el('th', {}, 'Bu Sezon'), el('th', {}, 'Değer'),
         ])),
         el('tbody', {}, shown.map((p) => el('tr', {}, [
-          el('td', { class: 'pdb-rating' }, [
-            String(p.rating),
-            // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — REYTİNG KAYNAĞI ŞEFFAFLIĞI] bkz. helpers.js
-            // fmtRatingSource/ratingSourceTitle — FC26 (doğrudan EA verisi) vs ≈EA (EA ölçeğine
-            // kalibre edilmiş tahmin) ayrımı burada da görünsün diye.
-            fmtRatingSource(p.ratingOverrideSource)
-              ? el('span', {
-                class: `pdb-source-tag ${p.ratingOverrideSource === 'fc26-2026-27-kalibre' ? 'calibrated' : ''}`,
-                title: ratingSourceTitle(p.ratingOverrideSource) || '',
-              }, fmtRatingSource(p.ratingOverrideSource))
-              : null,
-          ]),
+          el('td', { class: 'pdb-rating' }, String(p.rating)),
           el('td', { class: 'pdb-name' }, [p.name, p.isIcon ? el('span', { class: 'pdb-icon-tag' }, ' ⭐') : null]),
           el('td', {}, el('span', { class: `pdb-pos pos-${slotGroup(p.position)}` }, p.position)),
           el('td', { class: 'muted' }, p.club || '—'),

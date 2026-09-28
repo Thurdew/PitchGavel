@@ -24,3 +24,13 @@ Thumbs.db
 # içine kopyalandı (bkz. claude.md), buradaki kopyalar artık yinelenen/gereksiz.
 /pitchgavel-icon.png
 /pitchgavel-logo-dark.png
+
+# Hesap sistemi — e-posta/parola hash'i içeren yerel SQLite veritabanı. server/data/processed/
+# players.json'un AKSİNE (o statik/herkese açık veri, bilerek dahil) bu gerçek kullanıcı verisi,
+# bilerek hariç.
+server/data/pitchgavel.sqlite
+server/data/pitchgavel.sqlite-*
+
+# E-posta doğrulama — gerçek Resend API key'i buraya yazılacak (server/src/loadEnv.js okuyor).
+# Gerçek bir sır, KESİNLİKLE commit edilmemeli.
+server/.env

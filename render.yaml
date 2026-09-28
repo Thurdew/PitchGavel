@@ -10,5 +10,17 @@ services:
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
+      # node:sqlite 22.13+ sürümlerinde bayraksız; 22.11'de --experimental-sqlite olmadan açılışta çöker.
       - key: NODE_VERSION
-        value: 22.11.0
+        value: 22.14.0
+      # Secure cookie + trust proxy (bkz. server/src/index.js)
+      - key: NODE_ENV
+        value: production
+      # Doğrulama e-postasındaki link bu adrese gider — ayarlanmazsa localhost'a gider.
+      - key: APP_BASE_URL
+        value: https://pitchgavel.com
+      - key: EMAIL_FROM
+        value: PitchGavel <noreply@pitchgavel.com>
+      # Gizli — Render dashboard'dan elle girilir, repoya yazılmaz.
+      - key: RESEND_API_KEY
+        sync: false
