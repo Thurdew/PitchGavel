@@ -36,11 +36,14 @@ class RoomManager {
   // gelirse gelsin" — host'a hedef bir sayı SORULMUYOR. Oda sadece dokümandaki N ≤ 8 sınırına
   // kadar (MAX_ROOM_PLAYERS) katılım kabul eder; draftı ne zaman/kaç kişiyle başlatacağına
   // (herkes hazır olduktan sonra) oda sahibi (hostClientId) kendisi karar verir.
-  createRoom(hostClientId, hostName, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled) {
+  createRoom(hostClientId, hostName, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled) {
     let code;
     do { code = generateRoomCode(); } while (this.rooms.has(code));
 
     const resolvedDraftMode = draftMode === 'blind' ? 'blind' : draftMode === 'wheel' ? 'wheel' : 'live';
+    // Aşağıdaki bankedPerksEnabled bunun SONUCUNA bağlı olduğu için önce hesaplanıyor (obje
+    // literal'i kendi property'sine bare identifier'la erişemiyor).
+    const resolvedPrepWheelEnabled = !!prepWheelEnabled && resolvedDraftMode !== 'wheel';
     const room = {
       code,
       status: STATUS.LOBBY,
@@ -59,7 +62,12 @@ class RoomManager {
       // ANLAMSIZ olduğu için (o modun zaten kendi çarkı var) BİLEREK zorla kapalı tutuluyor,
       // istemci zaten bu seçeneği Çark Modu'nda hiç göstermiyor ama sunucu da asıl otorite
       // olduğu için burada garanti ediyor. Oda ömrü boyunca sabit.
-      prepWheelEnabled: !!prepWheelEnabled && resolvedDraftMode !== 'wheel',
+      prepWheelEnabled: resolvedPrepWheelEnabled,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] Faz 2'de biriktirilen bir
+      // perk'in Hazırlık Çarkı turunda ("Çevir"/"Atla" yanında üçüncü seçenek: "Envanterden
+      // Kullan") harcanabilmesi — Hazırlık Çarkı'nın KENDİSİ kapalıyken ANLAMSIZ (redeem noktası
+      // o turun içi), bu yüzden `resolvedPrepWheelEnabled` kapalıyken BİLEREK zorla kapalı.
+      bankedPerksEnabled: !!bankedPerksEnabled && resolvedPrepWheelEnabled,
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] "Çark gibi isteğe bağlı özellik olarak
       // gelsin, 3 modda da geçerli olsun." — Hazırlık Çarkı'nın aksine draftMode kısıtı YOK:
       // çark modunda da draft sonunda kadrolar hazır olduğu için takas aynen anlamlı.
@@ -279,6 +287,8 @@ class RoomManager {
       hostClientId: room.hostClientId,
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI]
       prepWheelEnabled: !!room.prepWheelEnabled,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3]
+      bankedPerksEnabled: !!room.bankedPerksEnabled,
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Bekleme odasında/draft başlığında
       // "bu odada takas turu var" rozetini gösterebilmek için. Turun kendi detayı (teklifler)
       // kişiye özel olduğu için burada DEĞİL, trade:state ile ayrı gönderiliyor.

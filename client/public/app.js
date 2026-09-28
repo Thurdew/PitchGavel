@@ -1,7 +1,7 @@
 import { el, toast } from './helpers.js';
 // [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
 import { sfx } from './sfx.js';
-import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, isPrepWheelSpinActive } from './views.js';
+import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderVerifyGate, isPrepWheelSpinActive } from './views.js';
 
 const LS_CLIENT_ID = 'kk_clientId';
 const LS_NAME = 'kk_name';
@@ -56,6 +56,24 @@ const state = {
   trade: null,
   tradeUi: null,
   lastHighBidder: null, // teklifin geçilmesini (outbid sesi) tespit etmek için
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] `state.clientId`'den BAĞIMSIZ bir
+  // kimlik — oda/oyun kimliği (sessionStorage clientId) hiç değişmedi, bu sadece "giriş yapmış
+  // mısın" bilgisini taşıyan ayrı bir HTTP hesap katmanı (bkz. /api/auth/*). Bu fazda RoomManager'a
+  // hiç bağlanmıyor. null = misafir (giriş yapılmamış), { id, email, displayName } = giriş yapılmış.
+  user: null,
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] Günlük reklam-ödül çarkı durumu
+  // (bkz. views.js renderDailyReward) — `/api/rewards/status` cache'i. `dailyRewardSpin` sadece
+  // İSTEMCİ-YEREL bir animasyon "hold" state'i (Hazırlık Çarkı'ndaki `prepWheelSpin` ile aynı desen).
+  dailyReward: null,
+  dailyRewardSpin: null,
+  // [TASARIM v2] Çark durunca kaybolmasın diye son kazanılan perk'i hatırlar (banner + envanterde
+  // yeşil vurgu) — bkz. views.js renderDailyReward.
+  dailyRewardLastWin: null,
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4, "Yabancılarla Online
+  // Eşleşme"] Kuyrukta bekleme durumu — `{draftMode, playerPool}` doluyken lobi "Rakip
+  // aranıyor..." ekranını gösterir (bkz. views.js renderLobby). Eşleşince sunucu `matchmaking:matched`
+  // gönderir, bu null'a döner; asıl oda verisi zaten var olan `room:state` dinleyicisiyle gelir.
+  matchmaking: null,
 };
 
 // Odadaki TÜM kadrolardaki oyuncu sayısı — "ben yokken kaç tur tamamlandı" farkı için.
@@ -151,6 +169,8 @@ const appRoot = document.getElementById('app');
 const topbarStatus = document.getElementById('topbarStatus');
 const playersNavBtn = document.getElementById('playersNavBtn');
 const howToPlayNavBtn = document.getElementById('howToPlayNavBtn');
+const authNavBtn = document.getElementById('authNavBtn');
+const dailyRewardNavBtn = document.getElementById('dailyRewardNavBtn');
 
 // [KULLANICI İSTEĞİ, "SEO uyumlu yap, URL'leri ayarla"] Bu SPA hiç URL değiştirmiyordu — oyuncu
 // veritabanı sayfası da dahil her şey "/" üzerinde sadece `state.page` ile ayrışıyordu. Bu hem
@@ -178,6 +198,11 @@ const PAGE_PATHS = {
   // bir sayfa: hem onboarding hem SEO (SPA'nın ilk HTML'i neredeyse boş — Google'ın bulacağı
   // gerçek metin içeriği burada).
   'how-to-play': '/nasil-oynanir',
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] Giriş/Kayıt sayfası — `players`/
+  // `how-to-play` ile AYNI desen (kendi URL'i, üst bar butonu).
+  login: '/giris',
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] `players`/`login` ile AYNI desen.
+  dailyReward: '/gunluk-odul',
 };
 const PATH_TO_PAGE = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page]));
 // draftMode ('live'/'blind'/'wheel') <-> ilgili lobi sayfası arasında çift yönlü eşleme —
@@ -213,8 +238,25 @@ const PAGE_META = {
     title: 'Nasıl Oynanır? — PitchGavel',
     description: 'Oda kurmadan kura, draft modları, kaskad açık arttırma ve maç simülasyonuna kadar PitchGavel\'in tüm kurallarını adım adım öğren.',
   },
+  login: {
+    title: 'Giriş Yap / Kayıt Ol — PitchGavel',
+    description: 'PitchGavel hesabınla giriş yap ya da yeni hesap oluştur.',
+  },
+  dailyReward: {
+    title: 'Günlük Ödül — PitchGavel',
+    description: 'Reklam izleyip günlük çarkı çevir, ileride odada kullanabileceğin perk\'ler biriktir.',
+  },
 };
 function metaFor(page) { return PAGE_META[page] || PAGE_META.default; }
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] Sunucunun döndürdüğü hata kodlarını
+// (bkz. server/src/index.js /api/auth/*) kullanıcıya okunabilir Türkçe mesaja çevirir.
+const AUTH_ERROR_MESSAGES = {
+  EMAIL_TAKEN: 'Bu e-posta zaten kayıtlı.',
+  INVALID_CREDENTIALS: 'E-posta veya parola hatalı.',
+  RATE_LIMITED: 'Çok fazla deneme yaptın, birkaç dakika sonra tekrar dene.',
+  INVALID_INPUT: 'Bilgileri kontrol et (parola en az 8 karakter olmalı).',
+};
 
 // document.title + meta description/canonical/OG/Twitter etiketlerini o an gösterilen sayfaya
 // göre günceller. Bu SPA'da tek statik index.html tüm yollara servis edildiği için (bkz. yukarı)
@@ -295,6 +337,11 @@ playersNavBtn.addEventListener('click', () => {
 });
 howToPlayNavBtn.addEventListener('click', () => {
   navigateToPage(state.page === 'how-to-play' ? null : 'how-to-play');
+});
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] Sadece giriş yapılmışken görünür
+// (bkz. route()'taki .style.display toggle'ı) — misafirken bu sayfaya gitmenin bir anlamı yok.
+dailyRewardNavBtn.addEventListener('click', () => {
+  navigateToPage(state.page === 'dailyReward' ? null : 'dailyReward');
 });
 // Tarayıcının geri/ileri tuşları — URL'e göre state.page'i (ve mod-URL'iyse lobi state'ini)
 // senkronlar (pushState çağırmadan, zaten tarayıcı geçmişte gezindi).
@@ -432,10 +479,24 @@ function bindUiClickSound() {
   }, { capture: true, passive: true });
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] Üst bar butonunu giriş durumuna
+// göre günceller — misafirken sayfaya götürür, giriş yapılmışken tıklanınca doğrudan çıkış yapar
+// (ayrı bir "hesabım" sayfası bu fazda yok, sadece giriş/kayıt/çıkış).
+function updateAuthNav() {
+  if (state.user) {
+    authNavBtn.textContent = `👤 ${state.user.displayName} · Çıkış Yap`;
+    authNavBtn.onclick = () => actions.logout();
+  } else {
+    authNavBtn.textContent = '🔑 Giriş Yap';
+    authNavBtn.onclick = () => navigateToPage(state.page === 'login' ? null : 'login');
+  }
+}
+
 function updateTopbar() {
   bindUiClickSound();
   ensureSfxButton();
   updateConnBanner();
+  updateAuthNav();
   const bits = [];
   bits.push(state.connected ? '🟢 bağlı' : '🔴 bağlantı yok');
   if (state.code) bits.push(`Oda: ${state.code}`);
@@ -529,6 +590,9 @@ function route() {
   updateHead();
   playersNavBtn.classList.toggle('active', state.page === 'players');
   howToPlayNavBtn.classList.toggle('active', state.page === 'how-to-play');
+  authNavBtn.classList.toggle('active', state.page === 'login');
+  dailyRewardNavBtn.style.display = state.user ? '' : 'none';
+  dailyRewardNavBtn.classList.toggle('active', state.page === 'dailyReward');
   // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
   homeNavBtn.style.display = state.room ? '' : 'none';
 
@@ -539,6 +603,19 @@ function route() {
     route._viewKey = newViewKey;
   }
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA ZORUNLULUĞU] "Doğrulamazsan siteye
+  // giremesin" — giriş yapılmış ama e-postası doğrulanmamış bir kullanıcı, aktif bir oyunun
+  // İÇİNDE DEĞİLSE (bkz. `!state.room` — bir draft/maçın ORTASINDA hesap durumu yüzünden dışarı
+  // atılmak kötü bir deneyim olurdu, oyun hiçbir zaman hesaba bağlı değildi) HİÇBİR ekranı
+  // (lobi, oyuncu veritabanı, nasıl oynanır, günlük ödül) göremez — SADECE bu duvarı görür.
+  // `renderVerifyGate` kendi "tekrar gönder"/"çıkış yap" düğmelerini taşıyor, bu yüzden
+  // /giris'i özel olarak muaf tutmaya gerek yok.
+  if (state.user && !state.user.emailVerified && !state.room) {
+    appRoot.appendChild(renderVerifyGate({ state, actions }));
+    finish();
+    return;
+  }
+
   if (state.page === 'players') {
     appRoot.appendChild(renderPlayerDatabase({ state, actions }));
     finish();
@@ -547,6 +624,18 @@ function route() {
 
   if (state.page === 'how-to-play') {
     appRoot.appendChild(renderHowToPlay({ state, actions }));
+    finish();
+    return;
+  }
+
+  if (state.page === 'login') {
+    appRoot.appendChild(renderLogin({ state, actions }));
+    finish();
+    return;
+  }
+
+  if (state.page === 'dailyReward') {
+    appRoot.appendChild(renderDailyReward({ state, actions }));
     finish();
     return;
   }
@@ -605,10 +694,10 @@ const actions = {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] wheelSegmentLabels: host'un elle
   // işaretlediği tam WHEEL_CUSTOM_PICK_COUNT etiket (bkz. views.js renderLobby wheel checklist'i)
   // ya da boş dizi/undefined (işaretlemediyse — sunucu auto-balance'a düşer).
-  async createRoom(name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled) {
+  async createRoom(name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled) {
     state.name = name;
     sessionStorage.setItem(LS_NAME, name);
-    const res = await emitAck('room:create', { clientId: state.clientId, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled });
+    const res = await emitAck('room:create', { clientId: state.clientId, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled });
     if (res.error) return toast('Oda oluşturulamadı: ' + res.error);
     state.room = res.room;
     setCode(res.room.code);
@@ -825,6 +914,99 @@ const actions = {
   navigateToPage,
   selectLobbyMode,
   route,
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] Socket değil, düz `fetch` — oyun
+  // protokolünden (socket.io) TAMAMEN AYRI bir HTTP kimlik sistemi (bkz. server/src/index.js
+  // /api/auth/*). fetchPlayerDb ile aynı "plain REST" deseni.
+  async register(email, password, displayName) {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, displayName }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.user = res.user;
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA ZORUNLULUĞU] Bir sonraki route()
+    // çağrısında (navigateToPage aracılığıyla) `renderVerifyGate` otomatik devreye girecek —
+    // burada özel bir yönlendirme gerekmiyor. Spam uyarısı — kullanıcı geri bildirimi: Resend'in
+    // varsayılan test göndereni doğrulanmamış bir alan adından geldiği için sık sık spam'e düşüyor.
+    toast('Hesabın oluşturuldu! E-postana bir doğrulama linki gönderdik — gelmezse spam/gereksiz klasörüne bak.');
+    navigateToPage(null);
+    return res;
+  },
+  async login(email, password) {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.user = res.user;
+    navigateToPage(null);
+    return res;
+  },
+  async logout() {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    state.user = null;
+    route();
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] `fetchPlayerDb` ile AYNI "plain
+  // REST" deseni. `spinDailyReward` sonucu geldiğinde animasyonu (spin süresi boyunca) yönetmek
+  // views.js `renderDailyReward`'ın kendi işi — burada sadece `state.dailyRewardSpin` dolduruluyor
+  // (Hazırlık Çarkı'nın `prepWheel:resolved` handler'ıyla aynı desen).
+  async fetchDailyReward() {
+    try {
+      const res = await fetch('/api/rewards/status').then((r) => r.json());
+      if (!res.error) state.dailyReward = res;
+    } catch (e) { /* sessizce yut, renderDailyReward hata durumunu ayrıca ele almıyor (isteğe bağlı bir özellik) */ }
+  },
+  async spinDailyReward() {
+    const res = await fetch('/api/rewards/spin', { method: 'POST' }).then((r) => r.json());
+    if (res.error) { toast(res.error === 'NO_SPIN_LEFT' ? 'Bugünkü ücretsiz çevirmeni kullandın — yarın tekrar gel.' : res.error); return res; }
+    state.dailyReward = res.status;
+    state.dailyRewardSpin = { perk: res.perk, startedAt: Date.now() };
+    route();
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] Socket DEĞİL, HTTP — bkz. claude.md
+  // "kimlik doğrulama tasarımı" notu. Gerçek sonuç (kim ne kazandı) mevcut `prepWheel:resolved`
+  // socket dinleyicisiyle (aşağıda) ZATEN tüm odaya ulaşıyor — burada sadece isteği gönderip
+  // kendi envanterimizi tazeliyoruz.
+  async redeemBankedPerk(kind) {
+    const res = await fetch('/api/rewards/redeemInRoom', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomCode: state.code, clientId: state.clientId, kind }),
+    }).then((r) => r.json());
+    if (res.error) { toast('Perk kullanılamadı: ' + res.error); return res; }
+    await actions.fetchDailyReward();
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4, "Yabancılarla Online
+  // Eşleşme"] Oda kur/katıl akışına HİÇ dokunmuyor — üçüncü, bağımsız bir yol. Eşleşme
+  // gerçekleşirse sunucu ayrıca `matchmaking:matched` gönderir (bkz. aşağıdaki socket.on).
+  async quickMatch(name, draftMode, playerPool) {
+    state.name = name;
+    sessionStorage.setItem(LS_NAME, name);
+    const res = await emitAck('matchmaking:join', { clientId: state.clientId, name, draftMode, playerPool });
+    if (res.error) return toast('Eşleşmeye girilemedi: ' + res.error);
+    state.matchmaking = { draftMode, playerPool };
+    pushDataLayer('matchmaking_join', { draft_mode: draftMode, player_pool: playerPool });
+    route();
+  },
+  async cancelQuickMatch() {
+    await emitAck('matchmaking:leave', { clientId: state.clientId });
+    state.matchmaking = null;
+    route();
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] Socket değil, düz fetch — diğer
+  // /api/auth/* aksiyonlarıyla AYNI desen.
+  async resendVerification() {
+    const res = await fetch('/api/auth/resendVerification', { method: 'POST' }).then((r) => r.json());
+    if (res.error) {
+      const messages = { ALREADY_VERIFIED: 'E-postan zaten doğrulanmış.', RATE_LIMITED: 'Çok fazla denedin, biraz sonra tekrar dene.', NOT_LOGGED_IN: 'Önce giriş yapmalısın.' };
+      toast(messages[res.error] || res.error);
+      return res;
+    }
+    toast('Doğrulama e-postası yeniden gönderildi — gelmezse spam/gereksiz klasörüne bak.');
+    return res;
+  },
 };
 
 // Rematch sırasında (hem başlatan hem rakip tarafında) önceki draft/dizilim/maç durumunun
@@ -881,6 +1063,17 @@ socket.on('disconnect', () => {
 });
 
 socket.on('room:state', (room) => { state.room = room; route(); });
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4] Asıl oda verisi zaten
+// yukarıdaki `room:state` dinleyicisiyle geliyor (matchmaker sockets'i room.code'a join ettiriyor,
+// draftEngine.startDraft kendi broadcast'ini yapıyor) — bu SADECE "artık aramıyorsun" sinyali.
+socket.on('matchmaking:matched', ({ code }) => {
+  state.matchmaking = null;
+  setCode(code);
+  pushDataLayer('matchmaking_matched');
+  toast('⚡ Rakip bulundu!');
+  route();
+});
 
 socket.on('room:ready', () => { toast('Oda doldu — draft başlatılabilir.'); route(); });
 
@@ -1070,3 +1263,35 @@ socket.on('match:playbackSync', (sync) => { applyPlaybackSync(sync); route(); })
 state.page = pageForPath(location.pathname);
 syncLobbyUiForPage(state.page);
 route();
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] E-postadaki doğrulama linki
+// `/api/auth/verify`'ye gidip oradan `/giris?verified=1|0`'a REDIRECT ediyor (bkz. server
+// index.js) — burada tek seferlik bir toast gösterip query string'i temizliyoruz (sayfa
+// yenilenince toast tekrar çıkmasın diye).
+const verifiedParam = new URLSearchParams(location.search).get('verified');
+if (verifiedParam != null) {
+  toast(verifiedParam === '1' ? '✅ E-posta doğrulandı!' : '⚠️ Doğrulama linki geçersiz ya da süresi dolmuş.');
+  history.replaceState({}, '', location.pathname);
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — KULLANICI ÇEKME] "Tıkla-katıl" linki — bir arkadaşın
+// paylaştığı `?join=KOD` linkine tıklayınca doğrudan "Odaya Katıl" formunu, kod alanı ÖNCEDEN
+// DOLU olarak açar (bkz. views.js renderWaitingRoom `inviteText`) — WhatsApp/Discord'da
+// paylaşmayı, elle kod yazmaktan çok daha az sürtünmeli hale getiriyor.
+const joinParam = new URLSearchParams(location.search).get('join');
+if (joinParam) {
+  if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all', wheelSegments: [], prepWheelEnabled: false, tradeRoundEnabled: false, bankedPerksEnabled: false };
+  state.lobbyUi.mode = 'join';
+  state.lobbyUi.code = joinParam.toUpperCase();
+  history.replaceState({}, '', location.pathname);
+  route();
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] "Ben kimim" — ilk render'ı
+// BEKLETMEDEN (misafir varsayımıyla anında çizilir), sonuç gelince giriş yapılmışsa üst bar/
+// sayfa güncellenir. Cookie yoksa/geçersizse sunucu HATA değil `{user:null}` döner (bkz.
+// GET /api/auth/me) — misafir zaten normal/beklenen bir durum.
+fetch('/api/auth/me').then((r) => r.json()).then((json) => {
+  state.user = json.user || null;
+  route();
+}).catch(() => {});

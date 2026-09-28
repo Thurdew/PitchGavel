@@ -310,4 +310,9 @@ module.exports = {
   PREP_WHEEL_BUDGET_PENALTY: 150,
   PREP_WHEEL_GAMBLER_AMOUNT: 100,
   PREP_WHEEL_CEILING_REDUCTION: 0.2, // "Tavan Düşüşü" — kişisel maksimum teklif %20 kısılır
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — REKLAM İZLEME KALDIRILDI] Gerçek bir reklam ağı
+  // entegre edilemediği için (bkz. claude.md) "reklam izle → çevirme hakkı kazan" merdiveni
+  // tamamen kaldırıldı — artık her kullanıcı günde sabit sayıda ücretsiz çevirme hakkına sahip.
+  DAILY_REWARD_FREE_SPINS_PER_DAY: 1,
 };

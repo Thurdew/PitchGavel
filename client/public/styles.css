@@ -212,11 +212,11 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   background: linear-gradient(90deg, var(--accent), transparent 75%);
 }
 .panel h2 { margin: 0 0 12px; font-size: 20px; }
-.panel h3 {
+.panel h1, .panel h3 {
   margin: 0 0 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);
   letter-spacing: 1.6px; font-weight: 600; text-transform: uppercase;
 }
-.panel h3::before { content: '▎'; color: var(--accent); margin-right: 6px; }
+.panel h1::before, .panel h3::before { content: '▎'; color: var(--accent); margin-right: 6px; }
 /* [KULLANICI İSTEĞİ] "Draft sırasında ekranda çok fazla gösterilen şey oluyor, kalabalık oluyor
    — isteğe bağlı açılıp kapanabilse güzel olur." — bkz. views.js renderDraft "Kadrolar" paneli
    (artık <details>/<summary>) — .panel h3 ile aynı kondanse/uppercase görünümü paylaşıyor. */
@@ -739,16 +739,6 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
   color: #2a1a05; background: linear-gradient(145deg, var(--icon), #9a5ce0); padding: 3px 8px 3px 6px;
   border-radius: 999px 4px 4px 999px; box-shadow: 0 2px 8px -2px rgba(209, 153, 255, 0.6);
 }
-/* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — REYTİNG KAYNAĞI ŞEFFAFLIĞI] bkz. helpers.js
-   fmtRatingSource — bu reytingin kendi formülümüzden değil EA verisinden geldiğini işaretler.
-   Bilerek `.rating`/`.icon-flag` ile aynı köşede DEĞİL (sol altta, sessiz/nötr) — asıl vurgu
-   hâlâ reyting rakamında kalsın diye. */
-.player-card .rating-source-badge {
-  position: absolute; bottom: 12px; left: 13px; font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
-  color: var(--text-faint); background: var(--card-hover); border: 1px solid var(--border-strong);
-  padding: 2px 7px; border-radius: 999px; text-transform: uppercase; cursor: help;
-}
-.player-card:has(.rating-source-badge):has(.tag) { padding-bottom: 40px; }
 /* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] "🙈 Kör İlk Tur" perk'i — bkz. views.js
    blindFirstRoundActive. Kendi kendine seçilmiş bir zorluk, rakibe karşı gizli bir bilgi değil. */
 .player-card.blurred-rating .rating { filter: blur(7px); user-select: none; }
@@ -1081,12 +1071,6 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
 .pdb-rating { font-family: var(--font-mono); font-weight: 700; color: var(--accent); }
 .pdb-name { font-weight: 600; }
 .pdb-icon-tag { color: var(--icon); }
-/* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — REYTİNG KAYNAĞI ŞEFFAFLIĞI] bkz. helpers.js fmtRatingSource. */
-.pdb-source-tag {
-  margin-left: 6px; font-size: 8.5px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
-  color: var(--text-faint); background: var(--card-hover); border: 1px solid var(--border-strong);
-  padding: 1px 6px; border-radius: 999px; cursor: help; font-family: var(--font-sans, inherit);
-}
 .pdb-pos {
   font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; color: #12140f;
   padding: 3px 8px; border-radius: var(--radius-sm);
@@ -1579,12 +1563,12 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-transform:
 
 /* ---------- ortak: panel ritmi ve bölüm başlıkları ---------- */
 .view .panel { border-radius: 14px; }
-.view .panel > h3 {
+.view .panel > h1, .view .panel > h3 {
   display: flex; align-items: center; gap: 9px;
   font-family: var(--font-display); font-size: 15px; font-weight: 800;
   letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 13px;
 }
-.view .panel > h3::before { content: ''; width: 3px; height: 14px; background: var(--accent); flex: 0 0 auto; }
+.view .panel > h1::before, .view .panel > h3::before { content: ''; width: 3px; height: 14px; background: var(--accent); flex: 0 0 auto; }
 
 /* ================================ DRAFT TURU ================================ */
 .draft-header {
@@ -1868,12 +1852,6 @@ details.panel > summary {
 .pdb-season { font-family: var(--font-mono, ui-monospace, monospace); font-size: 10.5px; line-height: 1.5; }
 .pdb-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; font-weight: 700; white-space: nowrap; }
 .pdb-icon-tag { color: var(--icon); }
-.pdb-source-tag {
-  display: inline-block; margin-left: 6px; font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 8.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-  color: var(--accent); border: 1px solid var(--accent-glow); border-radius: 3px; padding: 2px 5px;
-  vertical-align: middle;
-}
 
 /* ================================== ÇARK ================================== */
 .wheel-round { display: flex; flex-direction: column; gap: 14px; }
@@ -2601,17 +2579,294 @@ button:disabled, .btn:disabled {
 .coach-text span { font-size: 11.5px; line-height: 1.5; color: #93a0b8; text-wrap: pretty; }
 .coach-dismiss { margin: 0 14px 14px; }
 
-/* ---------- 4) reyting kaynağı rozeti: EA mi, EA'ya kalibre mi ----------
-   [KULLANICI İSTEĞİ — TEK ÖLÇEK] Havuzda tek cetvel var ama iki güven seviyesi: doğrudan EA
-   verisi (turuncu, kesin) ve EA ölçeğine oturtulmuş tahmin (soluk, kesikli kenar). Ayrımın
-   görünür olması draftta "bu sayı nereden geldi" sorusunu ortadan kaldırıyor. */
-.rating-source-badge.calibrated {
-  color: #93a0b8;
-  border: 1px dashed rgba(255, 255, 255, .22);
-  background: rgba(255, 255, 255, .04);
+
+/* ==========================================================================
+   [TASARIM v2] HESAP (Giriş / Kayıt / Hesabın) + GÜNLÜK ÖDÜL
+   ========================================================================== */
+.auth-view, .dr-view { gap: 28px; }
+.auth-view .eyebrow, .dr-view .eyebrow {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 2.4px;
+  text-transform: uppercase; color: var(--accent);
 }
-.pdb-source-tag.calibrated {
-  color: #93a0b8;
-  border: 1px dashed rgba(255, 255, 255, .22);
-  background: rgba(255, 255, 255, .04);
+.auth-hero {
+  margin: 0; font-family: var(--font-display); font-weight: 900; font-size: clamp(38px, 5.4vw, 60px);
+  line-height: .92; text-transform: uppercase; letter-spacing: .3px; text-wrap: balance;
+}
+.auth-lead { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text-muted); max-width: 460px; text-wrap: pretty; }
+
+.auth-view .ticket-btn, .dr-view .ticket-btn {
+  padding: 0; overflow: hidden; display: flex; align-items: stretch; border: none;
+  box-shadow: 0 6px 16px -6px var(--accent-glow);
+}
+.ticket-btn .ticket-btn-icon {
+  width: 52px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.18); border-right: 1px dashed rgba(255,255,255,.35); font-size: 18px;
+}
+.ticket-btn .ticket-btn-label {
+  flex: 1; padding: 14px 22px; font-family: var(--font-display); font-weight: 800; font-size: 17px;
+  letter-spacing: .8px; text-transform: uppercase; text-align: center;
+}
+.ticket-btn.is-locked, .ticket-btn:disabled {
+  background: var(--bg-elevated); color: var(--text-faint); border: 1px solid var(--border-strong);
+  box-shadow: none; cursor: not-allowed;
+}
+.ticket-btn.is-locked .ticket-btn-icon { border-right-color: var(--border-strong); }
+
+/* --- Giriş / Kayıt --- */
+.auth-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 452px); gap: 56px; align-items: start; }
+.auth-intro { display: flex; flex-direction: column; gap: 28px; }
+.auth-intro-text { display: flex; flex-direction: column; gap: 12px; }
+.auth-benefits { list-style: none; margin: 0; padding: 0; max-width: 460px; border-top: 1px solid var(--border); }
+.auth-benefits li {
+  display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding: 13px 0;
+  border-bottom: 1px solid var(--border); font-size: 13.5px; line-height: 1.45; color: #c7cfdd;
+}
+.auth-benefit-n { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); }
+
+.auth-panel {
+  display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden;
+}
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border); }
+.auth-tab {
+  padding: 16px 0; min-height: 44px; background: transparent; color: var(--text-faint); border: none;
+  border-bottom: 3px solid transparent; font-family: var(--font-display); font-weight: 800; font-size: 17px;
+  letter-spacing: .8px; text-transform: uppercase; cursor: pointer; transition: color .15s, background .15s;
+}
+.auth-tab:hover { color: var(--text-muted); }
+.auth-tab.active { color: var(--accent); background: rgba(255,149,0,.08); border-bottom-color: var(--accent); }
+.auth-form { display: flex; flex-direction: column; gap: 18px; padding: 28px 28px 26px; }
+.auth-field { display: flex; flex-direction: column; gap: 7px; }
+.auth-label {
+  display: flex; justify-content: space-between; gap: 8px; font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-muted);
+}
+.auth-hint { color: var(--text-faint); font-weight: 500; letter-spacing: .4px; text-transform: none; }
+.auth-input {
+  width: 100%; box-sizing: border-box; height: 46px; padding: 0 14px; background: #05070c;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--text);
+  font-family: var(--font-body); font-size: 15px; outline: none; transition: border-color .15s, box-shadow .15s;
+}
+.auth-input::placeholder { color: var(--text-faint); }
+.auth-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,149,0,.18); }
+.auth-input.has-toggle { padding-right: 76px; }
+.pw-wrap { position: relative; display: flex; }
+.pw-toggle {
+  position: absolute; right: 6px; top: 7px; height: 32px; padding: 0 10px; background: none; border: none;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.pw-toggle:hover { color: var(--text); }
+.pw-strength { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: -10px; }
+.pw-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.1); transition: background .2s; }
+.pw-bar.weak { background: var(--danger); }
+.pw-bar.ok { background: var(--success); }
+.auth-form .ticket-btn { margin-top: 4px; }
+.auth-switch { display: flex; justify-content: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.auth-link { background: none; border: none; padding: 0; color: var(--accent); font-weight: 700; font-size: 13px; cursor: pointer; }
+.auth-link:hover { color: #ffb347; }
+.auth-note {
+  display: flex; gap: 10px; align-items: flex-start; padding: 14px 28px 16px; border-top: 1px dashed var(--border-strong);
+  background: rgba(0,0,0,.2); font-size: 12.5px; line-height: 1.5; color: var(--text-muted);
+}
+
+/* Menajer Lisansı kartı */
+.lic-card {
+  position: relative; width: 380px; max-width: 100%; height: 228px; border-radius: var(--radius-lg);
+  background: #0b1422; border: 1px solid rgba(255,149,0,.55); overflow: hidden;
+  box-shadow: 0 22px 44px -18px rgba(0,0,0,.8), 0 0 50px -24px rgba(255,149,0,.6);
+}
+.lic-card::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(135deg, rgba(255,255,255,.025) 0 2px, transparent 2px 12px);
+}
+.lic-card.large { width: 420px; height: 252px; }
+.lic-card.active { border-color: var(--accent); box-shadow: 0 22px 44px -18px rgba(0,0,0,.8), 0 0 60px -22px rgba(255,149,0,.7); }
+.lic-strip {
+  position: relative; display: flex; align-items: center; justify-content: space-between; margin-right: 56px;
+  background: var(--accent); color: var(--accent-ink); padding: 8px 18px; font-family: var(--font-display);
+  font-weight: 800; font-size: 13px; letter-spacing: 1.6px; text-transform: uppercase;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%);
+}
+.lic-code { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0; }
+.lic-logo { position: absolute; top: 8px; right: 14px; width: 30px; height: 30px; border-radius: 7px; }
+.lic-body { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 26px 20px 0; min-width: 0; }
+.lic-kicker { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.8px; text-transform: uppercase; color: var(--text-faint); }
+.lic-status {
+  display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 1.8px; text-transform: uppercase; color: var(--success);
+}
+.lic-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success-glow); flex-shrink: 0; }
+.lic-name {
+  font-family: var(--font-display); font-weight: 800; font-size: 34px; line-height: 1; text-transform: uppercase;
+  letter-spacing: .4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lic-card.large .lic-name { font-size: 40px; }
+.lic-name.empty { color: var(--text-faint); }
+.lic-email { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lic-foot {
+  position: absolute; left: 20px; right: 20px; bottom: 16px; display: flex; justify-content: space-between; gap: 8px;
+  border-top: 1px dashed var(--border-strong); padding-top: 10px; font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text-faint); letter-spacing: 1px; text-transform: uppercase;
+}
+.lic-foot-accent { color: var(--accent); }
+
+/* Hesabın */
+.acct-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 48px; align-items: start; }
+.acct-side { display: flex; flex-direction: column; gap: 20px; }
+.acct-head { display: flex; flex-direction: column; gap: 8px; }
+.acct-head p { margin: 0; font-size: 15px; }
+.acct-head strong { color: var(--text); font-weight: 600; }
+.acct-title { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 34px; text-transform: uppercase; letter-spacing: .4px; }
+.acct-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.acct-stat { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+.acct-stat-k { font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint); }
+.acct-stat-v { font-family: var(--font-display); font-weight: 800; font-size: 30px; line-height: 1; }
+.acct-stat-v.accent { color: var(--accent); }
+.acct-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.acct-actions .ticket-btn .ticket-btn-label { font-size: 15px; padding: 12px 20px; }
+
+/* --- Günlük Ödül --- */
+.dr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.dr-head-text { display: flex; flex-direction: column; gap: 10px; }
+.dr-title { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: clamp(38px, 5vw, 52px); line-height: .92; text-transform: uppercase; }
+.dr-lead { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text-muted); max-width: 620px; text-wrap: pretty; }
+.dr-kicker { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint); }
+.dr-reset { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.dr-reset-v { font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+.dr-grid { display: grid; grid-template-columns: 400px minmax(0, 1fr); gap: 48px; align-items: center; }
+
+/* Çark: mevcut .wheel-stage (260px) büyütülüp etrafına göbek + halka eklendi */
+.dr-wheel { position: relative; width: 400px; height: 400px; display: flex; align-items: center; justify-content: center; }
+.dr-wheel .wheel-stage { margin: 0; transform: scale(1.42); }
+.dr-wheel .wheel-disk { box-shadow: 0 0 0 2px var(--border-strong), 0 0 70px -10px var(--accent-glow); }
+.dr-wheel.landed .wheel-disk { box-shadow: 0 0 0 2px var(--success), 0 0 80px -8px var(--success-glow); }
+.dr-wheel.landed .wheel-pointer { border-top-color: var(--success); }
+.dr-wheel.locked .wheel-disk { filter: grayscale(1) brightness(.45); }
+.dr-wheel.locked .wheel-slice-label, .dr-wheel.locked .wheel-pointer { opacity: 0; }
+.dr-hub {
+  position: absolute; left: 50%; top: 50%; width: 88px; height: 88px; margin: -44px 0 0 -44px; z-index: 4;
+  border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); display: flex; align-items: center;
+  justify-content: center; font-size: 34px; box-shadow: 0 0 24px rgba(0,0,0,.6);
+}
+.dr-hub img { width: 44px; height: 44px; border-radius: 9px; }
+.dr-wheel.landed .dr-hub { border-color: var(--success); }
+.dr-wheel.locked .dr-hub { border-color: rgba(255,255,255,.3); }
+
+.dr-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dr-guest { display: flex; flex-direction: column; gap: 20px; max-width: 540px; }
+.dr-guest-perks { display: flex; flex-direction: column; gap: 8px; }
+.dr-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.dr-chip { padding: 6px 12px; border: 1px solid var(--border-strong); border-radius: 4px; font-size: 12.5px; font-weight: 600; color: #c7cfdd; }
+
+.dr-win { display: flex; align-items: center; gap: 14px; padding: 14px 18px; background: var(--success-soft); border: 1px solid var(--success); border-radius: 8px; }
+.dr-win.big { flex-direction: column; align-items: flex-start; gap: 12px; padding: 22px 24px; }
+.dr-win-emoji { font-size: 30px; }
+.dr-win-text { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+.dr-win-kicker {
+  display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 2.4px; text-transform: uppercase; color: var(--success);
+}
+.dr-win-title { font-family: var(--font-display); font-weight: 900; font-size: clamp(36px, 4.4vw, 56px); line-height: .92; text-transform: uppercase; }
+.dr-win-title.small { font-size: 22px; font-weight: 800; color: var(--success); }
+.dr-win-desc { margin: 0; font-size: 13.5px; line-height: 1.55; color: #c7cfdd; }
+.dr-spinning { display: flex; flex-direction: column; gap: 10px; }
+
+.dr-progress { position: relative; display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+.dr-progress::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent), transparent 75%); }
+.dr-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.dr-progress-title { font-family: var(--font-display); font-weight: 800; font-size: 19px; letter-spacing: .4px; text-transform: uppercase; }
+.dr-progress-count { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--accent); }
+.dr-progress-text { font-size: 13px; }
+
+.dr-inv { display: flex; flex-direction: column; gap: 14px; }
+.dr-inv-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dr-inv-head h3 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: .4px; text-transform: uppercase; }
+.dr-inv-sub { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.dr-inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.dr-perk {
+  display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 18px; background: var(--card);
+  border: 1px solid var(--border); border-radius: 10px; transition: box-shadow .4s, border-color .4s;
+}
+.dr-perk.has { border-color: rgba(255,149,0,.45); }
+.dr-perk.empty { opacity: .45; }
+.dr-perk.fresh { border-color: var(--success); box-shadow: 0 0 0 1px var(--success) inset, 0 0 28px -8px var(--success-glow); }
+.dr-perk-top { display: flex; align-items: center; justify-content: space-between; }
+.dr-perk-emoji { font-size: 26px; line-height: 1; }
+.dr-perk-count { font-family: var(--font-mono); font-size: 13px; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: rgba(255,255,255,.08); color: var(--text-faint); }
+.dr-perk.has .dr-perk-count { background: var(--accent); color: var(--accent-ink); }
+.dr-perk.fresh .dr-perk-count { background: var(--success); color: #04210e; }
+.dr-perk-name { font-family: var(--font-display); font-weight: 800; font-size: 17px; line-height: 1.05; text-transform: uppercase; }
+.dr-perk-desc { font-size: 11.5px; line-height: 1.45; color: var(--text-muted); }
+
+@media (max-width: 900px) {
+  .auth-grid, .acct-grid, .dr-grid { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .auth-panel { order: -1; }
+  .dr-grid .dr-wheel { justify-self: center; }
+  .dr-head { flex-direction: column; align-items: flex-start; }
+  .dr-reset { align-items: flex-start; }
+  .acct-stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .dr-wheel { width: 300px; height: 300px; }
+  .dr-wheel .wheel-stage { transform: scale(1.06); }
+  .dr-hub { width: 64px; height: 64px; margin: -32px 0 0 -32px; font-size: 24px; }
+  .dr-hub img { width: 32px; height: 32px; }
+  .auth-form { padding: 22px 18px; }
+  .auth-note { padding: 12px 18px 14px; }
+  .lic-card, .lic-card.large { width: 100%; }
+}
+
+
+/* ==========================================================================
+   [TASARIM v3] E-posta doğrulama duvarı + hesap hatırlatması + çark dönüş durumu
+   ========================================================================== */
+.lic-status.pending { color: var(--accent); }
+.lic-status.pending .lic-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); animation: vg-pulse 1.6s ease-in-out infinite; }
+.lic-card.pending { border-color: rgba(255,149,0,.55); border-style: dashed; }
+@keyframes vg-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.vg-view { padding-top: 12px; }
+.vg-grid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 56px; align-items: center; max-width: 1060px; }
+.vg-card { position: relative; }
+.vg-card::after {
+  content: ''; position: absolute; inset: -40px; z-index: -1; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255,149,0,.12), transparent);
+}
+.vg-main { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.vg-email { color: var(--text); font-weight: 600; word-break: break-all; }
+.vg-step { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vg-step-t { color: var(--text); font-weight: 600; }
+.vg-step-s { color: var(--text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.vg-note { border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 12px 16px; max-width: 520px; }
+.vg-view .acct-actions .ticket-btn:disabled .ticket-btn-label { font-variant-numeric: tabular-nums; }
+
+.acct-verify {
+  display: flex; align-items: center; gap: 12px; margin-top: 6px; padding: 12px 14px;
+  background: var(--accent-soft); border: 1px solid rgba(255,149,0,.45); border-radius: var(--radius-sm);
+}
+.acct-verify-icon { font-size: 20px; line-height: 1; }
+.acct-verify-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; font-size: 12.5px; color: var(--text-muted); }
+.acct-verify-text strong { color: var(--text); font-size: 13.5px; }
+
+.dr-spinning { display: flex; flex-direction: column; gap: 12px; }
+.dr-win-kicker.accent { color: var(--accent); }
+.dr-win-kicker.accent .lic-dot { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); animation: vg-pulse 1s ease-in-out infinite; }
+.dr-spin-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.dr-spin-bar span { display: block; height: 100%; width: 0; background: var(--accent); animation: dr-fill linear forwards; }
+@keyframes dr-fill { to { width: 100%; } }
+.dr-win-badge {
+  align-self: flex-start; font-family: var(--font-mono); font-size: 12px; font-weight: 700; padding: 3px 8px;
+  border-radius: 4px; background: var(--success); color: #04210e;
+}
+
+@media (max-width: 900px) {
+  .vg-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .vg-card { justify-self: center; }
+}
+@media (max-width: 480px) {
+  .acct-verify { flex-wrap: wrap; }
+  .acct-verify .btn { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lic-status.pending .lic-dot, .dr-win-kicker.accent .lic-dot { animation: none; }
 }
