@@ -13,8 +13,9 @@ process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS = process.env.LOGIN_RATE_LIMIT_MAX_ATT
 process.env.DRAFT_PREP_WHEEL_SECONDS = process.env.DRAFT_PREP_WHEEL_SECONDS || '5';
 
 // ---------- (A) Birim testleri ----------
-function unitTests() {
+async function unitTests() {
   const { DatabaseSync } = require('node:sqlite');
+  const { wrapSqlite } = require('../src/db/adapter');
   const { RewardsService } = require('../src/rewards/RewardsService');
   const { DraftEngine } = require('../src/draft/DraftEngine');
   const { PREP_WHEEL_SEGMENTS } = require('../src/shared/gameConfig');
@@ -35,11 +36,11 @@ function unitTests() {
     );
   `);
   db.prepare('INSERT INTO users (id, email) VALUES (1, ?)').run('u1@example.com');
-  const rewards = new RewardsService(db);
+  const rewards = new RewardsService(wrapSqlite(db));
   const seg = PREP_WHEEL_SEGMENTS.find((s) => s.kind === 'joker');
 
   // --- consumeOneGrant: NO_GRANT (hiç kazanılmamış) ---
-  const noGrant = rewards.consumeOneGrant(1, 'joker');
+  const noGrant = await rewards.consumeOneGrant(1, 'joker');
   assert.strictEqual(noGrant.error, 'NO_GRANT');
   console.log('[test11] consumeOneGrant hiç grant yokken NO_GRANT döndürüyor ✅');
 
@@ -49,20 +50,20 @@ function unitTests() {
   const secondId = db.prepare('INSERT INTO perk_grants (user_id, kind, label, description, granted_at) VALUES (?,?,?,?,?)')
     .run(1, 'joker', seg.label, seg.description, 2000).lastInsertRowid;
 
-  assert.deepStrictEqual(rewards.getStatus(1).inventory, { joker: 2 });
+  assert.deepStrictEqual((await rewards.getStatus(1)).inventory, { joker: 2 });
 
-  const consume1 = rewards.consumeOneGrant(1, 'joker');
+  const consume1 = await rewards.consumeOneGrant(1, 'joker');
   assert(consume1.ok);
   const row1 = db.prepare('SELECT id, consumed_at FROM perk_grants WHERE kind=? ORDER BY granted_at ASC').all('joker')[0];
   assert(row1.consumed_at != null, 'en eski (granted_at=1000) grant tüketilmeli');
-  assert.deepStrictEqual(rewards.getStatus(1).inventory, { joker: 1 }, 'envanterde 1 kalmalı');
+  assert.deepStrictEqual((await rewards.getStatus(1)).inventory, { joker: 1 }, 'envanterde 1 kalmalı');
   console.log('[test11] consumeOneGrant FIFO (en eski önce) çalışıyor, envanter doğru düşüyor ✅');
 
-  const consume2 = rewards.consumeOneGrant(1, 'joker');
+  const consume2 = await rewards.consumeOneGrant(1, 'joker');
   assert(consume2.ok);
   const row2 = db.prepare('SELECT consumed_at FROM perk_grants WHERE id = ?').get(secondId);
   assert(row2.consumed_at != null);
-  assert.strictEqual(rewards.consumeOneGrant(1, 'joker').error, 'NO_GRANT', 'ikisi de tükendikten sonra NO_GRANT dönmeli');
+  assert.strictEqual((await rewards.consumeOneGrant(1, 'joker')).error, 'NO_GRANT', 'ikisi de tükendikten sonra NO_GRANT dönmeli');
   console.log('[test11] tüm grant\'ler tüketilince NO_GRANT dönüyor ✅');
 
   // --- DraftEngine.redeemBankedPerk ön-kontrolleri (sahte oda, gerçek socket yok) ---
@@ -85,27 +86,47 @@ function unitTests() {
     .run(1, 'budget_bonus', '💰 Bütçe Takviyesi', 'test', Date.now());
 
   const notYourTurnRoom = makeRoom({ cursor: 0 });
-  const notYourTurn = engine.redeemBankedPerk(notYourTurnRoom, 'p2', 'budget_bonus', 1);
+  const notYourTurn = await engine.redeemBankedPerk(notYourTurnRoom, 'p2', 'budget_bonus', 1);
   assert.strictEqual(notYourTurn.error, 'NOT_YOUR_TURN');
   console.log('[test11] redeemBankedPerk sırası gelmeyen biri için NOT_YOUR_TURN döndürüyor ✅');
 
   const disabledRoom = makeRoom({ bankedPerksEnabled: false, cursor: 0 });
-  const disabled = engine.redeemBankedPerk(disabledRoom, 'p1', 'budget_bonus', 1);
+  const disabled = await engine.redeemBankedPerk(disabledRoom, 'p1', 'budget_bonus', 1);
   assert.strictEqual(disabled.error, 'BANKED_PERKS_DISABLED');
   console.log('[test11] bankedPerksEnabled kapalıyken BANKED_PERKS_DISABLED döndürüyor ✅');
 
   const noInventoryRoom = makeRoom({ cursor: 0 });
-  const noInv = engine.redeemBankedPerk(noInventoryRoom, 'p1', 'anti_snipe_shield', 1); // bu kind'den hiç grant yok
+  const noInv = await engine.redeemBankedPerk(noInventoryRoom, 'p1', 'anti_snipe_shield', 1); // bu kind'den hiç grant yok
   assert.strictEqual(noInv.error, 'NO_GRANT');
   console.log('[test11] envanterde olmayan bir kind için NO_GRANT döndürüyor ✅');
 
   const okRoom = makeRoom({ cursor: 0 });
-  const ok = engine.redeemBankedPerk(okRoom, 'p1', 'budget_bonus', 1);
+  const ok = await engine.redeemBankedPerk(okRoom, 'p1', 'budget_bonus', 1);
   assert(ok.ok, 'geçerli redeem başarılı olmalı: ' + JSON.stringify(ok));
   assert.strictEqual(okRoom.players[0].budget, 1000 + 150, 'applyPrepPerk ile AYNI etkiyi üretmeli (budget_bonus +150)');
   assert.strictEqual(okRoom.prepWheel.cursor, 1, 'tur ilerlemeli');
-  assert.strictEqual(rewards.getStatus(1).inventory.budget_bonus, undefined, 'kullanılan perk envanterden düşmeli');
+  assert.strictEqual((await rewards.getStatus(1)).inventory.budget_bonus, undefined, 'kullanılan perk envanterden düşmeli');
   console.log('[test11] geçerli redeem: applyPrepPerk etkisi + envanter düşüşü + tur ilerlemesi doğru ✅');
+
+  // --- [TURSO] Yarış: tek bir grant'i eşzamanlı iki istek harcamaya çalışırsa sadece biri başarmalı ---
+  db.prepare('INSERT INTO perk_grants (user_id, kind, label, description, granted_at) VALUES (?,?,?,?,?)')
+    .run(1, 'spy', '👁️ Gözcü', 'test', Date.now());
+  const [raceA, raceB] = await Promise.all([rewards.consumeOneGrant(1, 'spy'), rewards.consumeOneGrant(1, 'spy')]);
+  assert.strictEqual([raceA, raceB].filter((r) => r.ok).length, 1, 'tek grant sadece bir kez harcanabilmeli: ' + JSON.stringify([raceA, raceB]));
+  assert.strictEqual([raceA, raceB].filter((r) => r.error === 'NO_GRANT').length, 1);
+  console.log('[test11] eşzamanlı iki consumeOneGrant: tek grant sadece bir kez harcanıyor ✅');
+
+  // --- [TURSO] DB beklenirken tur zaman aşımıyla geçerse perk iade edilmeli ---
+  db.prepare('INSERT INTO perk_grants (user_id, kind, label, description, granted_at) VALUES (?,?,?,?,?)')
+    .run(1, 'budget_bonus', '💰 Bütçe Takviyesi', 'test', Date.now());
+  const lateRoom = makeRoom({ cursor: 0 });
+  const latePending = engine.redeemBankedPerk(lateRoom, 'p1', 'budget_bonus', 1);
+  lateRoom.prepWheel.cursor = 1; // ilk await'ten hemen sonra: sıra zaman aşımıyla p2'ye geçti
+  const late = await latePending;
+  assert.strictEqual(late.error, 'NOT_YOUR_TURN', 'sıra geçtiyse redeem reddedilmeli: ' + JSON.stringify(late));
+  assert.strictEqual(lateRoom.players[0].budget, 1000, 'perk uygulanmamalı');
+  assert.strictEqual((await rewards.getStatus(1)).inventory.budget_bonus, 1, 'harcanan grant iade edilmeli');
+  console.log('[test11] DB beklenirken tur geçerse perk uygulanmıyor ve envantere iade ediliyor ✅');
 
   console.log('[test11] (A) BİRİM TESTLERİ TÜM GEÇTİ ✅');
 }
@@ -201,7 +222,7 @@ async function e2eTest() {
 }
 
 async function main() {
-  unitTests();
+  await unitTests();
   await e2eTest();
   console.log('[test11] TÜM TESTLER GEÇTİ ✅');
   process.exit(0);

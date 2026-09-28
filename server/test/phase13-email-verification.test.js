@@ -19,6 +19,7 @@ process.env.RESEND_VERIFICATION_WINDOW_MS = process.env.RESEND_VERIFICATION_WIND
 // ---------- (A) Birim testleri ----------
 async function unitTests() {
   const { DatabaseSync } = require('node:sqlite');
+  const { wrapSqlite } = require('../src/db/adapter');
   const { AuthService } = require('../src/auth/AuthService');
   const { sendVerificationEmail } = require('../src/auth/EmailService');
 
@@ -47,42 +48,42 @@ async function unitTests() {
       created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
     );
   `);
-  const auth = new AuthService(db);
-  const reg = auth.register('verify-test@example.com', 'password123', 'VerifyTest');
+  const auth = new AuthService(wrapSqlite(db));
+  const reg = await auth.register('verify-test@example.com', 'password123', 'VerifyTest');
   assert.strictEqual(reg.user.emailVerified, false, 'yeni kayıt emailVerified:false olmalı');
   console.log('[test13] register sonrası emailVerified:false ✅');
 
   // --- geçersiz token ---
-  const badVerify = auth.verifyEmailToken('uydurma-token');
+  const badVerify = await auth.verifyEmailToken('uydurma-token');
   assert.strictEqual(badVerify.error, 'INVALID_OR_EXPIRED_TOKEN');
   console.log('[test13] geçersiz token INVALID_OR_EXPIRED_TOKEN döndürüyor ✅');
 
   // --- geçerli token ile doğrulama ---
-  const token = auth.createVerificationToken(reg.user.id);
-  const okVerify = auth.verifyEmailToken(token);
+  const token = await auth.createVerificationToken(reg.user.id);
+  const okVerify = await auth.verifyEmailToken(token);
   assert(okVerify.ok, 'geçerli token ile doğrulama başarılı olmalı: ' + JSON.stringify(okVerify));
   assert.strictEqual(okVerify.user.emailVerified, true);
-  assert.strictEqual(auth.getUserByToken(reg.token).emailVerified, true, 'session üzerinden de emailVerified:true görünmeli');
+  assert.strictEqual((await auth.getUserByToken(reg.token)).emailVerified, true, 'session üzerinden de emailVerified:true görünmeli');
   console.log('[test13] geçerli token ile doğrulama başarılı, emailVerified:true oluyor ✅');
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Doğrulama koduyla giriş yapabilmeliyim" — verifyEmailToken
   // AYRICA yeni, kayıt olunan cihazdan BAĞIMSIZ bir session token da üretmeli.
   assert(okVerify.sessionToken, 'verifyEmailToken bir sessionToken da döndürmeli: ' + JSON.stringify(okVerify));
   assert.notStrictEqual(okVerify.sessionToken, reg.token, 'bu, kayıt anındaki session\'dan BAĞIMSIZ yeni bir token olmalı');
-  assert.strictEqual(auth.getUserByToken(okVerify.sessionToken).id, reg.user.id, 'yeni session token gerçekten aynı kullanıcıya ait olmalı');
+  assert.strictEqual((await auth.getUserByToken(okVerify.sessionToken)).id, reg.user.id, 'yeni session token gerçekten aynı kullanıcıya ait olmalı');
   console.log('[test13] verifyEmailToken bağımsız, geçerli bir yeni session token da üretiyor ✅');
 
   // --- tek kullanımlık: aynı token ikinci kez kullanılamaz ---
-  const secondUse = auth.verifyEmailToken(token);
+  const secondUse = await auth.verifyEmailToken(token);
   assert.strictEqual(secondUse.error, 'INVALID_OR_EXPIRED_TOKEN', 'token bir kereye mahsus olmalı');
   console.log('[test13] token bir kereye mahsus — ikinci kullanım reddediliyor ✅');
 
   // --- süresi geçmiş token ---
-  const reg2 = auth.register('verify-test-2@example.com', 'password123', 'VerifyTest2');
+  const reg2 = await auth.register('verify-test-2@example.com', 'password123', 'VerifyTest2');
   const now = Date.now();
   db.prepare('INSERT INTO email_verifications (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
     .run('expired-token-for-test', reg2.user.id, now - 1000, now - 1);
-  const expiredVerify = auth.verifyEmailToken('expired-token-for-test');
+  const expiredVerify = await auth.verifyEmailToken('expired-token-for-test');
   assert.strictEqual(expiredVerify.error, 'INVALID_OR_EXPIRED_TOKEN');
   console.log('[test13] süresi geçmiş token reddediliyor ✅');
 
@@ -115,7 +116,7 @@ async function e2eTest() {
   console.log('[test13] e2e: register sonrası emailVerified:false ✅');
 
   // Token asla HTTP response'da dönmüyor — testte doğrudan DB'den okunuyor (bkz. index.js db export'u).
-  const row = db.prepare('SELECT token FROM email_verifications WHERE user_id = ?').get(regJson.user.id);
+  const row = await db.get('SELECT token FROM email_verifications WHERE user_id = ?', regJson.user.id);
   assert(row && row.token, 'kayıt sonrası bir doğrulama token\'ı oluşmuş olmalı');
   console.log('[test13] e2e: kayıt sonrası DB\'de bir doğrulama token\'ı oluştu (token response\'da YOK) ✅');
 

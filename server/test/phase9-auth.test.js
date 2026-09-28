@@ -19,8 +19,9 @@ process.env.REGISTER_RATE_LIMIT_MAX_ATTEMPTS = process.env.REGISTER_RATE_LIMIT_M
 process.env.REGISTER_RATE_LIMIT_WINDOW_MS = process.env.REGISTER_RATE_LIMIT_WINDOW_MS || '600000';
 
 // ---------- (A) Birim testleri ----------
-function unitTests() {
+async function unitTests() {
   const { DatabaseSync } = require('node:sqlite');
+  const { wrapSqlite } = require('../src/db/adapter');
   const { AuthService } = require('../src/auth/AuthService');
   const { LoginRateLimiter } = require('../src/auth/LoginRateLimiter');
 
@@ -51,10 +52,10 @@ function unitTests() {
       expires_at INTEGER NOT NULL
     );
   `);
-  const auth = new AuthService(db);
+  const auth = new AuthService(wrapSqlite(db));
 
   // --- register başarılı, hash/salt asla dışarı sızmıyor ---
-  const reg = auth.register('Test@Example.com', 'password123', 'Semih');
+  const reg = await auth.register('Test@Example.com', 'password123', 'Semih');
   assert(reg.user && reg.token, 'register başarılı olmalı: ' + JSON.stringify(reg));
   assert.strictEqual(reg.user.email, 'test@example.com', 'e-posta normalize edilip küçük harfe çevrilmeli');
   assert.strictEqual(reg.user.displayName, 'Semih');
@@ -62,40 +63,40 @@ function unitTests() {
   console.log('[test9] register başarılı, hassas alanlar döndürülmüyor ✅');
 
   // --- aynı e-posta (farklı büyük/küçük harfle de) EMAIL_TAKEN ---
-  const dup1 = auth.register('test@example.com', 'baskaParola1', 'Başkası');
+  const dup1 = await auth.register('test@example.com', 'baskaParola1', 'Başkası');
   assert.strictEqual(dup1.error, 'EMAIL_TAKEN');
-  const dup2 = auth.register('TEST@EXAMPLE.COM', 'baskaParola2', 'Başkası2');
+  const dup2 = await auth.register('TEST@EXAMPLE.COM', 'baskaParola2', 'Başkası2');
   assert.strictEqual(dup2.error, 'EMAIL_TAKEN', 'büyük/küçük harf farkı e-posta eşitliğini bozmamalı');
   console.log('[test9] tekrar kayıt (case-insensitive dahil) EMAIL_TAKEN döndürüyor ✅');
 
   // --- login: doğru/yanlış parola ---
-  const loginOk = auth.login('test@example.com', 'password123');
+  const loginOk = await auth.login('test@example.com', 'password123');
   assert(loginOk.user && loginOk.token, 'doğru parolayla login başarılı olmalı: ' + JSON.stringify(loginOk));
-  const loginWrong = auth.login('test@example.com', 'yanlisparola');
+  const loginWrong = await auth.login('test@example.com', 'yanlisparola');
   assert.strictEqual(loginWrong.error, 'INVALID_CREDENTIALS');
-  const loginUnknown = auth.login('hicYokBoyle@example.com', 'herhangi');
+  const loginUnknown = await auth.login('hicYokBoyle@example.com', 'herhangi');
   assert.strictEqual(loginUnknown.error, 'INVALID_CREDENTIALS', 'kayıtsız e-posta da AYNI hatayı döndürmeli (enumeration yok)');
   console.log('[test9] login doğru/yanlış parola + e-posta enumeration koruması doğru çalışıyor ✅');
 
   // --- getUserByToken ---
-  const me = auth.getUserByToken(loginOk.token);
+  const me = await auth.getUserByToken(loginOk.token);
   assert(me && me.email === 'test@example.com', 'token ile doğru kullanıcı dönmeli');
-  assert.strictEqual(auth.getUserByToken('uydurma-gecersiz-token'), null, 'geçersiz token null dönmeli');
+  assert.strictEqual(await auth.getUserByToken('uydurma-gecersiz-token'), null, 'geçersiz token null dönmeli');
   console.log('[test9] getUserByToken geçerli/geçersiz token için doğru sonuç veriyor ✅');
 
   // --- logout ---
-  auth.logout(loginOk.token);
-  assert.strictEqual(auth.getUserByToken(loginOk.token), null, 'logout sonrası token geçersiz olmalı');
+  await auth.logout(loginOk.token);
+  assert.strictEqual(await auth.getUserByToken(loginOk.token), null, 'logout sonrası token geçersiz olmalı');
   console.log('[test9] logout oturumu geçersiz kılıyor ✅');
 
   // --- sweepExpiredSessions ---
-  const stillValid = auth.login('test@example.com', 'password123').token;
+  const stillValid = (await auth.login('test@example.com', 'password123')).token;
   const now = Date.now();
   db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
     .run('expired-token-for-test', reg.user.id, now - 1000, now - 1);
-  auth.sweepExpiredSessions();
-  assert.strictEqual(auth.getUserByToken('expired-token-for-test'), null, 'süresi geçmiş oturum temizlenmeli');
-  assert(auth.getUserByToken(stillValid), 'geçerli oturum sweep\'ten etkilenmemeli');
+  await auth.sweepExpiredSessions();
+  assert.strictEqual(await auth.getUserByToken('expired-token-for-test'), null, 'süresi geçmiş oturum temizlenmeli');
+  assert(await auth.getUserByToken(stillValid), 'geçerli oturum sweep\'ten etkilenmemeli');
   console.log('[test9] sweepExpiredSessions süresi geçmiş oturumları temizliyor, geçerli olanı koruyor ✅');
 
   // --- LoginRateLimiter ---
@@ -260,7 +261,7 @@ async function e2eTest() {
 }
 
 async function main() {
-  unitTests();
+  await unitTests();
   await e2eTest();
   console.log('[test9] TÜM TESTLER GEÇTİ ✅');
   process.exit(0);

@@ -13,8 +13,9 @@ const assert = require('assert');
 process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS = process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS || '50'; // bu testte login rate limit'e takılmayalım
 
 // ---------- (A) Birim testleri ----------
-function unitTests() {
+async function unitTests() {
   const { DatabaseSync } = require('node:sqlite');
+  const { wrapSqlite } = require('../src/db/adapter');
   const { RewardsService, REWARD_SEGMENTS } = require('../src/rewards/RewardsService');
   const { PREP_WHEEL_SEGMENTS, DAILY_REWARD_FREE_SPINS_PER_DAY } = require('../src/shared/gameConfig');
 
@@ -42,10 +43,10 @@ function unitTests() {
     );
   `);
   db.prepare('INSERT INTO users (id, email) VALUES (1, ?)').run('u1@example.com');
-  const rewards = new RewardsService(db);
+  const rewards = new RewardsService(wrapSqlite(db));
 
   // --- ilk status: hiç çevirme yapılmamış, günlük hak dolu ---
-  const status0 = rewards.getStatus(1);
+  const status0 = await rewards.getStatus(1);
   assert.strictEqual(status0.spinsUsedToday, 0);
   assert.strictEqual(status0.spinsPerDay, DAILY_REWARD_FREE_SPINS_PER_DAY);
   assert.strictEqual(status0.spinAvailable, true);
@@ -53,7 +54,7 @@ function unitTests() {
   console.log('[test10] ilk status doğru (0 çevirme, hak müsait, boş envanter) ✅');
 
   // --- ücretsiz spin başarılı, pool HER ZAMAN 'iyi' ---
-  const spin1 = rewards.spin(1);
+  const spin1 = await rewards.spin(1);
   assert(spin1.perk, 'spin başarılı olmalı: ' + JSON.stringify(spin1));
   assert.strictEqual(spin1.perk.pool, 'iyi');
   assert.strictEqual(spin1.status.spinsUsedToday, 1);
@@ -62,17 +63,24 @@ function unitTests() {
   console.log(`[test10] ücretsiz spin başarılı (${spin1.perk.kind}), günlük hak tüketildi ✅`);
 
   // --- aynı gün ikinci spin -> NO_SPIN_LEFT ---
-  const spinAgain = rewards.spin(1);
+  const spinAgain = await rewards.spin(1);
   assert.strictEqual(spinAgain.error, 'NO_SPIN_LEFT');
   console.log('[test10] aynı gün ikinci spin NO_SPIN_LEFT döndürüyor ✅');
 
   // --- gün değişimi: satırı elle eskiye çekip lazy-reset'i doğrula ---
   db.prepare("UPDATE daily_reward_state SET day = '2000-01-01' WHERE user_id = 1").run();
-  const statusNewDay = rewards.getStatus(1);
+  const statusNewDay = await rewards.getStatus(1);
   assert.strictEqual(statusNewDay.spinsUsedToday, 0, 'yeni günde spinsUsedToday sıfırlanmalı');
   assert.strictEqual(statusNewDay.spinAvailable, true, 'yeni günde hak yeniden müsait olmalı');
   assert.strictEqual(statusNewDay.inventory[spin1.perk.kind], 1, 'envanter (perk_grants ledger) gün değişse de KORUNMALI — sadece günlük hak sıfırlanır');
   console.log('[test10] gün değişince günlük hak sıfırlanıyor, envanter (kalıcı) korunuyor ✅');
+
+  // --- [TURSO] Yarış: aynı anda iki spin isteği (çift tıklama) günlük sınırı aşamamalı ---
+  const [raceA, raceB] = await Promise.all([rewards.spin(1), rewards.spin(1)]);
+  assert.strictEqual([raceA, raceB].filter((r) => r.perk).length, 1, 'eşzamanlı iki spinden sadece biri başarmalı: ' + JSON.stringify([raceA.error, raceB.error]));
+  assert.strictEqual([raceA, raceB].filter((r) => r.error === 'NO_SPIN_LEFT').length, 1);
+  assert.strictEqual((await rewards.getStatus(1)).spinsUsedToday, 1, 'spins_used 1\'i aşmamalı');
+  console.log('[test10] eşzamanlı iki spin: sadece biri başarılı, günlük sınır korunuyor ✅');
 
   console.log('[test10] (A) BİRİM TESTLERİ TÜM GEÇTİ ✅');
 }
@@ -136,7 +144,7 @@ async function e2eTest() {
 }
 
 async function main() {
-  unitTests();
+  await unitTests();
   await e2eTest();
   console.log('[test10] TÜM TESTLER GEÇTİ ✅');
   process.exit(0);

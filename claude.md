@@ -631,6 +631,20 @@ Kullanıcı: "şimdilik reklam izlemeyi kaldıralım o zaman, ekleyemiyorsak" �
 
 Etkilenen dosyalar: `server/src/shared/gameConfig.js`, `server/src/rewards/RewardsService.js`, `server/src/index.js`, `client/public/app.js`, `client/public/views.js`, `client/public/styles.css`, `server/test/phase10-rewards.test.js`, `server/test/phase11-banked-perks.test.js`.
 
+## Kalıcı Veritabanı — Turso'ya Geçiş — [KULLANICI İSTEĞİ, KARARLAŞTIRILDI, YAPILDI]
+
+Render'ın ücretsiz planında (a) site ~15 dk boşta kalınca uyuyor, ilk girişte 30-60 sn açılış gecikmesi oluyor, (b) yerel disk her deploy/yeniden başlatmada sıfırlanıyor — `pitchgavel.sqlite` içindeki hesaplar/envanterler siliniyordu. Kullanıcı ücretli plan/VPS yerine **para harcamadan** çözüm istedi. Karar: (a) için harici ücretsiz bir cron servisi (cron-job.org) 10 dakikada bir `/api/health`'e istek atacak (kod değişikliği yok, kullanıcı kuruyor); (b) için hesap veritabanı **Turso**'ya (ücretsiz, uzak libSQL/SQLite) taşındı. Cloudflare Workers da değerlendirildi, reddedildi — Socket.io, bellekteki oda durumu, `setTimeout` zamanlayıcıları ve `node:sqlite` orada çalışmıyor, Durable Objects'e tam yeniden yazım gerekirdi.
+
+- **Adaptör (`server/src/db/adapter.js`, yeni):** `wrapSqlite`/`wrapLibsql` — iki arka uç da aynı asenkron arayüz (`get`, `all`, `run`, `exec`). `db.js`: `TURSO_DATABASE_URL` tanımlıysa `@libsql/client/web` (saf fetch, native binary yok), değilse eski yerel `node:sqlite` dosyası — yerel geliştirme ve testler DEĞİŞMEDİ. Şema + guard'lı ALTER'lar artık async `initSchema`; `index.js` `ready` promise'ini bekleyip SONRA dinlemeye başlıyor, DB'ye ulaşılamazsa net bir hatayla `exit(1)` (Render yeniden dener).
+- **Yeni bağımlılık:** `@libsql/client` — "yeni npm bağımlılığı yok" kuralının bilinçli istisnası (uzak DB istemcisi elle yazılmaz).
+- **Async'e geçen kod:** `AuthService`, `RewardsService`, `DraftEngine.redeemBankedPerk`, `index.js` auth/rewards route'ları.
+- **Asenkronluğun açtığı yarış durumları kapatıldı** (senkron node:sqlite'ta doğal olarak atomikti): günlük spin hakkı koşullu `UPDATE ... WHERE spins_used < ?` ile ÖNCE düşülüyor (çift tıklama 2 çevirme yapamaz); `consumeOneGrant` `consumed_at IS NULL` koşullu UPDATE (aynı perk iki kez harcanamaz) ve `grantId` döndürüyor; `redeemBankedPerk` DB beklenirken tur zaman aşımıyla geçtiyse perk'i `restoreGrant` ile İADE ediyor; doğrulama token'ı önce siliniyor (sadece changes=1 olan devam eder); register'da eşzamanlı aynı e-posta UNIQUE hatası `EMAIL_TAKEN`'e çevriliyor; `_getOrResetState` `INSERT OR IGNORE` + koşullu reset.
+- **Bilinen sınırlar:** Turso'da her HTTP isteği ayrı bağlantı olduğu için `PRAGMA foreign_keys` kalıcı değil — uygulama CASCADE'e güvenmiyor (kullanıcı silme akışı yok). Deploy anında oynanan odalar hâlâ kaybolur (bellekte tutuluyor); hesaplar artık güvende.
+- **Test:** phase9/10/11/13 servisleri `wrapSqlite(db)` ile kullanacak şekilde async'e güncellendi; phase10'a eşzamanlı çift spin, phase11'e eşzamanlı çift harcama ve "tur geçerse iade" testleri eklendi. 16 test dosyasının tamamı (ayrı ayrı çalıştırılarak) yeşil. Servisler ayrıca gerçek libSQL istemcisiyle (bellek içi) uçtan uca denendi; geçersiz bir Turso adresiyle sunucunun temiz şekilde çıktığı doğrulandı.
+- **Canlıya almak için kullanıcının yapacakları:** Turso hesabı + veritabanı oluştur, Render dashboard'unda `TURSO_DATABASE_URL` ve `TURSO_AUTH_TOKEN` gir (`render.yaml`'da `sync: false` olarak tanımlı). Mevcut SQLite'taki hesaplar otomatik TAŞINMAZ (canlıdakiler zaten her deploy'da siliniyordu).
+
+Etkilenen/yeni dosyalar: `server/src/db/adapter.js` (yeni), `server/src/db/db.js`, `server/src/auth/AuthService.js`, `server/src/rewards/RewardsService.js`, `server/src/draft/DraftEngine.js`, `server/src/index.js`, `server/package.json`, `render.yaml`, `server/test/phase9-auth.test.js`, `server/test/phase10-rewards.test.js`, `server/test/phase11-banked-perks.test.js`, `server/test/phase13-email-verification.test.js`.
+
 ## Dosyalar
 
 - `AUCTION-GAME-CLAUDE.md` (fiziksel dosya adı: `claude.md`) — proje spesifikasyonu/karar günlüğü, bu dosya.

@@ -24,3 +24,10 @@ services:
       # Gizli — Render dashboard'dan elle girilir, repoya yazılmaz.
       - key: RESEND_API_KEY
         sync: false
+      # Kalıcı hesap veritabanı (Turso) — ücretsiz planda yerel disk her deploy'da sıfırlandığı
+      # için. İkisi de gizli, Render dashboard'dan elle girilir. Tanımlı değilse sunucu yerel
+      # SQLite dosyasına düşer (hesaplar deploy'da silinir).
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

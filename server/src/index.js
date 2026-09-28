@@ -22,7 +22,7 @@ const { TradeEngine } = require('./trade/TradeEngine');
 const { Matchmaker } = require('./matchmaking/Matchmaker');
 const { loadPlayerData } = require('./playerData');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] bkz. claude.md.
-const { db } = require('./db/db');
+const { db, ready: dbReady, usingTurso } = require('./db/db');
 const { AuthService, SESSION_TTL_MS } = require('./auth/AuthService');
 const { LoginRateLimiter } = require('./auth/LoginRateLimiter');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÜVENLİK SERTLEŞTİRME] bkz. claude.md.
@@ -197,20 +197,20 @@ app.post('/api/auth/register', async (req, res) => {
   if (!isValidEmail(email) || !isValidPassword(password) || !isValidDisplayName(displayName)) {
     return res.status(400).json({ error: 'INVALID_INPUT' });
   }
-  const result = authService.register(email, password, displayName);
+  const result = await authService.register(email, password, displayName);
   if (result.error) {
     return res.status(result.error === 'EMAIL_TAKEN' ? 409 : 400).json({ error: result.error });
   }
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] Token asla response body'sinde
   // DÖNMÜYOR (sadece e-posta linkinde) — e-posta gönderimi başarısız olsa bile (bkz. EmailService
   // dev-fallback notu) KAYIT engellenmez, kullanıcı "tekrar gönder" ile sonra deneyebilir.
-  const verificationToken = authService.createVerificationToken(result.user.id);
+  const verificationToken = await authService.createVerificationToken(result.user.id);
   await sendVerificationEmail(result.user.email, verificationToken);
   setSessionCookie(res, result.token);
   res.status(201).json({ user: result.user });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!isValidEmail(email) || typeof password !== 'string' || !password) {
     return res.status(400).json({ error: 'INVALID_INPUT' });
@@ -219,7 +219,7 @@ app.post('/api/auth/login', (req, res) => {
   if (loginRateLimiter.isBlocked(ip, email)) {
     return res.status(429).json({ error: 'RATE_LIMITED' });
   }
-  const result = authService.login(email, password);
+  const result = await authService.login(email, password);
   if (result.error) {
     loginRateLimiter.recordFailure(ip, email);
     return res.status(401).json({ error: result.error });
@@ -229,23 +229,23 @@ app.post('/api/auth/login', (req, res) => {
   res.json({ user: result.user });
 });
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   const token = parseCookies(req)[SESSION_COOKIE_NAME];
-  if (token) authService.logout(token);
+  if (token) await authService.logout(token);
   clearSessionCookie(res);
   res.json({ ok: true });
 });
 
-app.get('/api/auth/me', (req, res) => {
+app.get('/api/auth/me', async (req, res) => {
   const token = parseCookies(req)[SESSION_COOKIE_NAME];
-  res.json({ user: authService.getUserByToken(token) });
+  res.json({ user: await authService.getUserByToken(token) });
 });
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] Bu, bir e-posta istemcisinden tıklanan
 // bir tarayıcı navigasyonu (GET) — JSON değil, `/giris?verified=1|0`'a REDIRECT dönüyor ki
 // istemci sonucu bir toast ile göstersin (bkz. client app.js açılış kontrolü).
-app.get('/api/auth/verify', (req, res) => {
-  const result = authService.verifyEmailToken(String(req.query.token || ''));
+app.get('/api/auth/verify', async (req, res) => {
+  const result = await authService.verifyEmailToken(String(req.query.token || ''));
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Doğrulama koduyla giriş yapabilmeliyim" — link tıklanan
   // TARAYICIYA da bir oturum açılıyor (kayıt olunan cihazdan farklı olsa bile).
   if (result.ok) setSessionCookie(res, result.sessionToken);
@@ -256,9 +256,9 @@ app.get('/api/auth/verify', (req, res) => {
 // kayıtlı kullanıcılar için (buradaki 401, /api/auth/me'nin aksine GERÇEK bir hata: bu özellik
 // misafirlere hiç açık değil). RoomManager/DraftEngine'e hiç dokunmuyor, tamamen bağımsız.
 const rewardsService = new RewardsService(db);
-function requireUser(req, res) {
+async function requireUser(req, res) {
   const token = parseCookies(req)[SESSION_COOKIE_NAME];
-  const user = authService.getUserByToken(token);
+  const user = await authService.getUserByToken(token);
   if (!user) { res.status(401).json({ error: 'NOT_LOGGED_IN' }); return null; }
   return user;
 }
@@ -267,27 +267,27 @@ function requireUser(req, res) {
 // kullanıcı ID başına saatte 3 ile sınırlı (ResendVerificationRateLimiter), kendi Resend
 // kotasını/gelen kutusunu spamlamasın diye.
 app.post('/api/auth/resendVerification', async (req, res) => {
-  const user = requireUser(req, res);
+  const user = await requireUser(req, res);
   if (!user) return;
   if (user.emailVerified) return res.status(400).json({ error: 'ALREADY_VERIFIED' });
   if (resendVerificationRateLimiter.isBlocked(user.id)) return res.status(429).json({ error: 'RATE_LIMITED' });
   resendVerificationRateLimiter.recordAttempt(user.id);
 
-  const verificationToken = authService.createVerificationToken(user.id);
+  const verificationToken = await authService.createVerificationToken(user.id);
   await sendVerificationEmail(user.email, verificationToken);
   res.json({ ok: true });
 });
 
-app.get('/api/rewards/status', (req, res) => {
-  const user = requireUser(req, res);
+app.get('/api/rewards/status', async (req, res) => {
+  const user = await requireUser(req, res);
   if (!user) return;
-  res.json(rewardsService.getStatus(user.id));
+  res.json(await rewardsService.getStatus(user.id));
 });
 
-app.post('/api/rewards/spin', (req, res) => {
-  const user = requireUser(req, res);
+app.post('/api/rewards/spin', async (req, res) => {
+  const user = await requireUser(req, res);
   if (!user) return;
-  const result = rewardsService.spin(user.id);
+  const result = await rewardsService.spin(user.id);
   if (result.error) return res.status(400).json({ error: result.error });
   res.json(result);
 });
@@ -316,13 +316,13 @@ const ctx = { roomManager, draftEngine, tradeEngine, matchmaker };
 // kurulduğu ANKİ tarayıcı durumunu yansıtır, sayfa yenilenmeden giriş yapılırsa bayat kalabilir.
 // Bu route mevcut /api/rewards/* ile AYNI, her zaman güncel cookie mekanizmasını kullanıyor;
 // gerçek sonuç (kim ne kazandı) yine socket broadcast'iyle (prepWheel:resolved) TÜM odaya ulaşır.
-app.post('/api/rewards/redeemInRoom', (req, res) => {
-  const user = requireUser(req, res);
+app.post('/api/rewards/redeemInRoom', async (req, res) => {
+  const user = await requireUser(req, res);
   if (!user) return;
   const { roomCode, clientId, kind } = req.body || {};
   const room = roomManager.getRoom(String(roomCode || '').toUpperCase());
   if (!room) return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
-  const result = draftEngine.redeemBankedPerk(room, clientId, kind, user.id);
+  const result = await draftEngine.redeemBankedPerk(room, clientId, kind, user.id);
   if (result.error) return res.status(400).json({ error: result.error });
   res.json(result);
 });
@@ -344,13 +344,21 @@ try {
   console.error(`[data] ${e.message}`);
 }
 
+// [TURSO] Şema hazır olmadan (uzak DB'de ağ gecikmesi var) istek kabul etmeye başlama — DB'ye
+// hiç ulaşılamıyorsa açılışta net bir hatayla çık, Render yeniden denesin.
 if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`[server] PitchGavel backend http://localhost:${PORT} adresinde çalışıyor`);
+  dbReady.then(() => {
+    console.log(`[db] ${usingTurso ? 'Turso (uzak)' : 'yerel SQLite dosyası'} hazır.`);
+    server.listen(PORT, () => {
+      console.log(`[server] PitchGavel backend http://localhost:${PORT} adresinde çalışıyor`);
+    });
+  }).catch((e) => {
+    console.error('[db] Veritabanı başlatılamadı:', e.message);
+    process.exit(1);
   });
 }
 
 // `db` export'u SADECE testlerin işi (ör. e-posta doğrulama token'ını response body'sine hiç
 // koymadığımız için doğrudan DB'den okuyabilmeleri) — uygulama kodunun kendisi index.js dışından
 // bu export'u hiç kullanmıyor.
-module.exports = { app, server, io, roomManager, draftEngine, db };
+module.exports = { app, server, io, roomManager, draftEngine, db, dbReady };

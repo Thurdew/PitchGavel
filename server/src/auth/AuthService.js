@@ -28,67 +28,76 @@ function toPublicUser(row) {
 class AuthService {
   constructor(db) {
     this.db = db;
-    this._sweepTimer = setInterval(() => this.sweepExpiredSessions(), SESSION_SWEEP_INTERVAL_MS);
+    this._sweepTimer = setInterval(() => { this.sweepExpiredSessions().catch((e) => console.error('[auth] sweep hatası:', e.message)); }, SESSION_SWEEP_INTERVAL_MS);
     this._sweepTimer.unref?.();
   }
 
-  register(email, password, displayName) {
+  async register(email, password, displayName) {
     const normEmail = normalizeEmail(email);
-    const existing = this.db.prepare('SELECT id FROM users WHERE email = ?').get(normEmail);
+    const existing = await this.db.get('SELECT id FROM users WHERE email = ?', normEmail);
     if (existing) return { error: 'EMAIL_TAKEN' };
 
     const { hash, salt } = hashPassword(password);
     const now = Date.now();
-    const info = this.db.prepare(
-      `INSERT INTO users (email, password_hash, password_salt, display_name, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(normEmail, hash, salt, displayName.trim().slice(0, 24), now, now);
+    let info;
+    try {
+      info = await this.db.run(
+        `INSERT INTO users (email, password_hash, password_salt, display_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        normEmail, hash, salt, displayName.trim().slice(0, 24), now, now
+      );
+    } catch (e) {
+      // Asenkron DB'de yukarıdaki SELECT ile bu INSERT arasında aynı e-postayla eşzamanlı bir
+      // kayıt araya girebilir — UNIQUE kısıtı onu yakalar, aynı hata koduna çevrilir.
+      if (/UNIQUE/i.test(String(e && e.message))) return { error: 'EMAIL_TAKEN' };
+      throw e;
+    }
 
-    const user = this.db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
-    const token = this._createSession(user.id);
+    const user = await this.db.get('SELECT * FROM users WHERE id = ?', info.lastInsertRowid);
+    const token = await this._createSession(user.id);
     return { user: toPublicUser(user), token };
   }
 
-  login(email, password) {
+  async login(email, password) {
     const normEmail = normalizeEmail(email);
-    const user = this.db.prepare('SELECT * FROM users WHERE email = ?').get(normEmail);
+    const user = await this.db.get('SELECT * FROM users WHERE email = ?', normEmail);
     // Bilinmeyen e-posta ile yanlış parola AYNI hata kodunu döner — e-posta enumeration'a
     // izin vermemek için.
     if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) {
       return { error: 'INVALID_CREDENTIALS' };
     }
-    const token = this._createSession(user.id);
+    const token = await this._createSession(user.id);
     return { user: toPublicUser(user), token };
   }
 
-  getUserByToken(token) {
+  async getUserByToken(token) {
     if (!token) return null;
-    const row = this.db.prepare(
+    const row = await this.db.get(
       `SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
-       WHERE sessions.token = ? AND sessions.expires_at > ?`
-    ).get(token, Date.now());
+       WHERE sessions.token = ? AND sessions.expires_at > ?`,
+      token, Date.now()
+    );
     return row ? toPublicUser(row) : null;
   }
 
   // Sadece sunulan token'a ait oturumu kapatır ("bu cihazdan çıkış") — aynı kullanıcının diğer
   // cihaz/tarayıcılardaki oturumları doğal süresi (30 gün) dolana kadar geçerli kalır.
-  logout(token) {
-    this.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  async logout(token) {
+    await this.db.run('DELETE FROM sessions WHERE token = ?', token);
   }
 
-  sweepExpiredSessions() {
-    this.db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
-    this.db.prepare('DELETE FROM email_verifications WHERE expires_at <= ?').run(Date.now());
+  async sweepExpiredSessions() {
+    await this.db.run('DELETE FROM sessions WHERE expires_at <= ?', Date.now());
+    await this.db.run('DELETE FROM email_verifications WHERE expires_at <= ?', Date.now());
   }
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] bkz. claude.md. index.js
   // sendVerificationEmail'i BU token ile çağırıyor — token asla HTTP response body'sinde
   // dönmüyor (sadece e-posta linkinde), güvenlik açısından.
-  createVerificationToken(userId) {
+  async createVerificationToken(userId) {
     const token = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    this.db.prepare('INSERT INTO email_verifications (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run(token, userId, now, now + EMAIL_VERIFICATION_TTL_MS);
+    await this.db.run('INSERT INTO email_verifications (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', token, userId, now, now + EMAIL_VERIFICATION_TTL_MS);
     return token;
   }
 
@@ -99,27 +108,31 @@ class AuthService {
   // "doğrulandı" işaretlemekle kalmıyor, AYRICA yeni bir oturum (session token) açıyor. Bu
   // sayede link HANGİ tarayıcı/cihazda tıklanırsa (kayıt olunan cihazdan farklı olsa bile) o
   // tarayıcı da otomatik giriş yapmış oluyor — parolayı tekrar girmeye gerek kalmıyor.
-  verifyEmailToken(token) {
-    const row = this.db.prepare(
+  async verifyEmailToken(token) {
+    const row = await this.db.get(
       `SELECT email_verifications.user_id AS user_id FROM email_verifications
-       WHERE token = ? AND expires_at > ?`
-    ).get(token, Date.now());
+       WHERE token = ? AND expires_at > ?`,
+      token, Date.now()
+    );
     if (!row) return { error: 'INVALID_OR_EXPIRED_TOKEN' };
 
-    const now = Date.now();
-    this.db.prepare('UPDATE users SET email_verified_at = ?, updated_at = ? WHERE id = ?').run(now, now, row.user_id);
-    this.db.prepare('DELETE FROM email_verifications WHERE token = ?').run(token);
+    // Önce token'ı SİL, sonra doğrula — iki eşzamanlı tıklamadan sadece silmeyi başaran (changes=1)
+    // devam eder, böylece tek kullanımlık garanti asenkron DB'de de korunur.
+    const del = await this.db.run('DELETE FROM email_verifications WHERE token = ?', token);
+    if (del.changes !== 1) return { error: 'INVALID_OR_EXPIRED_TOKEN' };
 
-    const user = this.db.prepare('SELECT * FROM users WHERE id = ?').get(row.user_id);
-    const sessionToken = this._createSession(row.user_id);
+    const now = Date.now();
+    await this.db.run('UPDATE users SET email_verified_at = ?, updated_at = ? WHERE id = ?', now, now, row.user_id);
+
+    const user = await this.db.get('SELECT * FROM users WHERE id = ?', row.user_id);
+    const sessionToken = await this._createSession(row.user_id);
     return { ok: true, user: toPublicUser(user), sessionToken };
   }
 
-  _createSession(userId) {
+  async _createSession(userId) {
     const token = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    this.db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run(token, userId, now, now + SESSION_TTL_MS);
+    await this.db.run('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', token, userId, now, now + SESSION_TTL_MS);
     return token;
   }
 }

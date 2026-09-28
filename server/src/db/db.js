@@ -1,22 +1,34 @@
 const path = require('path');
 const fs = require('fs');
-const { DatabaseSync } = require('node:sqlite');
+const { wrapSqlite, wrapLibsql } = require('./adapter');
 
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ] Yeni bir npm bağımlılığı eklemeden kalıcı
-// depolama: Node'un built-in `node:sqlite` modülü (Node >=22.5 gerektirir, bkz. package.json
-// engines). Proje zaten minimal bağımlılıklı (express+socket.io+csv-parse) — bu felsefeyi bozmuyor.
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ] Yerelde Node'un built-in `node:sqlite`
+// modülü (Node >=22.5, bkz. package.json engines).
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TURSO] `TURSO_DATABASE_URL` tanımlıysa (canlıda, Render
+// dashboard'undan) bunun yerine uzak Turso veritabanı kullanılır — Render'ın ücretsiz planında
+// yerel disk her deploy'da sıfırlandığı için. Tanımlı değilse (yerel geliştirme, testler) eski
+// yerel dosya aynen kullanılıyor. Servisler iki durumda da aynı asenkron arayüzü görür (adapter.js).
 const DB_DIR = path.join(__dirname, '..', '..', 'data');
 const DB_PATH = path.join(DB_DIR, 'pitchgavel.sqlite');
+const TURSO_URL = process.env.TURSO_DATABASE_URL;
 
-fs.mkdirSync(DB_DIR, { recursive: true });
+let db;
+if (TURSO_URL) {
+  // `/web` alt yolu saf fetch tabanlı — native binary gerektirmiyor.
+  const { createClient } = require('@libsql/client/web');
+  db = wrapLibsql(createClient({ url: TURSO_URL, authToken: process.env.TURSO_AUTH_TOKEN }));
+} else {
+  const { DatabaseSync } = require('node:sqlite');
+  fs.mkdirSync(DB_DIR, { recursive: true });
+  const sqlite = new DatabaseSync(DB_PATH);
+  // node:sqlite foreign key kısıtlarını varsayılan KAPALI açar. (Turso'da her HTTP isteği ayrı
+  // bir bağlantı olduğu için bu PRAGMA orada kalıcı değil — uygulama kodu CASCADE'e güvenmiyor,
+  // kullanıcı silme akışı yok.)
+  sqlite.exec('PRAGMA foreign_keys = ON;');
+  db = wrapSqlite(sqlite);
+}
 
-const db = new DatabaseSync(DB_PATH);
-
-// node:sqlite foreign key kısıtlarını varsayılan KAPALI açar — sessions.user_id ON DELETE
-// CASCADE'in çalışması için elle açılması gerekiyor.
-db.exec('PRAGMA foreign_keys = ON;');
-
-db.exec(`
+const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     email         TEXT NOT NULL UNIQUE,
@@ -67,22 +79,29 @@ db.exec(`
     granted_at  INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_perk_grants_user_id ON perk_grants(user_id);
-`);
+`;
 
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] `perk_grants` Faz 2'de "tüketildi
-// mi" alanı olmadan oluşturulmuştu (bilerek — o fazda gerekmiyordu). Şimdi gerekiyor: mevcut bir
-// tabloya `CREATE TABLE IF NOT EXISTS` yeni kolon EKLEMEZ, bu yüzden minimal, tek seferlik
-// guard'lı bir ALTER — migration framework'süz, elle.
-const perkGrantsCols = db.prepare('PRAGMA table_info(perk_grants)').all().map((c) => c.name);
-if (!perkGrantsCols.includes('consumed_at')) {
-  db.exec('ALTER TABLE perk_grants ADD COLUMN consumed_at INTEGER');
+// Şema + guard'lı ALTER'lar. Asenkron — index.js sunucuyu dinlemeye açmadan önce `ready`'i bekler.
+async function initSchema(database) {
+  await database.exec(SCHEMA_SQL);
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] `perk_grants` Faz 2'de "tüketildi
+  // mi" alanı olmadan oluşturulmuştu (bilerek — o fazda gerekmiyordu). Mevcut bir tabloya
+  // `CREATE TABLE IF NOT EXISTS` yeni kolon EKLEMEZ, bu yüzden minimal, tek seferlik guard'lı bir
+  // ALTER — migration framework'süz, elle.
+  const perkGrantsCols = (await database.all('PRAGMA table_info(perk_grants)')).map((c) => c.name);
+  if (!perkGrantsCols.includes('consumed_at')) {
+    await database.exec('ALTER TABLE perk_grants ADD COLUMN consumed_at INTEGER');
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] `users` Faz 1'de bu kolon olmadan
+  // oluşturulmuştu — aynı guard'lı ALTER deseni.
+  const usersCols = (await database.all('PRAGMA table_info(users)')).map((c) => c.name);
+  if (!usersCols.includes('email_verified_at')) {
+    await database.exec('ALTER TABLE users ADD COLUMN email_verified_at INTEGER');
+  }
 }
 
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] `users` Faz 1'de bu kolon olmadan
-// oluşturulmuştu (e-posta doğrulaması o an ertelenmişti) — aynı guard'lı ALTER deseni.
-const usersCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
-if (!usersCols.includes('email_verified_at')) {
-  db.exec('ALTER TABLE users ADD COLUMN email_verified_at INTEGER');
-}
+const ready = initSchema(db);
 
-module.exports = { db, DB_PATH };
+module.exports = { db, ready, initSchema, SCHEMA_SQL, DB_PATH, usingTurso: !!TURSO_URL };

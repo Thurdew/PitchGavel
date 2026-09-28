@@ -353,20 +353,33 @@ class DraftEngine {
   // bir uygulama mantığı YOK, sadece "hangi segment"in nereden geldiği değişiyor. `userId`,
   // index.js'teki HTTP route'unun cookie ile doğruladığı hesap kimliği — clientId'den bağımsız,
   // asla istemciden doğrudan güvenilmiyor (bkz. claude.md "kimlik doğrulama tasarımı" notu).
-  redeemBankedPerk(room, clientId, kind, userId) {
-    const pw = room.prepWheel;
-    if (!pw || room.status !== STATUS.PREP_WHEEL) return { error: 'NO_ACTIVE_PREP_WHEEL' };
-    if (pw.order[pw.cursor] !== clientId) return { error: 'NOT_YOUR_TURN' };
-    const player = findPlayer(room, clientId);
-    if (!player) return { error: 'NOT_IN_ROOM' };
+  async redeemBankedPerk(room, clientId, kind, userId) {
+    const precheck = () => {
+      const pw = room.prepWheel;
+      if (!pw || room.status !== STATUS.PREP_WHEEL) return { error: 'NO_ACTIVE_PREP_WHEEL' };
+      if (pw.order[pw.cursor] !== clientId) return { error: 'NOT_YOUR_TURN' };
+      if (!findPlayer(room, clientId)) return { error: 'NOT_IN_ROOM' };
+      return null;
+    };
+    const early = precheck();
+    if (early) return early;
     if (!room.bankedPerksEnabled) return { error: 'BANKED_PERKS_DISABLED' };
 
     const seg = PREP_WHEEL_SEGMENTS.find((s) => s.kind === kind);
     if (!seg) return { error: 'INVALID_KIND' };
     if (!this.rewardsService) return { error: 'REWARDS_UNAVAILABLE' };
 
-    const consumed = this.rewardsService.consumeOneGrant(userId, kind);
+    const consumed = await this.rewardsService.consumeOneGrant(userId, kind);
     if (consumed.error) return consumed;
+
+    // [TURSO] DB beklenirken tur zaman aşımıyla geçmiş ya da oyuncu odadan düşmüş olabilir —
+    // durum artık geçerli değilse perk harcanmış sayılmasın, iade edilsin.
+    const late = precheck();
+    if (late) {
+      await this.rewardsService.restoreGrant(consumed.grantId);
+      return late;
+    }
+    const player = findPlayer(room, clientId);
 
     const perk = this.applyPrepPerk(player, seg);
     this.io.to(room.code).emit('prepWheel:resolved', { clientId, perk, redeemed: true });
