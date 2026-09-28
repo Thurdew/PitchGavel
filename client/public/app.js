@@ -256,6 +256,7 @@ const AUTH_ERROR_MESSAGES = {
   INVALID_CREDENTIALS: 'E-posta veya parola hatalı.',
   RATE_LIMITED: 'Çok fazla deneme yaptın, birkaç dakika sonra tekrar dene.',
   INVALID_INPUT: 'Bilgileri kontrol et (parola en az 8 karakter olmalı).',
+  INVALID_OR_EXPIRED_TOKEN: 'Sıfırlama linki geçersiz ya da süresi dolmuş — yeni bir link iste.',
 };
 
 // document.title + meta description/canonical/OG/Twitter etiketlerini o an gösterilen sayfaya
@@ -942,6 +943,30 @@ const actions = {
     navigateToPage(null);
     return res;
   },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] Sunucu e-posta kayıtlı olsa da olmasa
+  // da aynı yanıtı veriyor (enumeration yok) — bu yüzden ekrandaki mesaj da koşullu ("kayıtlıysa").
+  async forgotPassword(email) {
+    const res = await fetch('/api/auth/forgotPassword', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.authUi.resetRequested = true;
+    route();
+    return res;
+  },
+  async resetPassword(password) {
+    const res = await fetch('/api/auth/resetPassword', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: state.authUi.resetToken, password }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.user = res.user;
+    state.authUi = null;
+    toast('✅ Parolan değişti ve giriş yaptın. Diğer cihazlardaki oturumların kapatıldı.');
+    navigateToPage(null);
+    return res;
+  },
   async logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     state.user = null;
@@ -1272,6 +1297,16 @@ const verifiedParam = new URLSearchParams(location.search).get('verified');
 if (verifiedParam != null) {
   toast(verifiedParam === '1' ? '✅ E-posta doğrulandı!' : '⚠️ Doğrulama linki geçersiz ya da süresi dolmuş.');
   history.replaceState({}, '', location.pathname);
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] E-postadaki link `/giris?reset=TOKEN`.
+// Token state'e alınıp URL'den HEMEN siliniyor — adres çubuğunda/tarayıcı geçmişinde kalmasın,
+// sayfadaki dış linklere Referer olarak sızmasın diye.
+const resetParam = new URLSearchParams(location.search).get('reset');
+if (resetParam) {
+  state.authUi = { mode: 'reset', email: '', password: '', displayName: '', resetToken: resetParam };
+  history.replaceState({}, '', location.pathname);
+  route();
 }
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — KULLANICI ÇEKME] "Tıkla-katıl" linki — bir arkadaşın

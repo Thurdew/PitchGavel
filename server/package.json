@@ -28,7 +28,8 @@
     "test:bankedperks": "node test/phase11-banked-perks.test.js",
     "test:matchmaking": "node test/phase12-matchmaking.test.js",
     "test:emailverify": "node test/phase13-email-verification.test.js",
-    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:draft:wheel && npm run test:draft:wheel:pity && npm run test:lineup && npm run test:match && npm run test:match:playbacksync && npm run test:multiplayer && npm run test:prepwheel && npm run test:auth && npm run test:rewards && npm run test:bankedperks && npm run test:matchmaking && npm run test:emailverify"
+    "test:passwordreset": "node test/phase14-password-reset.test.js",
+    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:draft:wheel && npm run test:draft:wheel:pity && npm run test:lineup && npm run test:match && npm run test:match:playbacksync && npm run test:multiplayer && npm run test:prepwheel && npm run test:auth && npm run test:rewards && npm run test:bankedperks && npm run test:matchmaking && npm run test:emailverify && npm run test:passwordreset"
   },
   "license": "UNLICENSED",
   "dependencies": {

@@ -9,6 +9,8 @@
 //      doğrular.
 const assert = require('assert');
 
+process.env.RESEND_API_KEY = ''; // delete YETMEZ: loadEnv, anahtar hiç yoksa server/.env'deki GERÇEK anahtarı yükler — boş string onu engeller, test asla gerçek e-posta göndermez
+
 // Rate limiter testlerini gerçek dakikalar beklemeden çalıştırabilmek için (phase8'in
 // DRAFT_PREP_WHEEL_SECONDS'ı kısaltmasıyla aynı desen) — index.js bu değerleri require
 // ANINDA okuyor, bu yüzden env değişkenleri her require'dan ÖNCE ayarlanmalı.
@@ -42,6 +44,12 @@ async function unitTests() {
     CREATE TABLE sessions (
       token TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE TABLE password_resets (
+      token_hash TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       created_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL
     );

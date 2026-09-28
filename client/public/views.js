@@ -578,12 +578,100 @@ function authField(label, input, hint) {
   ]);
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] İki adım, aynı giriş ekranı dili:
+//  'forgot' → e-posta gir, link iste (sunucu kayıtlı olsa da olmasa da aynı yanıtı verir),
+//  'reset'  → e-postadaki linkten gelindi (app.js `?reset=`), yeni parolayı belirle.
+function renderPasswordRecovery({ state, actions }) {
+  const ui = state.authUi;
+  const isReset = ui.mode === 'reset';
+  const backToLogin = () => { state.authUi = { mode: 'login', email: ui.email || '', password: '', displayName: '' }; actions.route(); };
+
+  let body;
+  if (isReset) {
+    const pw = el('input', {
+      class: 'auth-input has-toggle', type: 'password', placeholder: 'Yeni parola (en az 8 karakter)',
+      value: ui.password, autocomplete: 'new-password',
+      'data-focus-key': 'reset-password',
+      oninput: (e) => { ui.password = e.target.value; },
+    });
+    const toggle = el('button', {
+      class: 'pw-toggle', type: 'button',
+      onclick: () => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password'; toggle.textContent = show ? 'GİZLE' : 'GÖSTER'; },
+    }, 'GÖSTER');
+    const submit = (e) => {
+      e.preventDefault();
+      if ((ui.password || '').length < 8) { toast('Parola en az 8 karakter olmalı.'); return; }
+      actions.resetPassword(ui.password);
+    };
+    body = el('form', { class: 'auth-form', onsubmit: submit }, [
+      el('p', { class: 'muted', style: 'margin:0' }, 'Yeni parolanı belirle. Kaydedince bu cihazda giriş yapmış olacaksın; diğer cihazlardaki oturumların kapatılır.'),
+      authField('Yeni parola', el('span', { class: 'pw-wrap' }, [pw, toggle]), 'en az 8 karakter'),
+      el('button', { class: 'btn block ticket-btn', type: 'submit' }, [
+        el('span', { class: 'ticket-btn-icon' }, '🔒'), el('span', { class: 'ticket-btn-label' }, 'Parolayı Kaydet'),
+      ]),
+      el('div', { class: 'auth-switch' }, [
+        el('span', {}, 'Link çalışmıyor mu?'),
+        el('button', { type: 'button', class: 'auth-link', onclick: () => { ui.mode = 'forgot'; ui.resetRequested = false; actions.route(); } }, 'Yeni link iste'),
+      ]),
+    ]);
+  } else if (ui.resetRequested) {
+    body = el('div', { class: 'auth-form' }, [
+      el('p', { style: 'margin:0;font-size:32px' }, '📬'),
+      el('p', { style: 'margin:0' }, [
+        el('strong', {}, ui.email.trim()), ' adresiyle kayıtlı bir hesap varsa, parola sıfırlama linkini gönderdik.',
+      ]),
+      el('p', { class: 'muted', style: 'margin:0' }, 'Link 1 saat geçerli ve tek kullanımlık. Birkaç dakika içinde gelmezse spam/gereksiz klasörüne bak.'),
+      el('button', { class: 'btn block secondary', type: 'button', onclick: backToLogin }, 'Girişe dön'),
+    ]);
+  } else {
+    const emailInput = el('input', {
+      class: 'auth-input', type: 'email', placeholder: 'E-posta', value: ui.email, autocomplete: 'email',
+      'data-focus-key': 'forgot-email',
+      oninput: (e) => { ui.email = e.target.value; },
+    });
+    const submit = (e) => {
+      e.preventDefault();
+      if (!ui.email.trim()) { toast('E-posta gerekli.'); return; }
+      actions.forgotPassword(ui.email.trim());
+    };
+    body = el('form', { class: 'auth-form', onsubmit: submit }, [
+      el('p', { class: 'muted', style: 'margin:0' }, 'Hesabının e-postasını yaz, sana yeni parola belirleyebileceğin bir link gönderelim.'),
+      authField('E-posta', emailInput),
+      el('button', { class: 'btn block ticket-btn', type: 'submit' }, [
+        el('span', { class: 'ticket-btn-icon' }, '📧'), el('span', { class: 'ticket-btn-label' }, 'Sıfırlama Linki Gönder'),
+      ]),
+      el('div', { class: 'auth-switch' }, [
+        el('span', {}, 'Parolanı hatırladın mı?'),
+        el('button', { type: 'button', class: 'auth-link', onclick: backToLogin }, 'Giriş yap'),
+      ]),
+    ]);
+  }
+
+  return el('div', { class: 'auth-grid' }, [
+    el('div', { class: 'auth-intro' }, [
+      el('div', { class: 'auth-intro-text' }, [
+        el('div', { class: 'eyebrow' }, 'Hesap kurtarma'),
+        el('h1', { class: 'auth-hero' }, isReset ? 'Yeni parolanı belirle' : 'Parolanı mı unuttun?'),
+        el('p', { class: 'auth-lead' }, 'Sorun değil — e-postana gelen tek kullanımlık bir linkle birkaç saniyede yeni parola belirleyebilirsin.'),
+      ]),
+    ]),
+    el('div', { class: 'auth-panel' }, [body]),
+  ]);
+}
+
 export function renderLogin({ state, actions }) {
   const root = el('div', { class: 'view auth-view' });
   root.appendChild(el('button', {
     class: 'btn small secondary', style: 'align-self:flex-start',
     onclick: () => actions.navigateToPage(null),
   }, '← Geri dön'));
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] Sıfırlama linkinden gelindiyse, o
+  // tarayıcıda zaten giriş yapılmış olsa bile yeni parola formu gösterilir (hesap ekranından önce).
+  if (state.authUi && state.authUi.mode === 'reset') {
+    root.appendChild(renderPasswordRecovery({ state, actions }));
+    return root;
+  }
 
   if (state.user) {
     if (!state.dailyReward) actions.fetchDailyReward().then(() => { if (state.page === 'login') actions.route(); });
@@ -635,6 +723,10 @@ export function renderLogin({ state, actions }) {
 
   if (!state.authUi) state.authUi = { mode: 'login', email: '', password: '', displayName: '' };
   const ui = state.authUi;
+  if (ui.mode === 'forgot') {
+    root.appendChild(renderPasswordRecovery({ state, actions }));
+    return root;
+  }
   const isReg = ui.mode === 'register';
 
   const lic = buildLicenseCard({
@@ -697,6 +789,10 @@ export function renderLogin({ state, actions }) {
     authField('E-posta', emailInput),
     authField('Parola', el('span', { class: 'pw-wrap' }, [passwordInput, pwToggle]), 'en az 8 karakter'),
     isReg ? el('span', { class: 'pw-strength' }, bars) : null,
+    isReg ? null : el('button', {
+      type: 'button', class: 'auth-link', style: 'align-self:flex-end',
+      onclick: () => { ui.mode = 'forgot'; ui.resetRequested = false; actions.route(); },
+    }, 'Parolanı mı unuttun?'),
     isReg ? el('label', { class: 'auth-field' }, [
       el('span', { class: 'auth-label' }, [el('span', {}, 'Görünen ad'), el('span', { class: 'auth-hint' }, nameCount)]),
       nameInput,

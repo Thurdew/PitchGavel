@@ -5,6 +5,10 @@ const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS) || 30 * 24 * 60 * 60 *
 const SESSION_SWEEP_INTERVAL_MS = 30 * 60 * 1000; // RoomManager'ın periyodik temizliğiyle aynı ritim
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA]
 const EMAIL_VERIFICATION_TTL_MS = Number(process.env.EMAIL_VERIFICATION_TTL_MS) || 24 * 60 * 60 * 1000; // 24 saat
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA]
+const PASSWORD_RESET_TTL_MS = Number(process.env.PASSWORD_RESET_TTL_MS) || 60 * 60 * 1000; // 1 saat
+
+function sha256(value) { return crypto.createHash('sha256').update(String(value)).digest('hex'); }
 
 function normalizeEmail(email) { return String(email || '').trim().toLowerCase(); }
 
@@ -89,6 +93,51 @@ class AuthService {
   async sweepExpiredSessions() {
     await this.db.run('DELETE FROM sessions WHERE expires_at <= ?', Date.now());
     await this.db.run('DELETE FROM email_verifications WHERE expires_at <= ?', Date.now());
+    await this.db.run('DELETE FROM password_resets WHERE expires_at <= ?', Date.now());
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] Kayıtlı olmayan bir e-posta için
+  // `null` döner — route bunu istemciye HİÇ yansıtmıyor (her durumda aynı yanıt, enumeration yok).
+  // Kullanıcının önceki (henüz kullanılmamış) sıfırlama linkleri geçersiz kılınır — sadece en son
+  // istenen link çalışır. DB'ye token'ın hash'i yazılır, düz token sadece e-postadaki linkte.
+  async createPasswordResetToken(email) {
+    const user = await this.db.get('SELECT * FROM users WHERE email = ?', normalizeEmail(email));
+    if (!user) return null;
+    await this.db.run('DELETE FROM password_resets WHERE user_id = ?', user.id);
+    const token = crypto.randomBytes(32).toString('hex');
+    const now = Date.now();
+    await this.db.run(
+      'INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)',
+      sha256(token), user.id, now, now + PASSWORD_RESET_TTL_MS
+    );
+    return { user: toPublicUser(user), token };
+  }
+
+  // Tek kullanımlık: token satırı ÖNCE silinir, sadece silmeyi başaran (changes=1) devam eder
+  // (verifyEmailToken ile aynı desen). Parola değişince kullanıcının TÜM oturumları kapatılır —
+  // hesabı ele geçirilmiş biri varsa dışarı atılsın diye — ve bu tarayıcıya yeni bir oturum açılır.
+  // Linke tıklamak e-posta kutusunun sahibi olmayı kanıtladığı için e-posta da doğrulanmış sayılır.
+  async resetPassword(token, newPassword) {
+    const tokenHash = sha256(token);
+    const row = await this.db.get(
+      'SELECT user_id FROM password_resets WHERE token_hash = ? AND expires_at > ?',
+      tokenHash, Date.now()
+    );
+    if (!row) return { error: 'INVALID_OR_EXPIRED_TOKEN' };
+    const del = await this.db.run('DELETE FROM password_resets WHERE token_hash = ?', tokenHash);
+    if (del.changes !== 1) return { error: 'INVALID_OR_EXPIRED_TOKEN' };
+
+    const { hash, salt } = hashPassword(newPassword);
+    const now = Date.now();
+    await this.db.run(
+      'UPDATE users SET password_hash = ?, password_salt = ?, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ? WHERE id = ?',
+      hash, salt, now, now, row.user_id
+    );
+    await this.db.run('DELETE FROM sessions WHERE user_id = ?', row.user_id);
+
+    const user = await this.db.get('SELECT * FROM users WHERE id = ?', row.user_id);
+    const sessionToken = await this._createSession(row.user_id);
+    return { ok: true, user: toPublicUser(user), sessionToken };
   }
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] bkz. claude.md. index.js
