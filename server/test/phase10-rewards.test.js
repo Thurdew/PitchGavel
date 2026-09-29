@@ -10,6 +10,8 @@
 //      ve mevcut testlerin (phase2-9) regresyona uğramadığını doğrular.
 const assert = require('assert');
 
+process.env.RESEND_API_KEY = ''; // delete YETMEZ: loadEnv, anahtar hiç yoksa server/.env'deki GERÇEK anahtarı yükler — boş string onu engeller, test asla gerçek e-posta göndermez
+
 process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS = process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS || '50'; // bu testte login rate limit'e takılmayalım
 
 // ---------- (A) Birim testleri ----------

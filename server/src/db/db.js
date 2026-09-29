@@ -49,6 +49,17 @@ const SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_email_verifications_user_id ON email_verifications(user_id);
 
+  -- [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] Tek kullanımlık, 1 saatlik sıfırlama
+  -- token'ları. Token'ın KENDİSİ değil SHA-256 hash'i saklanıyor — veritabanı sızsa bile bu
+  -- satırlarla bir hesabın parolası değiştirilemesin diye (bkz. AuthService.createPasswordResetToken).
+  CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);
+
   CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

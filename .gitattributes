@@ -1,0 +1,3 @@
+# Linux sunucuda çalışan betikler Windows'ta CRLF'e dönüşürse "bad interpreter" hatası verir.
+*.sh text eol=lf
+deploy/oracle/* text eol=lf

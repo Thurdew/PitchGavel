@@ -29,7 +29,9 @@ const { LoginRateLimiter } = require('./auth/LoginRateLimiter');
 const { RegisterRateLimiter } = require('./auth/RegisterRateLimiter');
 const { parseCookies, serializeCookie } = require('./auth/cookies');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] bkz. claude.md.
-const { sendVerificationEmail } = require('./auth/EmailService');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('./auth/EmailService');
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] bkz. claude.md.
+const { PasswordResetRateLimiter } = require('./auth/PasswordResetRateLimiter');
 const { ResendVerificationRateLimiter } = require('./auth/ResendVerificationRateLimiter');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] bkz. claude.md.
 const { RewardsService } = require('./rewards/RewardsService');
@@ -244,6 +246,47 @@ app.get('/api/auth/me', async (req, res) => {
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] Bu, bir e-posta istemcisinden tıklanan
 // bir tarayıcı navigasyonu (GET) — JSON değil, `/giris?verified=1|0`'a REDIRECT dönüyor ki
 // istemci sonucu bir toast ile göstersin (bkz. client app.js açılış kontrolü).
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAROLA SIFIRLAMA] bkz. claude.md.
+// IP başına saatte 10, e-posta başına saatte 3 istek (env ile ezilebilir — testler için).
+const resetIpLimiter = new PasswordResetRateLimiter({
+  maxAttempts: Number(process.env.PASSWORD_RESET_IP_MAX_ATTEMPTS) || 10, windowMs: 60 * 60 * 1000,
+});
+const resetEmailLimiter = new PasswordResetRateLimiter({
+  maxAttempts: Number(process.env.PASSWORD_RESET_EMAIL_MAX_ATTEMPTS) || 3, windowMs: 60 * 60 * 1000,
+});
+
+// E-posta kayıtlı olsa da olmasa da AYNI yanıt ({ok:true}) — hangi e-postaların kayıtlı olduğu
+// bu uçtan öğrenilemesin. Gönderim de BEKLENMİYOR (arka planda): aksi halde kayıtlı e-postalar
+// Resend'e gidip gelme süresi kadar yavaş yanıt alır, bu da zamanlamayla aynı bilgiyi sızdırırdı.
+// E-posta başına limit aşıldıysa da hata DÖNMÜYOR (o da kayıt bilgisini sızdırırdı) — sessizce atlanıyor.
+app.post('/api/auth/forgotPassword', async (req, res) => {
+  const ip = req.ip;
+  if (resetIpLimiter.isBlocked(ip)) return res.status(429).json({ error: 'RATE_LIMITED' });
+  resetIpLimiter.recordAttempt(ip);
+
+  const { email } = req.body || {};
+  if (!isValidEmail(email)) return res.status(400).json({ error: 'INVALID_INPUT' });
+  const emailKey = email.trim().toLowerCase();
+  if (!resetEmailLimiter.isBlocked(emailKey)) {
+    resetEmailLimiter.recordAttempt(emailKey);
+    authService.createPasswordResetToken(email)
+      .then((r) => (r ? sendPasswordResetEmail(r.user.email, r.token) : null))
+      .catch((e) => console.error('[auth] parola sıfırlama e-postası hatası:', e.message));
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/resetPassword', async (req, res) => {
+  const { token, password } = req.body || {};
+  if (typeof token !== 'string' || !token || !isValidPassword(password)) {
+    return res.status(400).json({ error: 'INVALID_INPUT' });
+  }
+  const result = await authService.resetPassword(token, password);
+  if (result.error) return res.status(400).json({ error: result.error });
+  setSessionCookie(res, result.sessionToken);
+  res.json({ user: result.user });
+});
+
 app.get('/api/auth/verify', async (req, res) => {
   const result = await authService.verifyEmailToken(String(req.query.token || ''));
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Doğrulama koduyla giriş yapabilmeliyim" — link tıklanan

@@ -645,6 +645,26 @@ Render'ın ücretsiz planında (a) site ~15 dk boşta kalınca uyuyor, ilk giri�
 
 Etkilenen/yeni dosyalar: `server/src/db/adapter.js` (yeni), `server/src/db/db.js`, `server/src/auth/AuthService.js`, `server/src/rewards/RewardsService.js`, `server/src/draft/DraftEngine.js`, `server/src/index.js`, `server/package.json`, `render.yaml`, `server/test/phase9-auth.test.js`, `server/test/phase10-rewards.test.js`, `server/test/phase11-banked-perks.test.js`, `server/test/phase13-email-verification.test.js`.
 
+## Parola Sıfırlama — [KULLANICI İSTEĞİ, KARARLAŞTIRILDI, YAPILDI]
+
+E-posta doğrulama altyapısı (Resend + doğrulanmış `pitchgavel.com` domain'i) canlıda çalışır hale gelince eklendi. Akış: giriş formunda "Parolanı mı unuttun?" → e-posta gir → `/giris?reset=TOKEN` linki gelir → yeni parola belirlenir → o tarayıcıda otomatik giriş.
+
+- **Güvenlik kararları:** token DB'de düz değil **SHA-256 hash'i** olarak saklanıyor (`password_resets.token_hash` — DB sızsa bile hesap ele geçirilemez; doğrulama token'larından farklı olarak, çünkü burada sızıntı doğrudan hesap devri demek). 1 saat TTL, tek kullanımlık (önce DELETE, sadece changes=1 olan devam eder — eşzamanlı çift kullanım engelli). Yeni link istenince kullanıcının önceki linkleri geçersizleşir. Başarılı sıfırlamada kullanıcının **TÜM oturumları kapatılır** + bu tarayıcıya yeni oturum açılır; linke tıklamak e-posta sahipliğini kanıtladığı için `email_verified_at` de doldurulur.
+- **Enumeration koruması:** `POST /api/auth/forgotPassword` e-posta kayıtlı olsa da olmasa da AYNI `{ok:true}` yanıtını döner; e-posta gönderimi BEKLENMİYOR (arka planda) — aksi halde kayıtlı adreslerin yanıtı Resend gidiş-dönüşü kadar yavaş olur, zamanlamadan aynı bilgi sızardı. E-posta başına limit (saatte 3) aşıldığında da hata dönmüyor, sessizce atlanıyor. IP başına limit (saatte 10) 429 döner (IP limiti kayıt bilgisi sızdırmaz). Yeni `PasswordResetRateLimiter` (anahtarı dışarıdan alan, aynı hand-rolled desen).
+- **İstemci:** `authUi.mode` artık `'forgot'`/`'reset'` de alabiliyor (`views.js renderPasswordRecovery`, mevcut `.auth-*` sınıfları — yeni CSS yok). `app.js` açılışta `?reset=` parametresini state'e alıp URL'den HEMEN siliyor (adres çubuğunda/geçmişte kalmasın, Referer ile sızmasın). Sıfırlama formu, o tarayıcıda zaten giriş yapılmış olsa bile hesap ekranından ÖNCE gösteriliyor.
+- **Bulunan test açığı (düzeltildi):** testler `delete process.env.RESEND_API_KEY` yapıyordu ama `loadEnv` anahtar HİÇ yoksa `server/.env`'deki GERÇEK anahtarı geri yüklüyor — yani kayıt açan testler (phase9/10/11/13) gerçek Resend üzerinden mail göndermeye çalışıyordu (bu sefer `@example.com` alıcıları yüzünden gerçek gönderim olmadı, Resend kayıtlarından doğrulandı). Artık bu testler anahtarı `''` yapıyor — `loadEnv` tanımlı (boş da olsa) anahtarı ezmiyor, EmailService dev moda düşüyor.
+- **Test:** `server/test/phase14-password-reset.test.js` (yeni, port 3986) — şemayı elle kopyalamak yerine gerçek `initSchema` ile kuruyor (DDL kayması olmasın). phase9/13'ün elle tutulan DDL'lerine `password_resets` eklendi (sweep artık bu tabloyu da temizliyor). 17 test dosyasının tamamı yeşil.
+
+Etkilenen/yeni dosyalar: `server/src/db/db.js`, `server/src/auth/AuthService.js`, `server/src/auth/EmailService.js`, `server/src/auth/PasswordResetRateLimiter.js` (yeni), `server/src/index.js`, `server/package.json`, `client/public/app.js`, `client/public/views.js`, `server/test/phase9-auth.test.js`, `server/test/phase10-rewards.test.js`, `server/test/phase11-banked-perks.test.js`, `server/test/phase13-email-verification.test.js`, `server/test/phase14-password-reset.test.js` (yeni).
+
+## Barındırma — Render'dan Oracle Cloud Always Free'ye Geçiş — [KULLANICI İSTEĞİ, KARARLAŞTIRILDI]
+
+Render ücretsiz kotası bitti (Eylül 2026). Ücretsiz seçenekler arasında (Koyeb, Oracle, Render Starter ücretli) kullanıcı **Oracle Cloud Always Free VM**'i seçti — 7/24 açık, uyumayan tek bir Node süreci; bellek içi oda durumu + Socket.io için en uygun model. Hesap DB'si zaten Turso'da olduğu için veri taşıma yok.
+
+- `deploy/oracle/setup.sh` — tek seferlik kurulum (Node 22 NodeSource, Caddy ile otomatik HTTPS, küçük makinede swap, Oracle Ubuntu imajının iptables REJECT kuralından önce 80/443 açma, `/opt/pitchgavel`'e clone + `npm ci --omit=dev`, `/etc/pitchgavel.env` şablonu, systemd servisi). `pitchgavel.service` (systemd, `EnvironmentFile=/etc/pitchgavel.env`), `Caddyfile` (reverse_proxy localhost:3000 — WebSocket ek ayarsız geçer), `update.sh` (git reset --hard origin/main + npm ci + restart — Render'daki autoDeploy'un yerine elle çalıştırılır), `KURULUM.md` (hesap açma → VM → security list → Hostinger DNS → kurulum → sırlar → kontrol, Türkçe adım adım).
+- `.gitattributes` — `*.sh` ve `deploy/oracle/*` LF'e zorlandı (Windows'ta CRLF'e dönen betik Linux'ta "bad interpreter" verir).
+- Kullanıcının kendi yapacakları: Oracle hesabı (kart doğrulaması), VM oluşturma, DNS A kayıtları (Resend kayıtlarına dokunmadan), sırları env dosyasına girme. `render.yaml` geri dönüş ihtimali için silinmedi.
+
 ## Dosyalar
 
 - `AUCTION-GAME-CLAUDE.md` (fiziksel dosya adı: `claude.md`) — proje spesifikasyonu/karar günlüğü, bu dosya.

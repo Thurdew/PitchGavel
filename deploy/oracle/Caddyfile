@@ -1,0 +1,6 @@
+# setup.sh {$DOMAIN} yerine gerçek alan adını yazar. Caddy Let's Encrypt sertifikasını
+# otomatik alır/yeniler; Socket.io WebSocket'leri reverse_proxy üzerinden ek ayarsız geçer.
+{$DOMAIN}, www.{$DOMAIN} {
+	encode gzip
+	reverse_proxy localhost:3000
+}
