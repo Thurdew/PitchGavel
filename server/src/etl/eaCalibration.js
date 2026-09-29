@@ -40,6 +40,9 @@ const LOW_OFFSET = 4;         // ligin EA minimumunun kaç puan altından başla
 const ABSOLUTE_FLOOR = 48;    // profesyonel bir ligde forma giyen kimse bunun altına inmesin
 const MIN_EA_SAMPLE = 40;     // bir ligin kendi cetveli için gereken en az EA örneği
 const EA_SOURCE = 'fc26-2026-27';
+// FC27 turundan itibaren tüm aktif oyuncular doğrudan EA FC27 (bkz. applyFc27.js) — iki kaynak da EA ölçeği.
+const EA_SOURCES = new Set([EA_SOURCE, 'fc27-2026-27']);
+const isEa = (p) => EA_SOURCES.has(p.ratingOverrideSource);
 const CALIBRATED_SOURCE = 'fc26-2026-27-kalibre';
 
 // Sıralı bir dizide t (0..1) diliminin değeri — aradaki noktalar doğrusal enterpolasyonla.
@@ -66,7 +69,7 @@ function calibrateToEaScale(activePlayers) {
 
   // Global cetvel — EA örneği az olan ligler için yedek.
   const globalEa = activePlayers
-    .filter((p) => p.ratingOverrideSource === EA_SOURCE)
+    .filter(isEa)
     .map((p) => p.rating)
     .sort((a, b) => a - b);
 
@@ -80,7 +83,7 @@ function calibrateToEaScale(activePlayers) {
 
   for (const [league, group] of byLeague) {
     const ea = group
-      .filter((p) => p.ratingOverrideSource === EA_SOURCE)
+      .filter(isEa)
       .map((p) => p.rating)
       .sort((a, b) => a - b);
     const table = ea.length >= MIN_EA_SAMPLE ? ea : globalEa;
@@ -92,7 +95,7 @@ function calibrateToEaScale(activePlayers) {
     // sonuç deterministik (aynı veriyle aynı çıktı) ve eşit reytingli oyuncular da farklı
     // sıralara düşüp bandın içine yayılıyor ("herkes aynı sayı" sorununun bir parçası buydu).
     const unmatched = group
-      .filter((p) => p.ratingOverrideSource !== EA_SOURCE)
+      .filter((p) => !isEa(p))
       .sort((a, b) => (a.rating - b.rating) || String(a.name).localeCompare(String(b.name), 'tr'));
 
     unmatched.forEach((p, i) => {
@@ -127,6 +130,7 @@ function calibrateToEaScale(activePlayers) {
 module.exports = {
   calibrateToEaScale,
   EA_SOURCE,
+  isEa,
   CALIBRATED_SOURCE,
   HIGH_PERCENTILE,
   ABSOLUTE_FLOOR,

@@ -14,7 +14,7 @@
 // sonraki çalıştırmalar hep ondan başlar (idempotent).
 const fs = require('fs');
 const path = require('path');
-const { calibrateToEaScale, EA_SOURCE, CALIBRATED_SOURCE } = require('./eaCalibration');
+const { calibrateToEaScale, isEa, CALIBRATED_SOURCE } = require('./eaCalibration');
 
 const FILE = path.join(__dirname, '..', '..', 'data', 'processed', 'players.json');
 
@@ -32,7 +32,7 @@ function main() {
     if (p.ratingOverrideSource === CALIBRATED_SOURCE && p.ratingFormula != null) {
       p.rating = p.ratingFormula;
       p.ratingOverrideSource = null;
-    } else if (p.ratingOverrideSource !== EA_SOURCE && p.ratingFormula == null) {
+    } else if (!isEa(p) && p.ratingFormula == null) {
       p.ratingFormula = p.rating;
     }
   }
