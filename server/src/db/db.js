@@ -4,9 +4,9 @@ const { wrapSqlite, wrapLibsql } = require('./adapter');
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ] Yerelde Node'un built-in `node:sqlite`
 // modülü (Node >=22.5, bkz. package.json engines).
-// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TURSO] `TURSO_DATABASE_URL` tanımlıysa (canlıda, Render
-// dashboard'undan) bunun yerine uzak Turso veritabanı kullanılır — Render'ın ücretsiz planında
-// yerel disk her deploy'da sıfırlandığı için. Tanımlı değilse (yerel geliştirme, testler) eski
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TURSO] `TURSO_DATABASE_URL` tanımlıysa (canlıda, sunucudaki
+// /etc/pitchgavel.env'den) bunun yerine uzak Turso veritabanı kullanılır — hesaplar sunucudan
+// bağımsız kalıcı olsun diye (eskiden Render'ın ücretsiz planında disk her deploy'da sıfırlanıyordu). Tanımlı değilse (yerel geliştirme, testler) eski
 // yerel dosya aynen kullanılıyor. Servisler iki durumda da aynı asenkron arayüzü görür (adapter.js).
 const DB_DIR = path.join(__dirname, '..', '..', 'data');
 const DB_PATH = path.join(DB_DIR, 'pitchgavel.sqlite');

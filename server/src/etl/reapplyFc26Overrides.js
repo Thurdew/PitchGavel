@@ -171,4 +171,10 @@ function main() {
   }
 }
 
-main();
+// applyFc27.js aynı takma ad tablolarını kullanıyor (FC27 dosyaları da fcratings.com'dan).
+module.exports = {
+  TARGET_LEAGUES, SUPER_LIG_NAME_ALIASES, PREMIER_LEAGUE_NAME_ALIASES, BUNDESLIGA_NAME_ALIASES,
+  SERIE_A_NAME_ALIASES, LA_LIGA_NAME_ALIASES,
+};
+
+if (require.main === module) main();

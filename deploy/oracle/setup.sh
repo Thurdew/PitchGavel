@@ -60,7 +60,7 @@ NODE_ENV=production
 PORT=3000
 APP_BASE_URL=https://$DOMAIN
 EMAIL_FROM=PitchGavel <noreply@$DOMAIN>
-# Aşağıdakileri doldur (Render dashboard'undaki değerlerin aynısı):
+# Aşağıdakileri doldur (Resend ve Turso panellerinden):
 RESEND_API_KEY=
 TURSO_DATABASE_URL=
 TURSO_AUTH_TOKEN=

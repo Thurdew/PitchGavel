@@ -42,7 +42,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Render gibi bir reverse proxy arkasında `req.ip` aksi halde HERKES için proxy'nin IP'si olur —
+// Caddy (bkz. deploy/oracle/Caddyfile) gibi bir reverse proxy arkasında `req.ip` aksi halde HERKES için proxy'nin IP'si olur —
 // IP bazlı register/login rate limiter'ları tüm kullanıcıları tek bir kişi sayıp topluca bloklardı.
 // Sadece production'da (tek proxy katmanı) X-Forwarded-For'a güveniyoruz; dev'de sahte header ile
 // limiter atlatılamasın diye kapalı.
@@ -388,7 +388,7 @@ try {
 }
 
 // [TURSO] Şema hazır olmadan (uzak DB'de ağ gecikmesi var) istek kabul etmeye başlama — DB'ye
-// hiç ulaşılamıyorsa açılışta net bir hatayla çık, Render yeniden denesin.
+// hiç ulaşılamıyorsa açılışta net bir hatayla çık, systemd (Restart=always) yeniden denesin.
 if (require.main === module) {
   dbReady.then(() => {
     console.log(`[db] ${usingTurso ? 'Turso (uzak)' : 'yerel SQLite dosyası'} hazır.`);
