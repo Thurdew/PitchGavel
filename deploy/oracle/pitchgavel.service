@@ -1,0 +1,21 @@
+[Unit]
+Description=PitchGavel (Node.js + Socket.io)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pitchgavel
+WorkingDirectory=/opt/pitchgavel/server
+EnvironmentFile=/etc/pitchgavel.env
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=3
+# Güvenlik sertleştirme — servis sadece kendi klasörüne yazabilir.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

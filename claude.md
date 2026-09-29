@@ -657,6 +657,14 @@ E-posta doğrulama altyapısı (Resend + doğrulanmış `pitchgavel.com` domain'
 
 Etkilenen/yeni dosyalar: `server/src/db/db.js`, `server/src/auth/AuthService.js`, `server/src/auth/EmailService.js`, `server/src/auth/PasswordResetRateLimiter.js` (yeni), `server/src/index.js`, `server/package.json`, `client/public/app.js`, `client/public/views.js`, `server/test/phase9-auth.test.js`, `server/test/phase10-rewards.test.js`, `server/test/phase11-banked-perks.test.js`, `server/test/phase13-email-verification.test.js`, `server/test/phase14-password-reset.test.js` (yeni).
 
+## Barındırma — Render'dan Oracle Cloud Always Free'ye Geçiş — [KULLANICI İSTEĞİ, KARARLAŞTIRILDI]
+
+Render ücretsiz kotası bitti (Eylül 2026). Ücretsiz seçenekler arasında (Koyeb, Oracle, Render Starter ücretli) kullanıcı **Oracle Cloud Always Free VM**'i seçti — 7/24 açık, uyumayan tek bir Node süreci; bellek içi oda durumu + Socket.io için en uygun model. Hesap DB'si zaten Turso'da olduğu için veri taşıma yok.
+
+- `deploy/oracle/setup.sh` — tek seferlik kurulum (Node 22 NodeSource, Caddy ile otomatik HTTPS, küçük makinede swap, Oracle Ubuntu imajının iptables REJECT kuralından önce 80/443 açma, `/opt/pitchgavel`'e clone + `npm ci --omit=dev`, `/etc/pitchgavel.env` şablonu, systemd servisi). `pitchgavel.service` (systemd, `EnvironmentFile=/etc/pitchgavel.env`), `Caddyfile` (reverse_proxy localhost:3000 — WebSocket ek ayarsız geçer), `update.sh` (git reset --hard origin/main + npm ci + restart — Render'daki autoDeploy'un yerine elle çalıştırılır), `KURULUM.md` (hesap açma → VM → security list → Hostinger DNS → kurulum → sırlar → kontrol, Türkçe adım adım).
+- `.gitattributes` — `*.sh` ve `deploy/oracle/*` LF'e zorlandı (Windows'ta CRLF'e dönen betik Linux'ta "bad interpreter" verir).
+- Kullanıcının kendi yapacakları: Oracle hesabı (kart doğrulaması), VM oluşturma, DNS A kayıtları (Resend kayıtlarına dokunmadan), sırları env dosyasına girme. `render.yaml` geri dönüş ihtimali için silinmedi.
+
 ## Dosyalar
 
 - `AUCTION-GAME-CLAUDE.md` (fiziksel dosya adı: `claude.md`) — proje spesifikasyonu/karar günlüğü, bu dosya.
