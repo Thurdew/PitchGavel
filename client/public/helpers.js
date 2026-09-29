@@ -15,11 +15,27 @@ export function el(tag, attrs = {}, children = []) {
   return node;
 }
 
+// [KULLANICI İSTEĞİ] Toast v3: ikon kutusu + mesaj + kalan süre çizgisi; tıklayınca kapanır.
+// kind: 'success' | 'danger' | '' (bilgi). Verilmezse mesajdan tahmin edilir (hata/ret kelimeleri).
+const TOAST_MS = 4200;
+const TOAST_ICONS = {
+  info: '<path d="M12 16v-4"/><path d="M12 8h.01"/><circle cx="12" cy="12" r="9"/>',
+  success: '<path d="M20 6 9 17l-5-5"/>',
+  danger: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+};
 export function toast(msg, kind = '') {
   const host = document.getElementById('toastHost');
-  const node = el('div', { class: 'toast' }, msg);
+  if (!host) return;
+  const k = kind || (/hata|reddedildi|başarısız|yok|kullandın|dolu|geçersiz/i.test(String(msg)) ? 'danger' : /kopyalandı|kaydedildi|gönderildi|kazandın|tamam/i.test(String(msg)) ? 'success' : 'info');
+  const node = el('div', { class: `toast v3 ${k}`, role: 'status' }, [
+    el('span', { class: 'toast-ico', html: `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${TOAST_ICONS[k] || TOAST_ICONS.info}</svg>` }),
+    el('span', { class: 'toast-msg' }, msg),
+    el('span', { class: 'toast-life', style: `animation-duration:${TOAST_MS}ms` }),
+  ]);
+  const close = () => { node.classList.add('out'); setTimeout(() => node.remove(), 200); };
+  node.addEventListener('click', close);
   host.appendChild(node);
-  setTimeout(() => node.remove(), 4200);
+  setTimeout(close, TOAST_MS);
 }
 
 const GROUP_BY_SLOT = {
@@ -79,4 +95,32 @@ export function countUpMoney(node, from, to, duration = 420) {
     if (t < 1) node.__countUpRaf = requestAnimationFrame(step);
   };
   node.__countUpRaf = requestAnimationFrame(step);
+}
+
+// [KULLANICI İSTEĞİ] Tarayıcının gri confirm() kutusu yerine oyunun kendi onay penceresi.
+// Promise<boolean> döner: onay → true; vazgeç, Esc ya da arka plana tıklama → false.
+export function confirmDialog({ title, body, confirmLabel = 'Onayla', cancelLabel = 'Vazgeç', danger = false }) {
+  return new Promise((resolve) => {
+    const prevFocus = document.activeElement;
+    const done = (v) => {
+      overlay.classList.add('out');
+      document.removeEventListener('keydown', onKey, true);
+      setTimeout(() => overlay.remove(), 160);
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+      resolve(v);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    const cancelBtn = el('button', { type: 'button', class: 'btn secondary', onclick: () => done(false) }, cancelLabel);
+    const okBtn = el('button', { type: 'button', class: `btn ${danger ? 'danger' : ''}`, onclick: () => done(true) }, confirmLabel);
+    const card = el('div', { class: `cd-card ${danger ? 'danger' : ''}`, role: 'alertdialog', 'aria-modal': 'true', 'aria-labelledby': 'cdTitle', onclick: (e) => e.stopPropagation() }, [
+      el('span', { class: 'cd-ico', html: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>' }),
+      el('h3', { id: 'cdTitle', class: 'cd-title' }, title),
+      body ? el('p', { class: 'cd-body' }, body) : null,
+      el('div', { class: 'cd-actions' }, [cancelBtn, okBtn]),
+    ]);
+    const overlay = el('div', { class: 'cd-overlay', onclick: () => done(false) }, card);
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', onKey, true);
+    cancelBtn.focus();
+  });
 }

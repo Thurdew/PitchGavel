@@ -1,4 +1,4 @@
-import { el, toast } from './helpers.js';
+import { el, toast, confirmDialog } from './helpers.js';
 // [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
 import { sfx } from './sfx.js';
 import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderVerifyGate, isPrepWheelSpinActive } from './views.js';
@@ -383,10 +383,15 @@ function updateConnBanner() {
   }
   const offline = !state.connected;
   connBanner.className = `conn-banner ${offline ? 'show' : ''}`;
+  // [KULLANICI İSTEĞİ] Bağlantı bandı v3: dönen halka + başlık + tek satır açıklama.
   if (offline) {
-    connBanner.textContent = state.room
-      ? '🔌 Bağlantı koptu — yeniden bağlanılıyor. Sıra sana gelirse sunucu otomatik oynar.'
-      : '🔌 Bağlantı koptu — yeniden bağlanılıyor...';
+    connBanner.replaceChildren(
+      el('span', { class: 'cb-spin' }),
+      el('span', { class: 'cb-text' }, [
+        el('b', {}, 'Bağlantı koptu'),
+        el('span', {}, state.room ? 'Yeniden bağlanılıyor. Sıra sana gelirse sunucu senin yerine oynar.' : 'Yeniden bağlanılıyor…'),
+      ]),
+    );
   }
 }
 
@@ -398,6 +403,35 @@ let everConnected = false;
 // [KULLANICI İSTEĞİ] "Ses seviyesi sadece aç/kapa, kısma yok." Düğme artık ikiye ayrıldı:
 // hoparlör ikonu sesi kapatır/açar, yanındaki oka basınca küçük bir panelde kaydırıcı açılır.
 // Panel state tutmuyor — değer sfx.js içinde kalıcı, bu yüzden her açılışta oradan okunuyor.
+// [KULLANICI İSTEĞİ] "Header'daki butonlar çok kötü ve basit duruyor" — üst bar v2: emoji yerine
+// tek çizgi ağırlığında SVG ikonlar, segmentli nav, durum çipleri, avatar + hesap menüsü.
+const TB_ICONS = {
+  leave: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  players: '<path d="M3 3v18h18"/><path d="M7 16v-4"/><path d="M12 16V8"/><path d="M17 16v-6"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  login: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+  spk: '<path d="M11 5 6 9H2v6h4l5 4V5z"/>',
+  w1: '<path d="M15.5 8.5a5 5 0 0 1 0 7"/>',
+  w2: '<path d="M19 5a10 10 0 0 1 0 14"/>',
+  mute: '<path d="m22 9-6 6"/><path d="m16 9 6 6"/>',
+};
+const tbSvg = (paths, size = 16) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+function tbIco(name, size = 16) {
+  const s = document.createElement('span');
+  s.className = 'tb-ico';
+  s.innerHTML = tbSvg(TB_ICONS[name], size);
+  return s;
+}
+function initialsOf(name) {
+  const parts = String(name || '?').trim().split(/\s+/);
+  return ((parts[0] || '?')[0] + ((parts[1] || '')[0] || '')).toLocaleUpperCase('tr-TR');
+}
+
 let sfxBtn = null;
 let sfxPop = null;
 let sfxRange = null;
@@ -416,7 +450,7 @@ function ensureSfxButton() {
     type: 'button', class: 'sfx-vol-btn', 'data-sfx': 'off',
     title: 'Ses seviyesi', 'aria-label': 'Ses seviyesi',
     onclick: (e) => { e.stopPropagation(); toggleSfxPop(); },
-  }, '▾');
+  }, tbIco('chev', 13));
 
   sfxRange = el('input', {
     type: 'range', min: '0', max: '100', step: '5', class: 'sfx-range',
@@ -440,7 +474,7 @@ function ensureSfxButton() {
   ]);
 
   const wrap = el('div', { class: 'sfx-wrap' }, [sfxBtn, volBtn, sfxPop]);
-  host.parentElement.appendChild(wrap);
+  host.after(wrap);
 
   // Panel dışına tıklayınca kapansın (tek kez bağlanır).
   document.addEventListener('click', () => { if (sfxPop) sfxPop.classList.remove('open'); });
@@ -456,7 +490,7 @@ function syncSfxButton() {
   if (!sfxBtn) return;
   const vol = sfx.getVolume();
   const on = sfx.isEnabled() && vol > 0;
-  sfxBtn.textContent = !on ? '🔇' : vol < 0.35 ? '🔈' : vol < 0.7 ? '🔉' : '🔊';
+  sfxBtn.innerHTML = tbSvg(TB_ICONS.spk + (!on ? TB_ICONS.mute : TB_ICONS.w1 + (vol >= 0.5 ? TB_ICONS.w2 : '')), 17);
   sfxBtn.classList.toggle('off', !on);
   if (sfxRange) sfxRange.value = String(Math.round(vol * 100));
   if (sfxPop) {
@@ -483,13 +517,62 @@ function bindUiClickSound() {
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] Üst bar butonunu giriş durumuna
 // göre günceller — misafirken sayfaya götürür, giriş yapılmışken tıklanınca doğrudan çıkış yapar
 // (ayrı bir "hesabım" sayfası bu fazda yok, sadece giriş/kayıt/çıkış).
+let acctMenu = null;
+let acctMenuBound = false;
+function closeAcctMenu() {
+  if (acctMenu) acctMenu.classList.remove('open');
+  authNavBtn.setAttribute('aria-expanded', 'false');
+}
 function updateAuthNav() {
-  if (state.user) {
-    authNavBtn.textContent = `👤 ${state.user.displayName} · Çıkış Yap`;
-    authNavBtn.onclick = () => actions.logout();
-  } else {
-    authNavBtn.textContent = '🔑 Giriş Yap';
+  authNavBtn.replaceChildren();
+  authNavBtn.classList.toggle('tb-cta', !state.user);
+  authNavBtn.classList.toggle('tb-acct', !!state.user);
+  if (!state.user) {
+    if (acctMenu) { acctMenu.remove(); acctMenu = null; }
+    authNavBtn.removeAttribute('aria-haspopup');
+    authNavBtn.removeAttribute('aria-expanded');
+    authNavBtn.title = 'Giriş yap veya kayıt ol';
+    authNavBtn.append(tbIco('login'), el('span', {}, 'Giriş Yap'));
     authNavBtn.onclick = () => navigateToPage(state.page === 'login' ? null : 'login');
+    return;
+  }
+  const u = state.user;
+  authNavBtn.title = u.displayName;
+  authNavBtn.setAttribute('aria-haspopup', 'menu');
+  authNavBtn.append(el('span', { class: 'tb-avatar' }, initialsOf(u.displayName)), el('span', { class: 'tb-acct-name' }, u.displayName), tbIco('chev', 14));
+  if (!acctMenu) {
+    acctMenu = el('div', { class: 'tb-menu', role: 'menu', onclick: (e) => e.stopPropagation() });
+    authNavBtn.parentElement.appendChild(acctMenu);
+  }
+  const item = (icon, label, fn, cls = '') => el('button', {
+    type: 'button', class: `tb-menu-item ${cls}`, role: 'menuitem',
+    onclick: () => { closeAcctMenu(); fn(); },
+  }, [tbIco(icon), el('span', {}, label)]);
+  acctMenu.replaceChildren(
+    el('div', { class: 'tb-menu-head' }, [
+      el('span', { class: 'tb-avatar lg' }, initialsOf(u.displayName)),
+      el('div', { class: 'tb-menu-id' }, [
+        el('div', { class: 'tb-menu-name' }, u.displayName),
+        u.email ? el('div', { class: 'tb-menu-mail' }, u.email) : null,
+      ]),
+    ]),
+    el('div', { class: `tb-menu-state ${u.emailVerified ? 'ok' : 'wait'}` }, u.emailVerified ? 'E-posta doğrulandı' : 'Onay bekliyor'),
+    item('user', 'Hesabım', () => navigateToPage('login')),
+    item('gift', 'Günlük Ödül', () => navigateToPage('dailyReward')),
+    el('div', { class: 'tb-menu-sep' }),
+    item('logout', 'Çıkış Yap', () => actions.logout(), 'danger'),
+  );
+  authNavBtn.onclick = (e) => {
+    e.stopPropagation();
+    const open = !acctMenu.classList.contains('open');
+    if (sfxPop) sfxPop.classList.remove('open');
+    acctMenu.classList.toggle('open', open);
+    authNavBtn.setAttribute('aria-expanded', String(open));
+  };
+  if (!acctMenuBound) {
+    acctMenuBound = true;
+    document.addEventListener('click', closeAcctMenu);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAcctMenu(); });
   }
 }
 
@@ -498,15 +581,26 @@ function updateTopbar() {
   ensureSfxButton();
   updateConnBanner();
   updateAuthNav();
-  const bits = [];
-  bits.push(state.connected ? '🟢 bağlı' : '🔴 bağlantı yok');
-  if (state.code) bits.push(`Oda: ${state.code}`);
-  if (state.name) bits.push(state.name);
+  const chips = [];
+  chips.push(el('span', {
+    class: `tb-chip conn ${state.connected ? 'on' : 'off'}`,
+    title: state.connected ? 'Sunucuya bağlı' : 'Bağlantı yok — yeniden bağlanılıyor',
+  }, [el('i', { class: 'tb-pulse' }), el('span', { class: 'tb-conn-t' }, state.connected ? 'Canlı' : 'Bağlantı yok')]));
+  if (state.code) {
+    chips.push(el('button', {
+      type: 'button', class: 'tb-chip code', title: 'Oda kodunu kopyala',
+      onclick: () => {
+        if (!navigator.clipboard) return;
+        navigator.clipboard.writeText(state.code).then(() => toast('Oda kodu kopyalandı'), () => {});
+      },
+    }, [el('span', { class: 'tb-chip-k' }, 'Oda'), el('b', {}, state.code), tbIco('copy', 13)]));
+  }
+  if (state.name && state.room) chips.push(el('span', { class: 'tb-chip who' }, [tbIco('user', 13), el('span', {}, state.name)]));
   // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] Çark Modu'nda bütçe hiç kullanılmıyor — üst barda
   // gösterilmesi kafa karıştırıyordu.
   if (state.draft && state.draft.players && state.room && state.room.draftMode !== 'wheel') {
     const me = state.draft.players.find((p) => p.clientId === state.clientId);
-    if (me) bits.push(`💰 ${me.budget}₺`);
+    if (me) chips.push(el('span', { class: 'tb-chip money', title: 'Kalan bütçe' }, [el('span', { class: 'tb-chip-k' }, 'Bütçe'), el('b', {}, `${me.budget}₺`)]));
   }
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] Draft sırasında sürekli aktif kalan
   // perk'ler (anti_snipe_shield/ceiling_reduction/free_backup henüz kullanılmadıysa) unutulmasın
@@ -514,9 +608,9 @@ function updateTopbar() {
   // bir daha bir şey "beklemediği" için burada AYRICA gösterilmiyor.
   if (state.room && state.room.status === 'draft') {
     const mePerk = state.room.players.find((p) => p.clientId === state.clientId)?.prepPerk;
-    if (mePerk && mePerk.active) bits.push(`${mePerk.label}${mePerk.kind === 'free_backup' ? ' (kullanılmadı)' : ''}`);
+    if (mePerk && mePerk.active) chips.push(el('span', { class: 'tb-chip perk', title: 'Aktif perk' }, `${mePerk.label}${mePerk.kind === 'free_backup' ? ' (kullanılmadı)' : ''}`));
   }
-  topbarStatus.textContent = bits.join('  ·  ');
+  topbarStatus.replaceChildren(...chips);
 }
 
 // [KULLANICI İSTEĞİ] "Oyuncu ararken harfler teker teker giriliyor, bir harf girip tekrar
@@ -594,6 +688,8 @@ function route() {
   authNavBtn.classList.toggle('active', state.page === 'login');
   dailyRewardNavBtn.style.display = state.user ? '' : 'none';
   dailyRewardNavBtn.classList.toggle('active', state.page === 'dailyReward');
+  // Bugünkü ücretsiz çevirme henüz kullanılmadıysa küçük amber nokta.
+  dailyRewardNavBtn.classList.toggle('has-dot', !!(state.user && state.dailyReward && state.dailyReward.spinsUsedToday === 0));
   // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
   homeNavBtn.style.display = state.room ? '' : 'none';
 
@@ -728,7 +824,11 @@ const actions = {
     const room = state.room;
     const isActive = room && ['prep_wheel', 'draft', 'squad_select', 'match'].includes(room.status);
     if (isActive) {
-      const ok = window.confirm('Devam eden bir oyundasın. Odadan çıkarsan rakibin oyunda kalır, sen ana sayfaya döneceksin. Emin misin?');
+      const ok = await confirmDialog({
+        title: 'Oyundan çıkılsın mı?',
+        body: 'Devam eden bir oyundasın. Çıkarsan rakibin oyunda kalır, sen ana sayfaya dönersin.',
+        confirmLabel: 'Oyundan Çık', cancelLabel: 'Oyunda Kal', danger: true,
+      });
       if (!ok) return false;
     }
     if (state.code) {

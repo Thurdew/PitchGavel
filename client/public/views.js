@@ -1,6 +1,10 @@
 import { sfx } from './sfx.js';
 import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney } from './helpers.js';
 
+// [KULLANICI İSTEĞİ] v5 — hesap/şifre düğmelerindeki emojiler yerine tek çizgi SVG ikonlar.
+const TICKET_ICONS = {"mail":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"2\"/><path d=\"m3 7 9 6 9-6\"/></svg>","key":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"/><path d=\"m10 17 5-5-5-5\"/><path d=\"M15 12H3\"/></svg>","lock":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/></svg>","gift":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"8\" width=\"18\" height=\"4\" rx=\"1\"/><path d=\"M12 8v13\"/><path d=\"M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7\"/><path d=\"M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5\"/></svg>","spin":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12a9 9 0 1 1-2.64-6.36\"/><path d=\"M21 3v6h-6\"/></svg>"};
+const ticketIco = (name) => el('span', { class: 'ticket-btn-icon', html: TICKET_ICONS[name] });
+
 // [KULLANICI İSTEĞİ] "Oyundayken oyundan çıkmak için bir şey ekle" — üst bardaki genel
 // "🏠 Ana Sayfa" butonuna (bkz. index.html/app.js) ek olarak, oyunun İÇİNDEYKEN (draft/dizilim)
 // bağlamsal bir çıkış kontrolü — actions.leaveRoom() zaten devam eden bir oyunda onay istiyor
@@ -9,7 +13,7 @@ function leaveGameButton(actions) {
   return el('button', {
     type: 'button', class: 'btn small secondary',
     onclick: () => actions.leaveRoom(),
-  }, '🚪 Oyundan Çık');
+  }, [el('span', { class: 'btn-ico', html: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>' }), 'Oyundan Çık']);
 }
 
 // ============================== LOBBY ==============================
@@ -77,24 +81,48 @@ export function draftHistoryPanel(state, { open = false } = {}) {
     open: state.draftUi.historyOpen ? '' : undefined,
     ontoggle: (e) => { state.draftUi.historyOpen = e.target.open; },
   }, [
-    el('summary', {}, `Draft Geçmişi (${items.length} tur)`),
+    el('summary', {}, [
+      el('span', { class: 'sq-sum-title' }, 'Draft Geçmişi'),
+      el('span', { class: 'dht-sum' }, `${items.length} tur`),
+      el('span', { class: 'pwc-chev', html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' }),
+    ]),
     items.length === 0
       ? el('div', { class: 'muted', style: 'margin-top:10px' }, 'Henüz tamamlanmış bir tur yok.')
-      : el('div', { class: 'dh-wrap' }, [
-          el('div', { class: 'dh-totals' }, Object.keys(spent).map((id) => el('div', { class: `dh-total ${id === state.clientId ? 'me' : ''}` }, [
-            el('span', { class: 'dh-total-name' }, nameOf(id) + (id === state.clientId ? ' (sen)' : '')),
-            el('span', { class: 'dh-total-v' }, fmtMoney(spent[id])),
-          ]))),
-          el('div', { class: 'dh-list' }, items.map((h) => el('div', { class: `dh-row ${h.clientId === state.clientId ? 'me' : ''}` }, [
-            el('span', { class: `pos-badge pos-${slotGroup(h.slot || (h.player && h.player.position) || 'CM')}` }, h.slot || (h.player && h.player.position) || '—'),
-            el('span', { class: 'dh-player' }, [
-              el('b', {}, h.player ? h.player.name : '—'),
-              el('span', { class: 'dh-rating' }, h.player ? String(h.player.rating) : ''),
-            ]),
-            el('span', { class: 'dh-buyer' }, nameOf(h.clientId) + (h.clientId === state.clientId ? ' (sen)' : '')),
-            el('span', { class: `dh-price ${!h.price ? 'free' : ''}` }, h.price ? fmtMoney(h.price) : (h.band ? h.band : 'ücretsiz')),
-          ]))),
+      : draftTimeline(items, state, nameOf, spent),
+  ]);
+}
+
+// [KULLANICI İSTEĞİ] "Draft geçmişi: kim kimi kaça aldı zaman çizelgesi" — dikey çizelge: her
+// tur bir düğüm (tur numarası), alıcı kendi rengiyle; fiyat, turun en pahalı alımına göre bir
+// çubukla. Üstte renk anahtarı olarak kişi başı toplam harcama.
+const DHT_COLORS = ['#ff9500', '#22d3ee', '#22c55e', '#c084fc', '#3b82f6', '#fb4155', '#eab308', '#f97316'];
+function draftTimeline(items, state, nameOf, spent) {
+  const ids = (state.room?.players || []).map((p) => p.clientId);
+  const colorOf = (id) => DHT_COLORS[Math.max(0, ids.indexOf(id)) % DHT_COLORS.length];
+  const maxPrice = Math.max(1, ...items.map((h) => h.price || 0));
+  const total = items.length;
+  return el('div', { class: 'dht' }, [
+    el('div', { class: 'dht-legend' }, ids.map((id) => el('span', { class: `dht-key ${id === state.clientId ? 'me' : ''}`, style: `--c:${colorOf(id)}` }, [
+      el('i', {}), el('span', {}, nameOf(id) + (id === state.clientId ? ' (sen)' : '')), el('b', {}, fmtMoney(spent[id] || 0)),
+    ]))),
+    el('div', { class: 'dht-list' }, items.map((h, i) => {
+      const pos = h.slot || (h.player && h.player.position) || '—';
+      return el('div', { class: `dht-row ${h.clientId === state.clientId ? 'me' : ''}`, style: `--c:${colorOf(h.clientId)}` }, [
+        el('span', { class: 'dht-node' }, String(total - i)),
+        el('div', { class: 'dht-card' }, [
+          el('div', { class: 'dht-main' }, [
+            el('span', { class: `pos-badge pos-${slotGroup(pos === '—' ? 'CM' : pos)}` }, pos),
+            el('b', { class: 'dht-player' }, h.player ? h.player.name : '—'),
+            el('span', { class: 'dht-rating' }, h.player ? String(h.player.rating) : ''),
+          ]),
+          el('div', { class: 'dht-sub' }, [
+            el('span', { class: 'dht-buyer' }, [el('i', {}), nameOf(h.clientId) + (h.clientId === state.clientId ? ' (sen)' : '')]),
+            el('span', { class: 'dht-bar' }, el('i', { style: `width:${h.price ? Math.max(6, (h.price / maxPrice) * 100) : 0}%` })),
+            el('span', { class: `dht-price ${!h.price ? 'free' : ''}` }, h.price ? fmtMoney(h.price) : (h.band ? h.band : 'ücretsiz')),
+          ]),
         ]),
+      ]);
+    })),
   ]);
 }
 
@@ -104,12 +132,19 @@ function renderQuickMatchSearching(state, actions) {
   const modeLabels = { live: '⏱️ Canlı Açık Arttırma', blind: '🙈 Kör Draft' };
   const poolLabels = { all: '🌍 Tüm Ligler', 'super-lig': '🇹🇷 Süper Lig' };
   const mm = state.matchmaking;
+  // [KULLANICI İSTEĞİ] Rakip aranıyor v3: logonun etrafında dalgalanan radar halkaları, seçilen
+  // mod/havuz çipleri, altında sade bir iptal düğmesi.
   return el('div', { class: 'view' }, [
-    el('div', { class: 'panel', style: 'text-align:center' }, [
-      el('h2', {}, '🔎 Rakip aranıyor...'),
-      el('p', { class: 'muted' }, `${modeLabels[mm.draftMode] || mm.draftMode} · ${poolLabels[mm.playerPool] || mm.playerPool}`),
-      el('p', { class: 'muted' }, 'Aynı tercihlerde bekleyen biri bulununca draft otomatik başlayacak — host/hazır onayı gerekmiyor.'),
-      el('button', { class: 'btn secondary', style: 'margin-top:12px', onclick: () => actions.cancelQuickMatch() }, 'İptal Et'),
+    el('div', { class: 'panel qm-panel' }, [
+      el('div', { class: 'qm-radar' }, [el('i', {}), el('i', {}), el('i', {}), el('img', { src: '/assets/icon.png', alt: '' })]),
+      el('span', { class: 'qm-kicker' }, 'Hızlı maç'),
+      el('h2', { class: 'qm-title' }, 'Rakip aranıyor'),
+      el('div', { class: 'qm-chips' }, [
+        el('span', { class: 'qm-chip' }, stripEmoji(modeLabels[mm.draftMode] || mm.draftMode)),
+        el('span', { class: 'qm-chip' }, stripEmoji(poolLabels[mm.playerPool] || mm.playerPool)),
+      ]),
+      el('p', { class: 'qm-note' }, 'Aynı tercihlerde bekleyen biri bulununca draft kendiliğinden başlar. Hazır onayı gerekmez.'),
+      el('button', { class: 'btn secondary qm-cancel', onclick: () => actions.cancelQuickMatch() }, 'Aramayı İptal Et'),
     ]),
   ]);
 }
@@ -494,7 +529,7 @@ export function renderVerifyGate({ state, actions }) {
   });
   const resendLabel = el('span', { class: 'ticket-btn-label' }, 'Tekrar Gönder');
   const resendBtn = el('button', { class: 'btn ticket-btn', type: 'button' }, [
-    el('span', { class: 'ticket-btn-icon' }, '📧'), resendLabel,
+    ticketIco('mail'), resendLabel,
   ]);
   resendBtn.onclick = async () => {
     if (resendBtn.disabled) return;
@@ -607,7 +642,7 @@ function renderPasswordRecovery({ state, actions }) {
       el('p', { class: 'muted', style: 'margin:0' }, 'Yeni parolanı belirle. Kaydedince bu cihazda giriş yapmış olacaksın; diğer cihazlardaki oturumların kapatılır.'),
       authField('Yeni parola', el('span', { class: 'pw-wrap' }, [pw, toggle]), 'en az 8 karakter'),
       el('button', { class: 'btn block ticket-btn', type: 'submit' }, [
-        el('span', { class: 'ticket-btn-icon' }, '🔒'), el('span', { class: 'ticket-btn-label' }, 'Parolayı Kaydet'),
+        ticketIco('lock'), el('span', { class: 'ticket-btn-label' }, 'Parolayı Kaydet'),
       ]),
       el('div', { class: 'auth-switch' }, [
         el('span', {}, 'Link çalışmıyor mu?'),
@@ -638,7 +673,7 @@ function renderPasswordRecovery({ state, actions }) {
       el('p', { class: 'muted', style: 'margin:0' }, 'Hesabının e-postasını yaz, sana yeni parola belirleyebileceğin bir link gönderelim.'),
       authField('E-posta', emailInput),
       el('button', { class: 'btn block ticket-btn', type: 'submit' }, [
-        el('span', { class: 'ticket-btn-icon' }, '📧'), el('span', { class: 'ticket-btn-label' }, 'Sıfırlama Linki Gönder'),
+        ticketIco('mail'), el('span', { class: 'ticket-btn-label' }, 'Sıfırlama Linki Gönder'),
       ]),
       el('div', { class: 'auth-switch' }, [
         el('span', {}, 'Parolanı hatırladın mı?'),
@@ -698,7 +733,7 @@ export function renderLogin({ state, actions }) {
           // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] Bilgilendirici bir hatırlatma —
           // doğrulanmışsa hiç gösterilmiyor (temiz kalsın), doğrulanmamışsa tekrar gönder düğmesi.
           state.user.emailVerified ? null : el('div', { class: 'acct-verify' }, [
-            el('span', { class: 'acct-verify-icon' }, '📧'),
+            el('span', { class: 'acct-verify-icon', html: TICKET_ICONS.mail }),
             el('div', { class: 'acct-verify-text' }, [
               el('strong', {}, 'E-postanı henüz doğrulamadın'),
               el('span', {}, 'Gelmezse spam/gereksiz klasörüne bak.'),
@@ -712,7 +747,7 @@ export function renderLogin({ state, actions }) {
         ]) : null,
         el('div', { class: 'acct-actions' }, [
           el('button', { class: 'btn ticket-btn', onclick: () => actions.navigateToPage('dailyReward') }, [
-            el('span', { class: 'ticket-btn-icon' }, '🎁'), el('span', { class: 'ticket-btn-label' }, 'Günlük Ödül\'e git'),
+            ticketIco('gift'), el('span', { class: 'ticket-btn-label' }, 'Günlük Ödül\'e git'),
           ]),
           el('button', { class: 'btn secondary', onclick: () => actions.logout() }, 'Çıkış Yap'),
         ]),
@@ -798,7 +833,7 @@ export function renderLogin({ state, actions }) {
       nameInput,
     ]) : null,
     el('button', { class: 'btn block ticket-btn', type: 'submit' }, [
-      el('span', { class: 'ticket-btn-icon' }, '🔑'),
+      ticketIco('key'),
       el('span', { class: 'ticket-btn-label' }, isReg ? 'Kayıt Ol' : 'Giriş Yap'),
     ]),
     el('div', { class: 'auth-switch' }, [
@@ -894,7 +929,7 @@ export function renderDailyReward({ state, actions }) {
           el('div', { class: 'dr-chips' }, segs.map((s) => el('span', { class: 'dr-chip' }, s.label))),
         ]) : null,
         el('button', { class: 'btn ticket-btn', style: 'align-self:flex-start', onclick: () => actions.navigateToPage('login') }, [
-          el('span', { class: 'ticket-btn-icon' }, '🔑'), el('span', { class: 'ticket-btn-label' }, 'Giriş Yap / Kayıt Ol'),
+          ticketIco('key'), el('span', { class: 'ticket-btn-label' }, 'Giriş Yap / Kayıt Ol'),
         ]),
       ]),
     ]));
@@ -903,7 +938,7 @@ export function renderDailyReward({ state, actions }) {
 
   if (!state.dailyReward) {
     actions.fetchDailyReward().then(() => actions.route());
-    root.appendChild(el('div', { class: 'panel' }, 'Yükleniyor...'));
+    root.appendChild(loadingPanel('Yükleniyor...'));
     return root;
   }
 
@@ -978,7 +1013,7 @@ export function renderDailyReward({ state, actions }) {
           disabled: !canSpin ? true : undefined,
           onclick: () => { state.dailyRewardLastWin = null; actions.spinDailyReward(); },
         }, [
-          el('span', { class: 'ticket-btn-icon' }, '🎡'),
+          ticketIco('spin'),
           el('span', { class: 'ticket-btn-label' }, canSpin ? 'Çevir' : 'Yarın tekrar gel'),
         ]),
       ]),
@@ -1192,22 +1227,40 @@ export function renderWaitingRoom({ state, actions }) {
 // (açıklamalarıyla) eklendi — kullanıcı çevirmeden ÖNCE bile neyin ne yaptığını bilsin.
 function prepWheelCatalog(state) {
   const catalog = state.config?.PREP_WHEEL_SEGMENTS || [];
-  const poolMeta = { iyi: '🟢 İyi', orta: '🟠 Nötr', kötü: '🔴 Kötü' };
+  // [KULLANICI İSTEĞİ] Katalog v3: özet satırında havuz başına sayı, açılınca üç sütun; her perk
+  // kartında çıkma ihtimali (ağırlıklardan, sunucuyla aynı dağılım).
+  const poolMeta = { iyi: ['İyi', 'good'], orta: ['Nötr', 'accent'], kötü: ['Kötü', 'danger'] };
   const isBlind = state.room?.draftMode === 'blind';
+  const visible = catalog.filter((s) => isBlind || s.kind !== 'spy');
+  const totalW = visible.reduce((a, s) => a + (s.weight || 0), 0) || 1;
+  const pct = (w) => `%${Math.round((w / totalW) * 100)}`;
   const groups = ['iyi', 'orta', 'kötü'].map((poolKey) => {
-    const items = catalog.filter((s) => s.pool === poolKey && (isBlind || s.kind !== 'spy'));
+    const items = visible.filter((s) => s.pool === poolKey);
     if (items.length === 0) return null;
-    return el('div', { class: 'prep-wheel-catalog-group' }, [
-      el('div', { class: 'prep-wheel-catalog-group-label' }, poolMeta[poolKey]),
-      ...items.map((s) => el('div', { class: 'prep-wheel-catalog-item' }, [
-        el('div', { class: 'prep-wheel-catalog-item-label' }, s.label),
-        el('div', { class: 'prep-wheel-catalog-item-desc' }, s.description),
-      ])),
+    const [name, tone] = poolMeta[poolKey];
+    const poolW = items.reduce((a, s) => a + (s.weight || 0), 0);
+    return el('div', { class: `pwc-col pool-${tone}` }, [
+      el('div', { class: 'pwc-col-head' }, [el('span', {}, name), el('span', { class: 'pwc-col-pct' }, pct(poolW))]),
+      ...items.map((s) => {
+        const m = String(s.label).match(/^(\p{Extended_Pictographic}️?)\s*(.*)$/u);
+        return el('div', { class: 'pwc-card' }, [
+          el('span', { class: 'pwc-emoji' }, m ? m[1] : '•'),
+          el('div', { class: 'pwc-body' }, [
+            el('div', { class: 'pwc-name' }, [el('span', {}, m ? m[2] : s.label), el('span', { class: 'pwc-pct' }, pct(s.weight || 0))]),
+            el('div', { class: 'pwc-desc' }, s.description),
+          ]),
+        ]);
+      }),
     ]);
   }).filter(Boolean);
-  return el('details', { class: 'prep-wheel-catalog panel' }, [
-    el('summary', {}, `🎡 Olası Perk'ler (${catalog.length - (isBlind ? 0 : 1)} tane) — neler çıkabilir?`),
-    ...groups,
+  const counts = ['iyi', 'orta', 'kötü'].map((k) => [k, visible.filter((s) => s.pool === k).length]).filter(([, n]) => n > 0);
+  return el('details', { class: 'prep-wheel-catalog v3 panel' }, [
+    el('summary', {}, [
+      el('span', { class: 'pwc-sum-title' }, 'Çarkta neler var?'),
+      el('span', { class: 'pwc-sum-pools' }, counts.map(([k, n]) => el('span', { class: `pwc-pill pool-${poolMeta[k][1]}` }, `${n} ${poolMeta[k][0].toLocaleLowerCase('tr-TR')}`))),
+      el('span', { class: 'pwc-chev', html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' }),
+    ]),
+    el('div', { class: 'pwc-grid' }, groups),
   ]);
 }
 
@@ -1275,9 +1328,10 @@ export function renderPrepWheel({ state, actions }) {
 
 
     root.appendChild(el('div', { class: 'panel' }, [
-      el('div', { class: `wheel-turn-banner ${isMine ? 'mine' : ''}` },
-        !revealReady ? `🎡 ${spinnerName}${isMine ? ' (sen)' : ''} çeviriyor...` : `🎯 ${spin.perk.label} çıktı!`),
-      stage,
+      wheelBannerEl(!revealReady
+        ? { kicker: 'Canlı', title: `${spinnerName}${isMine ? ' (sen)' : ''} çeviriyor…`, mine: isMine }
+        : { kicker: 'Sonuç', title: `${stripEmoji(spin.perk.label)} çıktı!`, mine: isMine, pool: spin.perk.pool }),
+      wheelFrameEl(stage, { landed: revealReady, pool: spin.perk.pool }),
     ]));
     return root; // animasyon bitene kadar aşağıdaki normal tur/sıra ekranı hiç gösterilmiyor
   }
@@ -1289,7 +1343,7 @@ export function renderPrepWheel({ state, actions }) {
     const nominalMs = (state.config?.PREP_WHEEL_PICK_DURATION_SECONDS || 20) * 1000;
     const tick = () => {
       const left = Math.max(0, deadline - Date.now());
-      timerLabel.textContent = `${(left / 1000).toFixed(1)} sn — süre dolarsa otomatik "risk almadan devam et" seçilir`;
+      timerLabel.textContent = `${(left / 1000).toFixed(1)} sn`;
       timerFill.style.width = `${Math.min(100, (left / nominalMs) * 100)}%`;
       timerWrap.classList.toggle('urgent', left <= 5000 && left > 2000);
       timerWrap.classList.toggle('critical', left <= 2000);
@@ -1311,47 +1365,64 @@ export function renderPrepWheel({ state, actions }) {
     ? Object.entries(state.dailyReward.inventory || {}).filter(([, count]) => count > 0).map(([kind, count]) => {
       const seg = prepWheelSegmentsFor(state).find((s) => s.kind === kind);
       return el('button', {
-        class: 'btn secondary', onclick: () => actions.redeemBankedPerk(kind),
-      }, `🎒 ${seg ? seg.label : kind} kullan (${count})`);
+        class: 'btn secondary prep-skip-btn banked', onclick: () => actions.redeemBankedPerk(kind),
+      }, [el('b', {}, `${seg ? stripEmoji(seg.label) : kind} kullan`), el('small', {}, `Envanterden · ×${count}`)]);
     })
     : [];
 
   const turnBody = isMyTurn
     ? [
-        el('div', { class: 'prep-wheel-turn-label' }, 'Sıra sende!'),
-        el('div', { class: 'prep-wheel-actions' }, [
-          el('button', { class: 'btn', onclick: () => actions.spinPrepWheel() }, '🎡 Çevir (risk var)'),
-          el('button', { class: 'btn secondary', onclick: () => actions.skipPrepWheel() }, '⏭ Risk Almadan Devam Et'),
+        wheelBannerEl({ kicker: 'Sıra sende', title: 'Çevir ya da geç', mine: true }),
+        el('div', { class: 'prep-wheel-actions v3' }, [
+          spinButtonEl({ label: 'Çarkı Çevir', sub: 'İyi ya da kötü bir perk gelebilir', onclick: () => actions.spinPrepWheel() }),
+          el('button', { class: 'btn secondary prep-skip-btn', onclick: () => actions.skipPrepWheel() }, [
+            el('b', {}, 'Risk Almadan Geç'), el('small', {}, 'Perk\'siz devam et'),
+          ]),
           ...bankedPerkButtons,
         ]),
         timerWrap,
+        el('div', { class: 'timer-note' }, 'Süre dolarsa otomatik olarak risk almadan geçilir.'),
       ]
     : [
-        el('div', { class: 'prep-wheel-turn-label' }, `Sıra: ${activePlayer ? activePlayer.name : '?'}`),
-        el('div', { class: 'muted' }, 'Kendi sıran gelince buradan çevirebilir ya da atlayabilirsin.'),
+        wheelBannerEl({ kicker: 'Sıra', title: `${activePlayer ? activePlayer.name : '?'} karar veriyor` }),
+        el('div', { class: 'timer-note' }, 'Kendi sıran gelince buradan çevirebilir ya da geçebilirsin.'),
         timerWrap,
       ];
   root.appendChild(el('div', { class: 'panel' }, turnBody));
 
   // [KULLANICI İSTEĞİ] Görünürlük herkese açık — sırayla ilerleyen listede kimin çevirdiği/
   // atladığı, kimin sırasının geldiği, kimin hâlâ beklediği tek bakışta görünüyor.
-  const rows = room.players.map((p) => {
+  // [KULLANICI İSTEĞİ] Sıra listesi numaralı bir adım çizgisine dönüştü: biten adımda çıkan perk
+  // havuz rengiyle, sıradaki kişi amber nabızla, bekleyenler soluk.
+  const segs = prepWheelSegmentsFor(state);
+  const ordered = [...room.players].sort((a, b) => {
+    const ia = order.indexOf(a.clientId); const ib = order.indexOf(b.clientId);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+  const rows = ordered.map((p, i) => {
     const idx = order.indexOf(p.clientId);
     const isDone = idx !== -1 && idx < cursor;
     const isCurrent = p.clientId === activeClientId;
-    let text;
-    if (isCurrent) text = 'Sırası geldi — karar veriyor...';
-    else if (!isDone) text = 'Sırasını bekliyor';
-    else if (p.prepPerk) text = `${p.prepPerk.label}${p.prepPerk.detail ? ' ' + p.prepPerk.detail : ''}`;
-    else text = 'Risk almadan devam etti';
-    return el('div', { class: `prep-wheel-row ${isCurrent ? 'current' : ''}` }, [
-      el('span', {}, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
-      el('span', { class: (isDone || isCurrent) ? '' : 'muted' }, text),
+    const stepState = isCurrent ? 'current' : isDone ? 'done' : 'waiting';
+    let result;
+    if (isCurrent) result = el('span', { class: 'pw-res live' }, 'Karar veriyor…');
+    else if (!isDone) result = el('span', { class: 'pw-res' }, 'Bekliyor');
+    else if (p.prepPerk) {
+      const pool = (segs.find((s) => s.kind === p.prepPerk.kind) || {}).pool || 'orta';
+      result = el('span', { class: `pw-res perk pool-${WHEEL_POOL_TONE[pool] || 'accent'}` }, `${p.prepPerk.label}${p.prepPerk.detail ? ' ' + p.prepPerk.detail : ''}`);
+    } else result = el('span', { class: 'pw-res skip' }, 'Risk almadan geçti');
+    return el('div', { class: `prep-wheel-row v3 ${stepState}` }, [
+      el('span', { class: 'pw-step' }, isDone ? '✓' : String(i + 1)),
+      el('span', { class: 'pw-name' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
+      result,
     ]);
   });
   root.appendChild(el('div', { class: 'panel' }, [
-    el('h3', {}, `Sıra (${cursor}/${room.players.length} tamamlandı)`),
-    ...rows,
+    el('div', { class: 'pw-head' }, [
+      el('h3', {}, 'Sıra'),
+      el('span', { class: 'pw-count' }, `${cursor}/${room.players.length} tamamlandı`),
+    ]),
+    el('div', { class: 'pw-steps' }, rows),
   ]));
 
   return root;
@@ -1518,8 +1589,9 @@ function draftCoach(mode) {
   const open = seen < 3;
   if (open) bumpCoachSeen(seen + 1);
 
-  const body = el('div', { class: 'coach-body' }, TIPS.map(([ico, term, desc]) => el('div', { class: 'coach-tip' }, [
-    el('span', { class: 'coach-ico' }, ico),
+  // [KULLANICI İSTEĞİ] İpuçları v5: emoji yerine numaralı kutu (01, 02…).
+  const body = el('div', { class: 'coach-body' }, TIPS.map(([, term, desc], i) => el('div', { class: 'coach-tip' }, [
+    el('span', { class: 'coach-ico num' }, String(i + 1).padStart(2, '0')),
     el('div', { class: 'coach-text' }, [
       el('b', {}, term),
       el('span', {}, desc),
@@ -1530,6 +1602,7 @@ function draftCoach(mode) {
     el('summary', { class: 'coach-summary' }, [
       el('span', { class: 'coach-badge' }, 'İlk kez mi?'),
       el('span', { class: 'coach-summary-text' }, 'Bu ekrandaki kavramlar'),
+      el('span', { class: 'coach-count' }, `${TIPS.length} ipucu`),
     ]),
     body,
     el('button', {
@@ -1556,9 +1629,9 @@ export function renderDraft({ state, actions }) {
   const iVotedPause = pauseVotes.includes(state.clientId);
   const totalPlayers = state.room.players.length;
   let pauseLabel;
-  if (d.paused) pauseLabel = '▶ Devam Et';
-  else if (iVotedPause) pauseLabel = '⏳ Diğerlerinin onayı bekleniyor — iptal et';
-  else pauseLabel = `⏸ Durdur (${pauseVotes.length}/${totalPlayers})`;
+  if (d.paused) pauseLabel = 'Devam Et';
+  else if (iVotedPause) pauseLabel = 'Onay bekleniyor · iptal';
+  else pauseLabel = 'Durdur';
 
   const isBlindMode = state.room.draftMode === 'blind';
   const isWheelMode = state.room.draftMode === 'wheel';
@@ -1571,31 +1644,60 @@ export function renderDraft({ state, actions }) {
   else if (isWheelMode) modeDescription = '🎡 Çark Modu — bütçe yok, sırayla çark çevirip çıkan banttan ücretsiz seç';
   else modeDescription = 'Canlı açık arttırma — sistem rastgele pozisyon getirir';
 
-  root.appendChild(el('div', { class: 'draft-header' }, [
-    el('div', { class: 'formation-badge' }, `Formasyon: ${d.formation}`),
-    el('div', { class: 'muted' }, modeDescription),
-    isSuperLigMode ? el('div', { class: 'muted' }, '🇹🇷 Tek Lig Modu — havuz Süper Lig + Türk icon\'larla sınırlı') : null,
-    el('button', {
-      class: `btn small ${d.paused || iVotedPause ? 'danger' : 'secondary'}`,
-      onclick: () => actions.togglePause(),
-    }, pauseLabel),
-    leaveGameButton(actions),
+  // [KULLANICI İSTEĞİ] Draft üst bilgisi v3: formasyon ve mod iki etiketli blok; Durdur düğmesi
+  // oy sayısını noktalarla gösteriyor (her oyuncu bir nokta).
+  const [modeName, modeSub] = isBlindMode ? ['Kör Draft', 'Rastgele pozisyon, teklifler gizli']
+    : isWheelMode ? ['Çark Modu', 'Bütçe yok, çıkan banttan ücretsiz seç']
+    : ['Canlı Açık Arttırma', 'Rastgele pozisyon, teklifler açık'];
+  const pauseIco = d.paused ? '<path d="M7 4v16l13-8z"/>' : '<path d="M8 5v14"/><path d="M16 5v14"/>';
+  root.appendChild(el('div', { class: 'draft-header v3' }, [
+    el('div', { class: 'dh-block dh-formation' }, [el('span', { class: 'dh-k' }, 'Formasyon'), el('b', {}, d.formation)]),
+    el('div', { class: 'dh-block dh-mode' }, [
+      el('span', { class: 'dh-k' }, isSuperLigMode ? 'Mod · Tek Lig (Süper Lig)' : 'Mod'),
+      el('b', {}, modeName), el('small', {}, modeSub),
+    ]),
+    el('div', { class: 'dh-actions' }, [
+      el('button', {
+        type: 'button', class: `dh-pause ${d.paused ? 'paused' : ''} ${iVotedPause ? 'voted' : ''}`,
+        title: d.paused ? 'Draft\'ı sürdür' : 'Herkes onaylarsa draft durur',
+        onclick: () => actions.togglePause(),
+      }, [
+        el('span', { class: 'btn-ico', html: `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${pauseIco}</svg>` }),
+        el('span', {}, pauseLabel),
+        d.paused ? null : el('span', { class: 'dh-votes', title: `${pauseVotes.length}/${totalPlayers} oy` },
+          Array.from({ length: totalPlayers }, (_, i) => el('i', { class: i < pauseVotes.length ? 'on' : '' }))),
+      ]),
+      leaveGameButton(actions),
+    ]),
   ]));
 
   root.appendChild(draftCoach(state.room.draftMode));
 
   if (d.paused) {
-    root.appendChild(el('div', { class: 'warning-banner' }, '⏸ Draft duraklatıldı — devam etmek için taraflardan biri "Devam Et"e basmalı.'));
+    root.appendChild(el('div', { class: 'pause-banner', role: 'status' }, [
+      el('span', { class: 'pb-ico', html: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14"/><path d="M16 5v14"/></svg>' }),
+      el('div', { class: 'pb-text' }, [el('b', {}, 'Draft duraklatıldı'), el('span', {}, 'Süre dondu. Taraflardan biri devam ettirene kadar kimse teklif veremez.')]),
+      el('button', { type: 'button', class: 'btn small', onclick: () => actions.togglePause() }, 'Devam Et'),
+    ]));
   }
 
   // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Çark Modunda kullanıcıların parası gözüküyor, o
   // modda para hiç kullanılmıyor" — Çark Modu'nda bütçe hiç değişmiyor (bkz. claude.md "Çark
   // Modu" — tamamen ücretsiz), bu yüzden gösterilmesi kafa karıştırıcıydı.
-  root.appendChild(el('div', { class: 'budget-row' }, d.players.map((p) => el('div', { class: 'budget-card' }, [
-    el('div', { class: 'name' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
-    isWheelMode ? null : el('div', { class: 'budget' }, fmtMoney(p.budget)),
-    el('div', { class: 'slots' }, `${11 - p.remainingSlots}/11 dolduruldu`),
-  ]))));
+  // [KULLANICI İSTEĞİ] Bütçe kartları v3: kendi kartın vurgulu, doluluk 11 dilimli bir çubuk.
+  root.appendChild(el('div', { class: 'budget-row v3' }, d.players.map((p) => {
+    const filled = 11 - p.remainingSlots;
+    const isMe = p.clientId === state.clientId;
+    return el('div', { class: `budget-card v3 ${isMe ? 'me' : ''}` }, [
+      el('div', { class: 'bc-top' }, [
+        el('span', { class: 'name' }, p.name),
+        isMe ? el('span', { class: 'bc-me' }, 'sen') : null,
+      ]),
+      isWheelMode ? null : el('div', { class: 'budget' }, fmtMoney(p.budget)),
+      el('div', { class: 'bc-slots' }, Array.from({ length: 11 }, (_, i) => el('i', { class: i < filled ? 'on' : '' }))),
+      el('div', { class: 'slots' }, `${filled}/11 oyuncu`),
+    ]);
+  })));
 
   const roundPanel = el('div', { class: 'panel round-area' });
   const round = d.round;
@@ -1612,10 +1714,13 @@ export function renderDraft({ state, actions }) {
   if (resultEvent) {
     roundPanel.appendChild(renderRoundResultPanel(resultEvent, state));
   } else if (!round) {
-    roundPanel.appendChild(el('div', { class: 'muted' }, 'Sıradaki tur hazırlanıyor...'));
+    roundPanel.appendChild(waitingLine('Sıradaki tur hazırlanıyor'));
   } else if (round.kind === 'one_sided') {
-    roundPanel.appendChild(el('h3', {}, `Tek taraflı ihtiyaç — ${round.slotType}`));
-    roundPanel.appendChild(playerCard(round.main, { slot: round.slotType, tag: 'Rakipsiz atandı' }));
+    // [KULLANICI İSTEĞİ] Tek taraflı atama v5: durum bandı + ana kart düzeni + bekleme satırı.
+    roundPanel.appendChild(wheelBannerEl({ kicker: 'Rakipsiz', title: `${round.slotType} pozisyonu` }));
+    roundPanel.appendChild(el('p', { class: 'one-sided-note' }, 'Bu pozisyona sadece bir oyuncunun ihtiyacı var. Açık arttırma açılmadan, sabit ücretle atanıyor.'));
+    roundPanel.appendChild(el('div', { class: 'reveal-row' }, [playerCard(round.main, { slot: round.slotType, extraClass: 'main', tag: 'Rakipsiz atanıyor' })]));
+    roundPanel.appendChild(waitingLine('Sıradaki tur hazırlanıyor'));
   } else if (round.kind === 'wheel') {
     roundPanel.appendChild(renderWheelRound({ state, actions, round, paused: d.paused }));
   } else {
@@ -1624,7 +1729,10 @@ export function renderDraft({ state, actions }) {
       ? `Kör Teklif — ${round.slotType} pozisyonu`
       : `Açık Arttırma — ${round.slotType} pozisyonu`));
     if (round.bigGap) {
-      roundPanel.appendChild(el('div', { class: 'big-gap-badge' }, '⚡ Sürpriz pozisyon — ana ve yedek arasında uçurum var!'));
+      roundPanel.appendChild(el('div', { class: 'big-gap-badge v5' }, [
+        el('span', { class: 'bg-ico', html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>' }),
+        el('span', { class: 'bg-text' }, [el('b', {}, 'Sürpriz pozisyon'), el('span', {}, 'Ana oyuncu ile bir alttaki arasında büyük reyting farkı var. Bu turu kaçırmanın bedeli yüksek.')]),
+      ]));
     }
 
     const timerLabel = el('div', { class: 'timer-label' }, '—');
@@ -1718,21 +1826,24 @@ export function renderDraft({ state, actions }) {
     const spyActive = isBlind && myRoomPlayer && myRoomPlayer.prepPerk && myRoomPlayer.prepPerk.kind === 'spy'
       && myRoomPlayer.prepPerk.active && (round.participantIds || []).includes(state.clientId);
     if (spyActive) {
-      const peekResult = el('div', { class: 'muted', style: 'margin-top:6px;white-space:pre-line' }, '');
+      const peekResult = el('div', { class: 'spy-result' });
       const peekBtn = el('button', {
-        class: 'btn small secondary',
+        type: 'button', class: 'spy-btn',
         onclick: async () => {
           const res = await actions.peekBids();
           if (res && res.ok) {
-            peekResult.textContent = Object.entries(res.bids).map(([id, amt]) => {
+            peekResult.replaceChildren(el('span', { class: 'spy-k' }, 'Gözcü raporu · şu anki teklifler'), ...Object.entries(res.bids).map(([id, amt]) => {
               const name = (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
-              return `${name}: ${amt != null ? fmtMoney(amt) : 'henüz teklif yok'}`;
-            }).join('\n');
+              return el('div', { class: 'spy-row' }, [el('span', {}, name), el('b', { class: amt != null ? '' : 'none' }, amt != null ? fmtMoney(amt) : 'teklif yok')]);
+            }));
             peekBtn.remove(); // bir kereye mahsus — sunucu zaten NO_SPY_AVAILABLE döner ama UI'dan da kaldıralım
           }
         },
-      }, '👁️ Gözcü: Teklifleri Gör (bir kerelik hak)');
-      roundPanel.appendChild(el('div', { style: 'text-align:center;margin-top:8px' }, [peekBtn, peekResult]));
+      }, [
+        el('span', { class: 'spy-ico', html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>' }),
+        el('span', { class: 'spy-label' }, [el('b', {}, 'Gözcü: teklifleri gör'), el('small', {}, 'Bir kerelik hak · sadece sen görürsün')]),
+      ]);
+      roundPanel.appendChild(el('div', { class: 'spy-wrap' }, [peekBtn, peekResult]));
     }
 
     const me = d.players.find((p) => p.clientId === state.clientId);
@@ -1784,18 +1895,18 @@ export function renderDraft({ state, actions }) {
         if (next && guardEl.parentNode) { guardEl.replaceWith(next); guardEl = next; }
       });
       roundPanel.appendChild(el('div', { class: 'bid-panel sticky-mobile' }, [
-        el('div', { class: 'bid-current' }, [
-          el('div', {}, state.blindBidUi.myAmount != null
-            ? ['Kilitlediğin teklif: ', el('b', {}, fmtMoney(state.blindBidUi.myAmount))]
-            : 'Henüz teklif kilitlemedin'),
-          el('div', { class: 'bid-leaderboard', style: 'margin-top:8px' }, others.map((o) => {
-            const locked = submittedIds.includes(o.clientId);
-            return el('div', { class: `bid-leaderboard-row ${locked ? 'leading' : ''}` }, [
-              el('span', {}, o.name),
-              el('span', {}, locked ? 'Kilitledi ✅' : 'Bekleniyor ⏳'),
-            ]);
-          })),
+        el('div', { class: 'bid-head' }, [
+          el('div', { class: 'bid-current v3' }, [
+            el('span', { class: 'bid-k' }, 'Kilitlediğin teklif'),
+            state.blindBidUi.myAmount != null ? el('b', {}, fmtMoney(state.blindBidUi.myAmount)) : el('b', { class: 'none' }, 'Henüz yok'),
+          ]),
+          el('div', { class: 'bid-cap-box' }, [el('span', { class: 'bid-k' }, 'Tavanın'), el('b', {}, fmtMoney(cap))]),
         ]),
+        el('div', { class: 'bid-locks' }, others.map((o) => {
+          const locked = submittedIds.includes(o.clientId);
+          return el('span', { class: `bid-lock ${locked ? 'on' : ''}` }, [el('i', {}), o.name, el('small', {}, locked ? 'kilitledi' : 'düşünüyor')]);
+        })),
+        quickBidChips({ input: bidInput, min: minAmount, cap, step: 10, disabled: d.paused }),
         el('div', { class: 'bid-form' }, [
           bidInput,
           el('button', {
@@ -1845,12 +1956,17 @@ export function renderDraft({ state, actions }) {
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Diğer kullanıcıların ne kadar teklif verdiğini
       // göster her seferinde" — canlı modda miktarlar zaten gizli değil, bu yüzden HERKESİN o
       // anki teklifi (verdiyse) anlık olarak listelenir, sadece en yüksek teklif değil.
+      // [KULLANICI İSTEĞİ] Teklif paneli v3: her katılımcının teklifi en yüksek teklife oranla bir
+      // çubukla gösteriliyor (kim ne kadar geride, tek bakışta).
       const liveBids = round.bids || {};
-      const leaderboard = el('div', { class: 'bid-leaderboard', style: 'margin-top:8px' }, participants.map((p) => {
+      const maxBid = Math.max(1, ...participants.map((p) => liveBids[p.clientId] || 0));
+      const leaderboard = el('div', { class: 'bid-leaderboard v3' }, participants.map((p) => {
         const amt = liveBids[p.clientId];
-        return el('div', { class: `bid-leaderboard-row ${p.clientId === round.highestBidderClientId ? 'leading' : ''}` }, [
-          el('span', {}, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
-          el('span', {}, amt != null ? fmtMoney(amt) : '—'),
+        const lead = p.clientId === round.highestBidderClientId;
+        return el('div', { class: `bid-leaderboard-row ${lead ? 'leading' : ''} ${p.clientId === state.clientId ? 'me' : ''}` }, [
+          el('span', { class: 'bl-bar', style: `width:${amt != null ? Math.max(4, (amt / maxBid) * 100) : 0}%` }),
+          el('span', { class: 'bl-name' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
+          el('span', { class: 'bl-amt' }, amt != null ? fmtMoney(amt) : '—'),
         ]);
       }));
 
@@ -1866,10 +1982,16 @@ export function renderDraft({ state, actions }) {
         if (next && guardEl.parentNode) { guardEl.replaceWith(next); guardEl = next; }
       });
       roundPanel.appendChild(el('div', { class: 'bid-panel sticky-mobile' }, [
-        el('div', { class: 'bid-current' }, round.highestBid > 0
-          ? ['Güncel en yüksek teklif: ', bidAmountEl, ` (${bidderName})`]
-          : 'Henüz teklif yok'),
+        el('div', { class: 'bid-head' }, [
+          el('div', { class: 'bid-current v3' }, [
+            el('span', { class: 'bid-k' }, 'En yüksek teklif'),
+            round.highestBid > 0 ? bidAmountEl : el('b', { class: 'none' }, 'Teklif yok'),
+            bidderName ? el('span', { class: `bid-who ${round.highestBidderClientId === state.clientId ? 'me' : ''}` }, round.highestBidderClientId === state.clientId ? 'Sende' : bidderName) : null,
+          ]),
+          el('div', { class: 'bid-cap-box' }, [el('span', { class: 'bid-k' }, 'Tavanın'), el('b', {}, fmtMoney(cap))]),
+        ]),
         leaderboard,
+        quickBidChips({ input: bidInput, min: minNext, cap, step: state.config?.MIN_RAISE || 5, disabled: d.paused }),
         el('div', { class: 'bid-form' }, [
           bidInput,
           el('button', {
@@ -1896,17 +2018,38 @@ export function renderDraft({ state, actions }) {
   // alındı (prep çark kataloğundaki `<details>` deseniyle aynı). Açık/kapalı tercihi
   // `state.draftUi`'de tutuluyor ki route() her socket broadcast'inde DOM'u sıfırdan kursa bile
   // (draft sırasında bu çok sık olur) kullanıcının seçimi bir sonraki broadcast'te kaybolmasın.
+  // [KULLANICI İSTEĞİ] "Draft sırasında kendi kadromun mini saha görünümü" — formasyona göre
+  // dolu/boş mevkiler; bu turun mevkisi hâlâ boşsa amber nabızla işaretli.
+  const meDraft = d.players.find((p) => p.clientId === state.clientId);
+  if (meDraft && d.formation && state.config?.FORMATIONS?.[d.formation]) {
+    root.appendChild(draftMiniPitch({ state, formation: d.formation, squad: meDraft.squad, focusSlot: round && !resultEvent ? round.slotType : null }));
+  }
+
   if (!state.draftUi) state.draftUi = { squadsOpen: false };
+  // [KULLANICI İSTEĞİ] Kadrolar paneli v3: özet satırında herkesin doluluk sayacı; açılınca her
+  // oyuncu kendi sütununda, başlıkta ortalama reyting.
+  const avgOf = (sq) => sq.length ? Math.round(sq.reduce((a, s) => a + s.player.rating, 0) / sq.length) : null;
   root.appendChild(el('details', {
-    class: 'panel',
+    class: 'panel squads-panel',
     open: state.draftUi.squadsOpen ? '' : undefined,
     ontoggle: (e) => { state.draftUi.squadsOpen = e.target.open; },
   }, [
-    el('summary', {}, 'Kadrolar'),
-    ...d.players.map((p) => el('div', { style: 'margin-bottom:14px' }, [
-      el('div', { style: 'font-weight:700;margin-bottom:6px' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
-      el('div', { class: 'squad-grid' }, p.squad.map((s) => squadChip(s))),
-    ])),
+    el('summary', {}, [
+      el('span', { class: 'sq-sum-title' }, 'Kadrolar'),
+      el('span', { class: 'sq-sum-list' }, d.players.map((p) => el('span', { class: `sq-sum-pill ${p.clientId === state.clientId ? 'me' : ''}` }, [
+        p.name, el('b', {}, `${p.squad.length}/11`),
+      ]))),
+      el('span', { class: 'pwc-chev', html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' }),
+    ]),
+    el('div', { class: 'sq-cols' }, d.players.map((p) => el('div', { class: `sq-col ${p.clientId === state.clientId ? 'me' : ''}` }, [
+      el('div', { class: 'sq-col-head' }, [
+        el('span', { class: 'sq-col-name' }, p.name + (p.clientId === state.clientId ? ' (sen)' : '')),
+        el('span', { class: 'sq-col-meta' }, `${p.squad.length}/11${avgOf(p.squad) != null ? ` · ort. ${avgOf(p.squad)}` : ''}`),
+      ]),
+      p.squad.length
+        ? el('div', { class: 'squad-grid' }, p.squad.map((s) => squadChip(s)))
+        : el('div', { class: 'sq-empty' }, 'Henüz oyuncu yok'),
+    ]))),
   ]));
 
   // [KULLANICI İSTEĞİ] Draft geçmişi — "kim neyi kaça aldı" draft bitince kaybolmasın.
@@ -1991,6 +2134,99 @@ function buildWheelDiskEl(geo, spinKey, targetLabel, animMap, startedAtMap) {
   return disk;
 }
 
+// [KULLANICI İSTEĞİ] "Günlük ödüldeki çark çok güzel olmuş. Çark modundaki çarkı ve eklenti
+// olarak gelen çarkı da öyle yap." — Günlük Ödül'ün .dr-wheel çerçevesi (büyütülmüş disk, amber
+// glow, logolu göbek, iniş anında renkli halka) artık üç çarkın ortak kabuğu. İniş rengi dilimin
+// havuzuna göre: iyi → yeşil, orta → amber, kötü → kırmızı.
+const WHEEL_POOL_TONE = { iyi: 'good', orta: 'accent', 'kötü': 'danger' };
+function wheelFrameEl(stage, { landed = false, pool = 'orta' } = {}) {
+  return el('div', { class: `dr-wheel wheel-frame ${landed ? `landed tone-${WHEEL_POOL_TONE[pool] || 'accent'}` : ''}` }, [
+    stage,
+    el('div', { class: 'dr-hub' }, el('img', { src: '/assets/icon.png', alt: '' })),
+  ]);
+}
+
+// [KULLANICI İSTEĞİ] "Başka ne değiştirilebilir" — çark ekranlarının durum bandı artık iki
+// katmanlı: küçük mono etiket (Sıra sende / Canlı / Sonuç) + büyük başlık; sonuç anında bandın
+// rengi çıkan dilimin havuzunu takip ediyor (çark çerçevesiyle aynı tonlar).
+function draftMiniPitch({ state, formation, squad, focusSlot }) {
+  const slots = state.config.FORMATIONS[formation];
+  const used = new Set();
+  const filled = slots.map((slot) => {
+    const idx = squad.findIndex((s, i) => !used.has(i) && s.slot === slot);
+    if (idx === -1) return null;
+    used.add(idx);
+    return squad[idx];
+  });
+  const pos = layout(slots);
+  let focusMarked = false;
+  const dots = slots.map((slot, i) => {
+    const e = filled[i];
+    const isFocus = !e && slot === focusSlot && !focusMarked;
+    if (isFocus) focusMarked = true;
+    const last = e ? String(e.player.name).split(' ').slice(-1)[0] : '';
+    return el('div', { class: `dm-slot ${e ? 'filled' : 'empty'} ${isFocus ? 'focus' : ''} ${e && e.player.isIcon ? 'icon' : ''}`, style: `left:${pos[i].x}%;top:${pos[i].y}%` }, [
+      el('span', { class: `dm-dot pos-${slotGroup(slot)}` }, e ? String(e.player.rating) : slot),
+      e ? el('span', { class: 'dm-name' }, last) : null,
+    ]);
+  });
+  const avg = squad.length ? Math.round(squad.reduce((a, s) => a + s.player.rating, 0) / squad.length) : null;
+  return el('div', { class: 'panel draft-mini' }, [
+    el('div', { class: 'dm-head' }, [
+      el('h3', {}, 'Kadron'),
+      el('span', { class: 'dm-meta' }, [el('b', {}, formation), ` · ${squad.length}/11${avg != null ? ` · ort. ${avg}` : ''}`]),
+    ]),
+    el('div', { class: 'dm-field' }, [el('i', { class: 'dm-half' }), el('i', { class: 'dm-circle' }), el('i', { class: 'dm-box top' }), el('i', { class: 'dm-box bottom' }), ...dots]),
+    focusSlot && focusMarked ? el('div', { class: 'dm-note' }, [el('i', {}), `Bu tur: ${focusSlot}`]) : null,
+  ]);
+}
+
+// [KULLANICI İSTEĞİ] Yükleniyor/bekleniyor durumları: düz yazı yerine dönen halka + iskelet
+// satırlar (panel) ya da tek satırlık nokta animasyonu (satır içi).
+function loadingPanel(text) {
+  return el('div', { class: 'panel loading-panel', role: 'status' }, [
+    el('div', { class: 'lp-head' }, [el('span', { class: 'lp-spin' }), el('span', { class: 'lp-text' }, text.replace(/\.\.\.$|…$/, ''))]),
+    el('div', { class: 'lp-skel' }, [el('i', {}), el('i', {}), el('i', {})]),
+  ]);
+}
+function waitingLine(text) {
+  return el('div', { class: 'waiting-line', role: 'status' }, [
+    el('span', { class: 'wl-dots' }, [el('i', {}), el('i', {}), el('i', {})]),
+    el('span', {}, text.replace(/\.\.\.$|…$/, '')),
+  ]);
+}
+
+// Hızlı teklif çipleri: input'u doldurur (göndermez), bütçe uyarısı canlı güncellensin diye
+// input olayını tetikler.
+function quickBidChips({ input, min, cap, step, disabled }) {
+  const set = (v) => { input.value = String(Math.max(min, Math.min(cap, v))); input.dispatchEvent(new Event('input', { bubbles: true })); input.focus(); };
+  const cur = () => Number(input.value) || min;
+  const chips = [
+    ['Min', () => set(min)],
+    [`+${step}`, () => set(cur() + step)],
+    [`+${step * 5}`, () => set(cur() + step * 5)],
+    ['Tavan', () => set(cap)],
+  ];
+  return el('div', { class: 'bid-quick' }, chips.map(([label, fn]) => el('button', {
+    type: 'button', class: 'bid-chip', disabled: disabled || cap < min ? 'disabled' : undefined, onclick: fn,
+  }, label)));
+}
+const stripEmoji = (s) => String(s || '').replace(/^\p{Extended_Pictographic}️?\s*/u, '');
+function wheelBannerEl({ kicker, title, mine = false, pool = null }) {
+  const tone = pool ? `tone-${WHEEL_POOL_TONE[pool] || 'accent'}` : '';
+  return el('div', { class: `wheel-turn-banner v3 ${mine ? 'mine' : ''} ${tone}` }, [
+    el('span', { class: 'wtb-kicker' }, [el('i', { class: 'wtb-dot' }), kicker]),
+    el('span', { class: 'wtb-title' }, title),
+  ]);
+}
+const SPIN_ICON_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+function spinButtonEl({ label, sub, onclick, disabled }) {
+  return el('button', { class: 'btn block wheel-spin-btn v3', disabled: disabled ? 'disabled' : undefined, onclick }, [
+    el('span', { class: 'wheel-spin-btn-icon', html: SPIN_ICON_SVG }),
+    el('span', { class: 'wheel-spin-btn-label' }, [el('b', {}, label), sub ? el('small', {}, sub) : null]),
+  ]);
+}
+
 function renderWheelRound({ state, actions, round, paused }) {
   const wrap = el('div', { class: 'wheel-round' });
   const nameOf = (id) => (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
@@ -2014,17 +2250,19 @@ function renderWheelRound({ state, actions, round, paused }) {
   }
 
   const isAutoKind = round.currentSpin && WHEEL_AUTO_KINDS.has(round.currentSpin.kind);
-  let bannerText;
+  let banner;
+  const segLabel = round.currentSpin ? stripEmoji(round.currentSpin.label) : '';
+  const segPool = round.currentSpin ? round.currentSpin.pool : null;
   if (round.phase === 'awaiting_spin') {
-    bannerText = myTurn ? '🎡 Sıra sende! Çarkı çevir.' : `⏳ ${turnName} çeviriyor...`;
+    banner = myTurn ? { kicker: 'Sıra sende', title: 'Çarkı çevir' } : { kicker: 'Sıra', title: `${turnName} çevirecek` };
   } else if (!revealReady) {
-    bannerText = '🎡 Çark dönüyor...';
+    banner = { kicker: 'Canlı', title: 'Çark dönüyor…' };
   } else if (isAutoKind) {
-    bannerText = `⚡ ${round.currentSpin.label} — sonuç uygulanıyor!`;
+    banner = { kicker: 'Sonuç', title: `${segLabel} — uygulanıyor`, pool: segPool };
   } else {
-    bannerText = myTurn ? `🎯 ${round.currentSpin.label} bandı çıktı — bir oyuncu seç!` : `⏳ ${turnName} seçim yapıyor...`;
+    banner = myTurn ? { kicker: 'Sonuç', title: `${segLabel} çıktı — oyuncu seç`, pool: segPool } : { kicker: 'Sonuç', title: `${segLabel} · ${turnName} seçiyor`, pool: segPool };
   }
-  wrap.appendChild(el('div', { class: `wheel-turn-banner ${myTurn ? 'mine' : ''}` }, bannerText));
+  wrap.appendChild(wheelBannerEl({ ...banner, mine: myTurn }));
 
   // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "Çarktaki yazılar güzel gözükmüyor" — kök neden:
   // her dilime SABİT 64px'lik bir etiket kutusu veriliyordu, ama ağırlıklı çark yüzünden dilimler
@@ -2040,7 +2278,7 @@ function renderWheelRound({ state, actions, round, paused }) {
     // .wheel-pointer.landed).
     class: `wheel-stage ${round.currentSpin && !revealReady ? 'spinning' : ''}`,
   }, [el('div', { class: `wheel-pointer ${revealReady ? 'landed' : ''}` }), disk]);
-  wrap.appendChild(stage);
+  wrap.appendChild(wheelFrameEl(stage, { landed: !!(round.currentSpin && revealReady), pool: round.currentSpin && round.currentSpin.pool }));
 
   // --- Geri sayım (spin öncesi/sonrası aynı deadline mekanizması) ---
   const timerLabel = el('div', { class: 'timer-label' }, '—');
@@ -2070,14 +2308,10 @@ function renderWheelRound({ state, actions, round, paused }) {
 
   // --- Aksiyon alanı ---
   if (myTurn && round.phase === 'awaiting_spin') {
-    wrap.appendChild(el('button', {
-      class: 'btn block wheel-spin-btn',
-      disabled: paused ? 'disabled' : undefined,
-      onclick: () => actions.spinWheel(),
-    }, [
-      el('span', { class: 'wheel-spin-btn-icon' }, '🎡'),
-      el('span', { class: 'wheel-spin-btn-label' }, 'ÇARKI ÇEVİR'),
-    ]));
+    wrap.appendChild(spinButtonEl({
+      label: 'Çarkı Çevir', sub: `${round.slotType} pozisyonu · herkes canlı izler`,
+      disabled: paused, onclick: () => actions.spinWheel(),
+    }));
   } else if (myTurn && round.phase === 'awaiting_pick' && round.currentSpin) {
     if (!revealReady) {
       wrap.appendChild(el('div', { class: 'muted wheel-reveal-pending', style: 'text-align:center' }, 'Çark yavaşlıyor...'));
@@ -2135,7 +2369,7 @@ function renderWheelPickList({ state, actions, round }) {
         el('span', { class: `pos-badge pos-${slotGroup(entry.player.position)}` }, entry.player.position),
         el('span', { class: 'wheel-pick-rating' }, String(entry.player.rating)),
         el('span', { class: 'wheel-pick-name' }, entry.player.name + (entry.player.isIcon ? ' ⭐' : '')),
-        el('span', { class: 'wheel-pick-club muted' }, `🎯 ${owner.name}${owner.clientId === state.clientId ? ' (sen)' : ''}`),
+        el('span', { class: 'wheel-pick-club muted' }, `${owner.name} kadrosundan`),
       ]);
       row.addEventListener('click', async () => {
         for (const r of list.querySelectorAll('.wheel-pick-row')) r.disabled = true;
@@ -2152,7 +2386,7 @@ function renderWheelPickList({ state, actions, round }) {
     if (!state.playerDb || state.playerDb.status !== 'loading') {
       actions.fetchPlayerDb().then(() => actions.route());
     }
-    wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center' }, 'Oyuncular yükleniyor...'));
+    wrap.appendChild(waitingLine('Oyuncular yükleniyor'));
     return wrap;
   }
 
@@ -2208,16 +2442,26 @@ function renderWheelPickList({ state, actions, round }) {
 // v2: küçük bir metin etiketi yerine üstte büyük, net bir "makbuz" şeridi (alıcı + fiyat +
 // oyuncu tek bakışta), teklif dökümü artık miktara göre SIRALI ve her satırın arkasında en
 // yüksek teklife oranla bir çubuk (kimin ne kadar yaklaştığını görsel olarak da anlatıyor).
+// [KULLANICI İSTEĞİ] "Genel olarak neler yapılabilir" — tur sonucu makbuzu v3: emoji yerine
+// sonucun türünü söyleyen renkli bir damga (Satıldı / Çalındı / Joker…). Çağıran yerler aynı
+// kaldı; damga, eskiden verilen emojiden türetiliyor.
+const RECEIPT_KINDS = {
+  '🏆': ['Satıldı', 'accent'], '🎁': ['Çalındı', 'surprise'], '😱': ['Verildi', 'danger'],
+  '💀': ['Şanssız', 'danger'], '🎡': ['Çark', 'accent'], '🃏': ['Joker', 'good'], '🤝': ['Rakipsiz', 'muted'],
+};
 function receiptStrip({ emoji, headline, sub }) {
-  return el('div', { class: 'round-receipt' }, [
-    el('div', { class: 'round-receipt-emoji' }, emoji),
+  const [label, tone] = RECEIPT_KINDS[emoji] || ['Sonuç', 'accent'];
+  const [who, what] = String(headline).split(' → ');
+  return el('div', { class: `round-receipt v3 tone-${tone}` }, [
+    el('div', { class: 'round-receipt-stamp' }, label),
     el('div', { class: 'round-receipt-text' }, [
-      el('div', { class: 'round-receipt-headline' }, headline),
+      el('div', { class: 'round-receipt-headline' }, what != null
+        ? [el('span', { class: 'rr-who' }, who), el('span', { class: 'rr-arrow', html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>' }), el('span', { class: 'rr-what' }, what)]
+        : headline),
       sub ? el('div', { class: 'round-receipt-sub' }, sub) : null,
     ]),
   ]);
 }
-
 function renderRoundResultPanel(event, state) {
   const nameOf = (id) => (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
   const wrap = el('div', { class: 'round-result' });
@@ -2227,7 +2471,7 @@ function renderRoundResultPanel(event, state) {
   // "Tur Sonucu" makbuz deseniyle gösterilir, tıpkı auction/blind/one_sided gibi.
   if (event.type === 'wheel_turn_resolved') {
     const actor = nameOf(event.clientId) + (event.clientId === state.clientId ? ' (sen)' : '');
-    wrap.appendChild(el('h3', {}, '🎡 Çark Sonucu'));
+    wrap.appendChild(el('h3', {}, 'Çark Sonucu'));
     if (event.segmentKind === 'steal') {
       const victim = nameOf(event.fromClientId) + (event.fromClientId === state.clientId ? ' (sen)' : '');
       wrap.appendChild(receiptStrip({
@@ -2259,7 +2503,7 @@ function renderRoundResultPanel(event, state) {
     wrap.appendChild(el('div', { class: 'reveal-row' }, [
       playerCard(event.player, { slot: event.slotType, extraClass: 'main', tag: `🎡 ${actor}` }),
     ]));
-    wrap.appendChild(el('p', { class: 'muted', style: 'text-align:center;margin-top:12px' }, '⏳ Sıradaki tur birazdan başlıyor...'));
+    wrap.appendChild(waitingLine('Sıradaki tur birazdan başlıyor'));
     return wrap;
   }
 
@@ -2267,7 +2511,7 @@ function renderRoundResultPanel(event, state) {
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI "TAM SÜRÜM"] "🃏 Joker Turu" perk'i —
     // rekabet hiç açılmadan, ücretsiz kazanılan bir pozisyon.
     const buyer = nameOf(event.clientId) + (event.clientId === state.clientId ? ' (sen)' : '');
-    wrap.appendChild(el('h3', {}, `🃏 Joker Turu — ${event.slotType} pozisyonu`));
+    wrap.appendChild(el('h3', {}, `Joker Turu — ${event.slotType} pozisyonu`));
     wrap.appendChild(receiptStrip({
       emoji: '🃏', headline: `${buyer} → ${event.player.name}`,
       sub: 'Hazırlık Çarkı\'ndaki Joker Turu perk\'i kullanıldı — rekabet olmadan, tamamen ücretsiz!',
@@ -2297,7 +2541,7 @@ function renderRoundResultPanel(event, state) {
 
   const isBlind = event.type === 'blind_auction_resolved';
   const winner = nameOf(event.winnerClientId) + (event.winnerClientId === state.clientId ? ' (sen)' : '');
-  wrap.appendChild(el('h3', {}, isBlind ? '🔓 Kör Teklif Sonucu' : '📢 Açık Arttırma Sonucu'));
+  wrap.appendChild(el('h3', {}, isBlind ? 'Kör Teklif Sonucu' : 'Açık Arttırma Sonucu'));
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kaskad — bu artık bir "ladder"ın parçası değil, bu
   // aşamanın TEK sonucu; kaybedenler bir sonraki (bir alt reytingli) aday için AYRI, taze bir
   // açık arttırmaya girecek (bkz. o sonraki round-result panelinde ayrı ayrı görünecekler).
@@ -2324,7 +2568,7 @@ function renderRoundResultPanel(event, state) {
   if (bidIds.length) {
     const maxAmt = Math.max(1, ...bidIds.map((id) => bids[id] || 0));
     const sortedIds = [...bidIds].sort((a, b) => (bids[b] ?? -1) - (bids[a] ?? -1));
-    wrap.appendChild(el('div', { class: 'muted', style: 'text-align:center;margin-top:16px' }, 'Teklif dökümü'));
+    wrap.appendChild(el('div', { class: 'rr-section-k' }, 'Teklif dökümü'));
     wrap.appendChild(el('div', { class: 'bid-leaderboard', style: 'margin:8px auto 0' }, sortedIds.map((id) => {
       const amt = bids[id];
       const pct = amt != null ? Math.max(6, Math.round((amt / maxAmt) * 100)) : 0;
@@ -2338,7 +2582,7 @@ function renderRoundResultPanel(event, state) {
     })));
   }
 
-  wrap.appendChild(el('p', { class: 'muted', style: 'text-align:center;margin-top:12px' }, '⏳ Sıradaki tur birazdan başlıyor...'));
+  wrap.appendChild(waitingLine('Sıradaki tur birazdan başlıyor'));
   return wrap;
 }
 
@@ -2400,7 +2644,7 @@ export function renderTradeRound({ state, actions }) {
   const t = state.trade;
 
   if (!t || !t.squads) {
-    root.appendChild(el('div', { class: 'panel' }, 'Takas turu yükleniyor...'));
+    root.appendChild(loadingPanel('Takas turu yükleniyor...'));
     actions.syncTrade();
     return root;
   }
@@ -2694,7 +2938,7 @@ export function renderLineup({ state, actions }) {
   const room = state.room;
 
   if (!state.lineupOptions) {
-    root.appendChild(el('div', { class: 'panel' }, 'Dizilim seçenekleri yükleniyor...'));
+    root.appendChild(loadingPanel('Dizilim seçenekleri yükleniyor...'));
     actions.fetchLineupOptions().then(() => actions.route());
     return root;
   }
@@ -3103,6 +3347,61 @@ function formatEvent(ev, { homeName, awayName, homeScore, awayScore }) {
   return `${ev.minute}' ${tpl(ev.playerName, ev.gkName || 'kaleci')}`;
 }
 
+// [KULLANICI İSTEĞİ] Maç anlatımı v3: her satır dakika | ikon | metin ızgarası. Metin eskisi
+// gibi formatEvent'ten geliyor; baştaki "12'" ve emoji burada ayrıştırılıp sütunlara dağıtılıyor.
+const CR_ICONS = {
+  goal: '<circle cx="12" cy="12" r="9"/><path d="m12 7 4 3-1.5 4.5h-5L8 10z"/>',
+  whistle: '<circle cx="9" cy="14" r="5"/><path d="M13 11 21 7v4l-6 2"/>',
+  buildup: '<path d="M5 12h.01"/><path d="M12 12h.01"/><path d="M19 12h.01"/>',
+  chance: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
+};
+function commentaryRow(type, text) {
+  const cls = rowClassFor(type);
+  const m = String(text).match(/^(\d+)'\s*/);
+  let rest = m ? String(text).slice(m[0].length) : String(text);
+  rest = rest.replace(/^\p{Extended_Pictographic}️?\s*/u, '');
+  let ico = null;
+  if (type === 'yellow' || type === 'red') ico = el('span', { class: `cr-card ${type}` });
+  else {
+    const key = type === 'goal' ? 'goal' : (type === 'kickoff' || type === 'fulltime') ? 'whistle' : type === 'buildup' ? 'buildup' : 'chance';
+    ico = el('span', { class: 'cr-svg', html: `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${CR_ICONS[key]}</svg>` });
+  }
+  return el('div', { class: `row v3 ${cls} ${type === 'kickoff' || type === 'fulltime' ? 'phase' : ''}` }, [
+    el('span', { class: 'cr-min' }, m ? `${m[1]}'` : ''),
+    el('span', { class: 'cr-ico' }, ico),
+    el('span', { class: 'cr-text' }, rest),
+  ]);
+}
+
+// [KULLANICI İSTEĞİ] "Maç anlatımında gol/kart zaman çizelgesi" — 0-90' çubuğu; ev sahibi
+// olayları üstte, deplasman altta. Sadece AÇIKLANMIŞ olaylar işaretlenir (gerilim penceresindeki
+// gol, sonuç satırı gelene kadar görünmez — spoiler yok).
+function createMatchTimeline(events, homeName, awayName) {
+  const fill = el('div', { class: 'mt-fill' });
+  const track = el('div', { class: 'mt-track' }, [fill, el('i', { class: 'mt-half' })]);
+  const wrap = el('div', { class: 'match-timeline' }, [
+    el('div', { class: 'mt-team home' }, homeName),
+    track,
+    el('div', { class: 'mt-team away' }, awayName),
+    el('div', { class: 'mt-scale' }, [el('span', {}, "0'"), el('span', {}, "45'"), el('span', {}, "90'")]),
+  ]);
+  const shown = new Set();
+  function update(clock, pending) {
+    fill.style.width = `${Math.min(100, (clock / 90) * 100)}%`;
+    events.forEach((ev, i) => {
+      if (!['goal', 'yellow', 'red'].includes(ev.type) || ev.minute > clock || ev === pending || shown.has(i)) return;
+      shown.add(i);
+      const who = ev.type === 'goal' ? ev.scorerName : ev.playerName;
+      const label = ev.type === 'goal' ? 'Gol' : ev.type === 'red' ? 'Kırmızı kart' : 'Sarı kart';
+      track.appendChild(el('span', {
+        class: `mt-mark ${ev.type} ${ev.team}`, style: `left:${Math.min(100, (ev.minute / 90) * 100)}%`,
+        title: `${ev.minute}' ${label}${who ? ' — ' + who : ''}`,
+      }));
+    });
+  }
+  return { el: wrap, update };
+}
+
 function rowClassFor(type) {
   if (type === 'goal') return 'goal';
   if (type === 'red') return 'red-card';
@@ -3437,24 +3736,28 @@ export function renderMatchPlayback({ state, actions }) {
   root.appendChild(el('div', { class: 'panel' }, [
     el('div', { class: 'draft-header' }, [
       el('h3', {}, `${fixtureTag}${isFirst ? '1. Maç' : '2. Maç'}${progressTag} — ${homeName} vs ${awayName}`),
-      el('div', { class: 'playback-controls' }, [
-        el('button', {
-          class: `btn small ${pb.speed === 'slow' ? '' : 'secondary'} ${mySpeedVote === 'slow' ? 'voted' : ''}`,
-          title: totalPlayers > 1 ? 'Tüm oyuncular Yavaş\'ı oylarsa herkes için geçerli olur' : undefined,
-          onclick: () => actions.votePlaybackSpeed('slow'),
-        }, '🐢 Yavaş'),
-        el('button', {
-          class: `btn small ${pb.speed === 'fast' ? '' : 'secondary'} ${mySpeedVote === 'fast' ? 'voted' : ''}`,
-          title: totalPlayers > 1 ? 'Tüm oyuncular Hızlı\'yı oylarsa herkes için geçerli olur' : undefined,
-          onclick: () => actions.votePlaybackSpeed('fast'),
-        }, '⚡ Hızlı'),
-        el('button', {
-          class: `btn small danger ${mySkipVote ? 'voted' : ''}`,
-          title: totalPlayers > 1 ? 'Tüm oyuncular oylarsa herkes birlikte sonuç ekranına geçer' : undefined,
-          onclick: () => actions.votePlaybackSkip(),
-        }, mySkipVote ? '✓ Sonuca Geç (oy verildi)' : '⏭ Sonuca Geç'),
-      ]),
-      (speedHint || skipHint) ? el('div', { class: 'playback-vote-hint', style: 'width:100%' }, [speedHint, skipHint].filter(Boolean).join(' · ')) : null,
+      // [KULLANICI İSTEĞİ] İzleme kontrolleri v5: hız iki parçalı bir anahtar; oy sayısı her
+      // seçeneğin içinde nokta olarak (çok oyunculu odada). Sonuca Geç ayrı, ikon + oy noktaları.
+      (() => {
+        const multi = totalPlayers > 1;
+        const dots = (n) => multi ? el('span', { class: 'pc-dots' }, Array.from({ length: totalPlayers }, (_, i) => el('i', { class: i < n ? 'on' : '' }))) : null;
+        const seg = (key, label, icon, count) => el('button', {
+          type: 'button', class: `pc-seg ${pb.speed === key ? 'on' : ''} ${mySpeedVote === key ? 'voted' : ''}`,
+          title: multi ? `Herkes ${label}'ı oylarsa herkes için geçerli olur` : undefined,
+          onclick: () => actions.votePlaybackSpeed(key),
+        }, [el('span', { class: 'btn-ico', html: icon }), label, dots(count)]);
+        return el('div', { class: 'playback-controls v5' }, [
+          el('div', { class: 'pc-speed', role: 'group', 'aria-label': 'İzleme hızı' }, [
+            seg('slow', 'Yavaş', '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>', slowVoteCount),
+            seg('fast', 'Hızlı', '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5v14l8-7z"/><path d="M12 5v14l8-7z"/></svg>', fastVoteCount),
+          ]),
+          el('button', {
+            type: 'button', class: `pc-skip ${mySkipVote ? 'voted' : ''}`,
+            title: multi ? 'Herkes oylarsa birlikte sonuç ekranına geçilir' : undefined,
+            onclick: () => actions.votePlaybackSkip(),
+          }, [el('span', { class: 'btn-ico', html: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v14l10-7z"/><path d="M19 5v14"/></svg>' }), mySkipVote ? 'Oy verildi' : 'Sonuca Geç', dots(skipVotesList.length)]),
+        ]);
+      })(),
     ]),
   ]));
 
@@ -3490,12 +3793,15 @@ export function renderMatchPlayback({ state, actions }) {
     pb.shown.push({ type: 'kickoff', text: kickoffText });
   }
   for (const s of pb.shown) {
-    logEl.appendChild(el('div', { class: `row ${rowClassFor(s.type)}` }, s.text));
+    logEl.appendChild(commentaryRow(s.type, s.text));
   }
   logEl.scrollTop = logEl.scrollHeight;
 
+  const timeline = createMatchTimeline(events, homeName, awayName);
+  timeline.update(pb.clock, pb.pendingReveal);
   liveSide.appendChild(clockLabel);
   liveSide.appendChild(scoreEl);
+  liveSide.appendChild(timeline.el);
   liveSide.appendChild(pitch.el);
   liveSide.appendChild(el('p', { class: 'muted', style: 'text-align:center;margin:0' }, `xG ${m.xgHome.toFixed(2)} - ${m.xgAway.toFixed(2)}`));
 
@@ -3515,6 +3821,7 @@ export function renderMatchPlayback({ state, actions }) {
   // kaldığı yerden — gerilim penceresi baştan sayılarak — devam ettiriliyor).
 
   function finishMinuteUpdate() {
+    timeline.update(pb.clock, pb.pendingReveal);
     scoreNum.textContent = `${pb.score.home} - ${pb.score.away}`;
     if (pb.clock >= 90) {
       clearPlaybackTimer();
@@ -3522,7 +3829,7 @@ export function renderMatchPlayback({ state, actions }) {
       sfx.play('whistleEnd');
       const ftText = '🏁 Maç sona erdi.';
       pb.shown.push({ type: 'fulltime', text: ftText });
-      logEl.appendChild(el('div', { class: 'row' }, ftText));
+      logEl.appendChild(commentaryRow('fulltime', ftText));
       logEl.scrollTop = logEl.scrollHeight;
       setTimeout(() => {
         if (pb.done) return; // bu arada kullanıcı "Sonuca Geç" ile atladıysa tekrar route etme
@@ -3547,7 +3854,7 @@ export function renderMatchPlayback({ state, actions }) {
     }
     const text = formatEvent(ev, { homeName, awayName, homeScore: pb.score.home, awayScore: pb.score.away });
     pb.shown.push({ type: ev.type, text });
-    logEl.appendChild(el('div', { class: `row ${rowClassFor(ev.type)}` }, text));
+    logEl.appendChild(commentaryRow(ev.type, text));
     logEl.scrollTop = logEl.scrollHeight;
     if (ev.type === 'goal') {
       scoreNum.classList.remove('flash');
@@ -3580,7 +3887,7 @@ export function renderMatchPlayback({ state, actions }) {
     if (ev && (ev.type === 'goal' || ev.type === 'chance')) {
       const buildupText = formatBuildupEvent(ev);
       pb.shown.push({ type: 'buildup', text: buildupText });
-      logEl.appendChild(el('div', { class: 'row buildup' }, buildupText));
+      logEl.appendChild(commentaryRow('buildup', buildupText));
       logEl.scrollTop = logEl.scrollHeight;
       pitch.playEvent(ev);
       clearTimeout(playbackTimer); // sonuç açıklanana kadar dakika akışı duraklar
@@ -3592,7 +3899,7 @@ export function renderMatchPlayback({ state, actions }) {
       // Kart event'i — gerilime gerek yok (yönlü bir pozisyon değil), anında göster.
       const text = formatEvent(ev, { homeName, awayName, homeScore: pb.score.home, awayScore: pb.score.away });
       pb.shown.push({ type: ev.type, text });
-      logEl.appendChild(el('div', { class: `row ${rowClassFor(ev.type)}` }, text));
+      logEl.appendChild(commentaryRow(ev.type, text));
       logEl.scrollTop = logEl.scrollHeight;
       pitch.cardFlash(ev.type);
       sfx.play(ev.type === 'red' ? 'red' : 'yellow');
@@ -3694,8 +4001,8 @@ function standingsTable(standings, state) {
     el('tbody', {}, standings.map((s, i) => el('tr', {
       class: [s.clientId === state.clientId ? 'me' : '', i === 0 ? 'winner' : ''].filter(Boolean).join(' ') || undefined,
     }, [
-      el('td', { class: 'rank-cell' }, String(i + 1)),
-      el('td', {}, s.name + (s.clientId === state.clientId ? ' (sen)' : '')),
+      el('td', { class: 'rank-cell' }, el('span', { class: 'rank-badge' }, String(i + 1))),
+      el('td', {}, [el('span', { class: 'st-name' }, s.name), s.clientId === state.clientId ? el('span', { class: 'st-me' }, 'sen') : null]),
       el('td', {}, String(s.played)),
       el('td', {}, String(s.wins)),
       el('td', {}, String(s.draws)),
@@ -3703,7 +4010,7 @@ function standingsTable(standings, state) {
       el('td', {}, String(s.goalsFor)),
       el('td', {}, String(s.goalsAgainst)),
       el('td', {}, (s.goalDiff > 0 ? '+' : '') + s.goalDiff),
-      el('td', { style: 'font-weight:800' }, String(s.points)),
+      el('td', { class: 'pts-cell' }, String(s.points)),
     ]))),
   ]);
 }
@@ -3717,16 +4024,26 @@ export function renderMatch({ state, actions }) {
   const r = state.matchResult;
   const root = el('div', { class: 'view' });
   if (!r) {
-    root.appendChild(el('div', { class: 'panel' }, 'Maç sonucu bekleniyor...'));
+    root.appendChild(loadingPanel('Maç sonucu bekleniyor...'));
     return root;
   }
 
   const nameOf = (clientId) => (state.room.players.find((p) => p.clientId === clientId) || {}).name || '?';
   const winnerName = nameOf(r.winnerClientId);
 
-  const winnerBanner = el('div', { class: 'winner-banner' }, [
-    el('span', { class: 'trophy-icon' }, '🏆'),
-    ` Şampiyon: ${winnerName}`,
+  // [KULLANICI İSTEĞİ] Şampiyon bandı v3: kupa ikonu, "Şampiyon" etiketi, büyük isim ve
+  // şampiyonun sezon özeti (puan · G-B-M · averaj).
+  const champ = r.standings.find((s) => s.clientId === r.winnerClientId) || r.standings[0];
+  const iAmChamp = r.winnerClientId === state.clientId;
+  const winnerBanner = el('div', { class: `winner-banner v3 ${iAmChamp ? 'me' : ''}` }, [
+    el('span', { class: 'wb-trophy', html: '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/></svg>' }),
+    el('span', { class: 'wb-kicker' }, iAmChamp ? 'Şampiyon sensin' : 'Şampiyon'),
+    el('span', { class: 'wb-name' }, winnerName),
+    champ ? el('span', { class: 'wb-stats' }, [
+      el('span', {}, [el('b', {}, String(champ.points)), ' puan']),
+      el('span', {}, `${champ.wins}G · ${champ.draws}B · ${champ.losses}M`),
+      el('span', {}, `Averaj ${champ.goalDiff > 0 ? '+' : ''}${champ.goalDiff}`),
+    ]) : null,
   ]);
   root.appendChild(winnerBanner);
   // Ekran ilk açıldığında bir kerelik kutlama konfetisi (bkz. spawnConfetti — maç anlatımındaki
@@ -3802,21 +4119,38 @@ export function renderMatch({ state, actions }) {
 
   // [KULLANICI İSTEĞİ] "Maç bittikten sonra tekrar oyna butonu gelsin." — aynı rakiple, oda
   // kodunu yeniden paylaşmadan sıfırdan bir draft başlatır (bkz. actions.rematch).
-  root.appendChild(el('div', { style: 'display:flex; gap:10px; flex-wrap:wrap' }, [
-    el('button', { class: 'btn', onclick: () => actions.rematch() }, '🔁 Tekrar Oyna'),
-    el('button', { class: 'btn secondary', onclick: () => actions.leaveRoom() }, 'Yeni Oda Kur'),
-    el('button', { class: 'btn secondary', onclick: shareResult }, '📤 Sonucu Paylaş'),
+  // [KULLANICI İSTEĞİ] Maç sonu aksiyonları v3: büyük birincil "Tekrar Oyna" + iki ikincil kart.
+  const actIco = (p) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+  const actBtn = (cls, icon, title, sub, onclick) => el('button', { class: `end-act ${cls}`, type: 'button', onclick }, [
+    el('span', { class: 'end-act-ico', html: actIco(icon) }),
+    el('span', { class: 'end-act-text' }, [el('b', {}, title), el('small', {}, sub)]),
+  ]);
+  root.appendChild(el('div', { class: 'end-actions' }, [
+    actBtn('primary', '<path d="M3 12a9 9 0 0 1 15.4-6.4L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"/><path d="M3 21v-5h5"/>', 'Tekrar Oyna', 'Aynı oda, aynı rakipler, yeni draft', () => actions.rematch()),
+    actBtn('', '<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>', 'Sonucu Paylaş', navigator.share ? 'WhatsApp, Instagram…' : 'Panoya kopyalanır', shareResult),
+    actBtn('', '<path d="M12 5v14"/><path d="M5 12h14"/>', 'Yeni Oda Kur', 'Ana sayfaya dön', () => actions.leaveRoom()),
   ]));
   return root;
 }
 
 // [KULLANICI İSTEĞİ] "Maçların altına gol atan oyuncular, gol atılan dakika yazsın."
 function scorerColumn(events, team, teamName) {
+  // [KULLANICI İSTEĞİ] Gol atanlar v5: takım başlığında gol sayısı, satırlarda dakika çipi + isim;
+  // aynı oyuncunun birden fazla golü tek satırda toplanıyor (12', 67').
   const goals = (events || []).filter((e) => e.type === 'goal' && e.team === team).sort((a, b) => a.minute - b.minute);
-  return el('div', { class: 'scorer-list' }, [
-    el('div', { class: 'scorer-list-team' }, teamName),
-    goals.length
-      ? el('div', {}, goals.map((g) => el('div', { class: 'scorer-row' }, `⚽ ${g.minute}' ${g.scorerName}`)))
+  const byName = [];
+  for (const g of goals) {
+    const row = byName.find((r) => r.name === g.scorerName);
+    if (row) row.mins.push(g.minute); else byName.push({ name: g.scorerName, mins: [g.minute] });
+  }
+  return el('div', { class: `scorer-list v5 ${team}` }, [
+    el('div', { class: 'scorer-head' }, [el('span', { class: 'scorer-list-team' }, teamName), el('b', { class: 'scorer-count' }, String(goals.length))]),
+    byName.length
+      ? el('div', { class: 'scorer-rows' }, byName.map((r) => el('div', { class: 'scorer-row' }, [
+        el('span', { class: 'sr-ball', html: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m12 7 4 3-1.5 4.5h-5L8 10z"/></svg>' }),
+        el('span', { class: 'sr-name' }, r.name + (r.mins.length > 1 ? ` ×${r.mins.length}` : '')),
+        el('span', { class: 'sr-mins' }, r.mins.map((m) => el('i', {}, `${m}'`))),
+      ])))
       : el('div', { class: 'scorer-empty' }, 'Gol yok'),
   ]);
 }
@@ -3899,7 +4233,21 @@ function matchStoryLine(fact, homeName, awayName) {
 }
 
 function renderMatchResultCard(title, homeName, awayName, m) {
-  const storyLines = (m.story || []).map((f) => matchStoryLine(f, homeName, awayName)).filter(Boolean);
+  // [KULLANICI İSTEĞİ] Maç hikâyesi v3: emoji + sol çizgi yerine konu etiketli (Hücum / Defans /
+  // Kaleci / Şans) ve olumlu-olumsuz renkli küçük kartlar.
+  const STORY_META = {
+    attack_star: ['Hücum', 'good'], defense_leak: ['Defans', 'bad'], defense_wall: ['Defans', 'good'],
+    keeper_wall: ['Kaleci', 'good'], keeper_soft: ['Kaleci', 'bad'], unlucky: ['Şans', 'bad'], lucky: ['Şans', 'good'],
+  };
+  const storyFacts = (m.story || []).map((f) => {
+    const line = matchStoryLine(f, homeName, awayName);
+    if (!line) return null;
+    const [topic, tone] = STORY_META[f.key] || ['Not', 'neutral'];
+    return el('div', { class: `ms-fact tone-${tone}` }, [
+      el('span', { class: 'ms-topic' }, [el('i', {}), topic]),
+      el('p', {}, stripEmoji(line)),
+    ]);
+  }).filter(Boolean);
   return el('div', { class: 'panel match-result-card' }, [
     el('div', { class: 'match-result-header' }, [
       el('div', { class: 'match-result-title' }, title),
@@ -3911,7 +4259,7 @@ function renderMatchResultCard(title, homeName, awayName, m) {
       el('div', { class: 'team' }, [awayName, el('div', { class: 'xg' }, `xG ${m.xgAway.toFixed(2)}`)]),
     ]),
     el('p', { class: 'muted', style: 'text-align:center;margin-top:2px' }, matchPointsSummary(m)),
-    storyLines.length ? el('div', { class: 'match-story' }, storyLines.map((line) => el('p', { class: 'match-story-line' }, line))) : null,
+    storyFacts.length ? el('div', { class: 'match-story v3' }, storyFacts) : null,
     el('div', { class: 'scorer-columns' }, [
       scorerColumn(m.events, 'home', homeName),
       scorerColumn(m.events, 'away', awayName),
@@ -3986,11 +4334,11 @@ export function renderPlayerDatabase({ state, actions }) {
 
   if (!state.playerDb || state.playerDb.status === 'idle') {
     actions.fetchPlayerDb().then(() => actions.route());
-    root.appendChild(el('div', { class: 'panel' }, 'Oyuncular yükleniyor...'));
+    root.appendChild(loadingPanel('Oyuncular yükleniyor...'));
     return root;
   }
   if (state.playerDb.status === 'loading') {
-    root.appendChild(el('div', { class: 'panel' }, 'Oyuncular yükleniyor...'));
+    root.appendChild(loadingPanel('Oyuncular yükleniyor...'));
     return root;
   }
   if (state.playerDb.status === 'error') {
