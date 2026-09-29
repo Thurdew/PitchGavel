@@ -55,14 +55,14 @@ sudo DOMAIN=pitchgavel.com REPO_URL=https://<TOKEN>@github.com/Thurdew/PitchGave
 ```bash
 sudo nano /etc/pitchgavel.env
 ```
-`RESEND_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` değerlerini Render dashboard'undan kopyala. Kaydet, sonra:
+`RESEND_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` değerlerini Resend ve Turso panellerinden (ya da yerel `server/.env`'den) kopyala. Kaydet, sonra:
 ```bash
 sudo systemctl restart pitchgavel
 curl -s http://localhost:3000/api/health
 ```
 
 ## 7. Kontrol
-- `https://pitchgavel.com` açılıyor mu (Caddy sertifikayı ilk istekte alır, DNS yeni IP'yi göstermiyorsa alamaz).
+- `https://pitchgavel.com` açılıyor mu. Caddy sertifikayı DNS yeni IP'yi gösterdikten sonra alabilir; kurulum DNS'ten önce yapıldıysa birkaç dakika içinde kendisi yeniden dener (beklemek istemezsen `sudo systemctl restart caddy`).
 - Giriş yap → hesabın duruyor mu (Turso).
 - İki sekmeyle oda kurup draft oyna (WebSocket).
 - Sorun olursa: `journalctl -u pitchgavel -f` (uygulama), `journalctl -u caddy -f` (HTTPS).
@@ -70,7 +70,7 @@ curl -s http://localhost:3000/api/health
 Her şey çalışınca Render servisini silebilir ya da askıya alabilirsin; cron-job.org ping'ine de artık gerek yok (sunucu uyumuyor).
 
 ## Güncelleme (yeni kod yayınlamak)
-Render'daki otomatik deploy yok — `main`'e push'tan sonra sunucuda:
+Otomatik deploy yok — `main`'e merge'ten sonra sunucuda:
 ```bash
 sudo bash /opt/pitchgavel/deploy/oracle/update.sh
 ```
