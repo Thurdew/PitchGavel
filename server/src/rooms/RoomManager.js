@@ -131,6 +131,19 @@ class RoomManager {
       // DraftEngine.applyPrepPerk). blind_first_round SADECE client-side tüketilir (self-imposed,
       // rakip için bir güvenlik sınırı değil — bkz. claude.md).
       prepPerk: null,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI] Sahadaki forma rengi için (kozmetik).
+      teamId: null,
+      kitId: null,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Odaya bağlanmış hesap (bkz.
+      // roomSockets room:bindAccount): { userId, canonicalEmail, verified, ip }. Misafirde null.
+      // Coin ödülünün kime yazılacağı SADECE buradan okunur — dışarı yayınlanmaz (toPublicState
+      // sadece `accountLinked` bayrağını verir).
+      account: null,
+      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Takılı kozmetikler (sadece sahip olunanlar,
+      // bkz. roomSockets room:bindAccount) + açık tepki paketleri. Misafirde boş.
+      cosmetics: null,
+      reactionPacks: [],
+      reactBucket: null,
     };
   }
 
@@ -316,6 +329,11 @@ class RoomManager {
         // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] Görünürlük "herkese açık" —
         // kimin ne perk aldığı odadaki herkese gösterilir (bkz. üstteki not).
         prepPerk: p.prepPerk || null,
+        teamId: p.teamId || null,
+        kitId: p.kitId || null,
+        cosmetics: p.cosmetics || null,
+        // [OYUN İÇİ PARA (COIN)] Hesap bağlı mı — hesabın kendisi (userId, e-posta, IP) yayınlanmaz.
+        accountLinked: !!p.account,
       })),
     };
   }

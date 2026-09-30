@@ -29,7 +29,9 @@
     "test:matchmaking": "node test/phase12-matchmaking.test.js",
     "test:emailverify": "node test/phase13-email-verification.test.js",
     "test:passwordreset": "node test/phase14-password-reset.test.js",
-    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:draft:wheel && npm run test:draft:wheel:pity && npm run test:lineup && npm run test:match && npm run test:match:playbacksync && npm run test:multiplayer && npm run test:prepwheel && npm run test:auth && npm run test:rewards && npm run test:bankedperks && npm run test:matchmaking && npm run test:emailverify && npm run test:passwordreset"
+    "test:coins": "node test/phase15-coins.test.js",
+    "test:cosmetics": "node test/phase16-cosmetics.test.js",
+    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:draft:wheel && npm run test:draft:wheel:pity && npm run test:lineup && npm run test:match && npm run test:match:playbacksync && npm run test:multiplayer && npm run test:prepwheel && npm run test:auth && npm run test:rewards && npm run test:bankedperks && npm run test:matchmaking && npm run test:emailverify && npm run test:passwordreset && npm run test:coins && npm run test:cosmetics"
   },
   "license": "UNLICENSED",
   "dependencies": {

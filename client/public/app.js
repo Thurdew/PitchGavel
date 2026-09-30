@@ -1,7 +1,9 @@
 import { el, toast, confirmDialog } from './helpers.js';
 // [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
 import { sfx } from './sfx.js';
-import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderVerifyGate, isPrepWheelSpinActive } from './views.js';
+import { applyTeamTheme } from './teams.js';
+import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
+import { cosmeticOf, playStampSound } from './cosmetics.js';
 
 const LS_CLIENT_ID = 'kk_clientId';
 const LS_NAME = 'kk_name';
@@ -171,6 +173,7 @@ const playersNavBtn = document.getElementById('playersNavBtn');
 const howToPlayNavBtn = document.getElementById('howToPlayNavBtn');
 const authNavBtn = document.getElementById('authNavBtn');
 const dailyRewardNavBtn = document.getElementById('dailyRewardNavBtn');
+const storeNavBtn = document.getElementById('storeNavBtn');
 
 // [KULLANICI İSTEĞİ, "SEO uyumlu yap, URL'leri ayarla"] Bu SPA hiç URL değiştirmiyordu — oyuncu
 // veritabanı sayfası da dahil her şey "/" üzerinde sadece `state.page` ile ayrışıyordu. Bu hem
@@ -203,6 +206,8 @@ const PAGE_PATHS = {
   login: '/giris',
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] `players`/`login` ile AYNI desen.
   dailyReward: '/gunluk-odul',
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Mağaza — misafire de açık (katalog).
+  store: '/magaza',
 };
 const PATH_TO_PAGE = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page]));
 // draftMode ('live'/'blind'/'wheel') <-> ilgili lobi sayfası arasında çift yönlü eşleme —
@@ -246,6 +251,10 @@ const PAGE_META = {
     title: 'Günlük Ödül — PitchGavel',
     description: 'Reklam izleyip günlük çarkı çevir, ileride odada kullanabileceğin perk\'ler biriktir.',
   },
+  store: {
+    title: 'Mağaza — PitchGavel',
+    description: 'Maç kazanarak topladığın coinlerle takımının renklerinde premium formalar al.',
+  },
 };
 function metaFor(page) { return PAGE_META[page] || PAGE_META.default; }
 
@@ -257,6 +266,12 @@ const AUTH_ERROR_MESSAGES = {
   RATE_LIMITED: 'Çok fazla deneme yaptın, birkaç dakika sonra tekrar dene.',
   INVALID_INPUT: 'Bilgileri kontrol et (parola en az 8 karakter olmalı).',
   INVALID_OR_EXPIRED_TOKEN: 'Sıfırlama linki geçersiz ya da süresi dolmuş — yeni bir link iste.',
+  KIT_NOT_OWNED: 'Bu forma senin değil — önce mağazadan al.',
+  COSMETIC_NOT_OWNED: 'Bu ürün senin değil — önce mağazadan al.',
+  INSUFFICIENT_COINS: 'Yeterli coinin yok.',
+  ALREADY_OWNED: 'Bu ürün zaten sende.',
+  EMAIL_NOT_VERIFIED: 'Satın almak için önce e-postanı doğrula.',
+  NOT_LOGGED_IN: 'Önce giriş yapmalısın.',
 };
 
 // document.title + meta description/canonical/OG/Twitter etiketlerini o an gösterilen sayfaya
@@ -344,6 +359,9 @@ howToPlayNavBtn.addEventListener('click', () => {
 dailyRewardNavBtn.addEventListener('click', () => {
   navigateToPage(state.page === 'dailyReward' ? null : 'dailyReward');
 });
+storeNavBtn.addEventListener('click', () => {
+  navigateToPage(state.page === 'store' ? null : 'store');
+});
 // Tarayıcının geri/ileri tuşları — URL'e göre state.page'i (ve mod-URL'iyse lobi state'ini)
 // senkronlar (pushState çağırmadan, zaten tarayıcı geçmişte gezindi).
 window.addEventListener('popstate', () => {
@@ -419,6 +437,8 @@ const TB_ICONS = {
   w1: '<path d="M15.5 8.5a5 5 0 0 1 0 7"/>',
   w2: '<path d="M19 5a10 10 0 0 1 0 14"/>',
   mute: '<path d="m22 9-6 6"/><path d="m16 9 6 6"/>',
+  coin: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.2A3 3 0 0 0 12 8c-1.7 0-3 .9-3 2s1.3 1.6 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-2.5-1.2"/><path d="M12 6.5V8"/><path d="M12 16v1.5"/>',
+  shop: '<path d="M3 9h18l-1.5 11a1 1 0 0 1-1 .9H5.5a1 1 0 0 1-1-.9L3 9z"/><path d="M8 9V7a4 4 0 0 1 8 0v2"/>',
 };
 const tbSvg = (paths, size = 16) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 function tbIco(name, size = 16) {
@@ -559,6 +579,7 @@ function updateAuthNav() {
     el('div', { class: `tb-menu-state ${u.emailVerified ? 'ok' : 'wait'}` }, u.emailVerified ? 'E-posta doğrulandı' : 'Onay bekliyor'),
     item('user', 'Hesabım', () => navigateToPage('login')),
     item('gift', 'Günlük Ödül', () => navigateToPage('dailyReward')),
+    item('shop', 'Mağaza', () => navigateToPage('store')),
     el('div', { class: 'tb-menu-sep' }),
     item('logout', 'Çıkış Yap', () => actions.logout(), 'danger'),
   );
@@ -596,6 +617,14 @@ function updateTopbar() {
     }, [el('span', { class: 'tb-chip-k' }, 'Oda'), el('b', {}, state.code), tbIco('copy', 13)]));
   }
   if (state.name && state.room) chips.push(el('span', { class: 'tb-chip who' }, [tbIco('user', 13), el('span', {}, state.name)]));
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Giriş yapmışken coin bakiyesi;
+  // tıklayınca mağaza.
+  if (state.user) {
+    chips.push(el('button', {
+      type: 'button', class: 'tb-chip coins', title: 'Coin bakiyen — mağazaya git',
+      onclick: () => navigateToPage('store'),
+    }, [tbIco('coin', 14), el('b', {}, (state.user.coins || 0).toLocaleString('tr-TR'))]));
+  }
   // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] Çark Modu'nda bütçe hiç kullanılmıyor — üst barda
   // gösterilmesi kafa karıştırıyordu.
   if (state.draft && state.draft.players && state.room && state.room.draftMode !== 'wheel') {
@@ -677,12 +706,16 @@ function currentViewKey() {
 }
 
 function route() {
+  applyTeamTheme(state.user?.favoriteTeam);
   const savedFocus = captureFocus();
   const prevViewKey = route._viewKey;
   const prevScrollY = window.scrollY;
   appRoot.innerHTML = '';
+  revealCoinAwardIfReady();
+  syncRoomAccount();
   updateTopbar();
   updateHead();
+  storeNavBtn.classList.toggle('active', state.page === 'store');
   playersNavBtn.classList.toggle('active', state.page === 'players');
   howToPlayNavBtn.classList.toggle('active', state.page === 'how-to-play');
   authNavBtn.classList.toggle('active', state.page === 'login');
@@ -737,6 +770,12 @@ function route() {
     return;
   }
 
+  if (state.page === 'store') {
+    appRoot.appendChild(renderStore({ state, actions }));
+    finish();
+    return;
+  }
+
   if (!state.room) {
     appRoot.appendChild(renderLobby({ state, actions }));
     finish();
@@ -783,6 +822,10 @@ function route() {
       break;
     default:
       appRoot.appendChild(el('div', { class: 'panel' }, 'Bilinmeyen oda durumu.'));
+  }
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Tepki paneli — maç anlatımı/sonuç hariç oda ekranlarında.
+  if (['lobby', 'prep_wheel', 'draft', 'trade', 'squad_select'].includes(state.room.status) && state.room.players.length > 1) {
+    appRoot.appendChild(reactionDock({ state, actions }));
   }
   finish();
 }
@@ -1018,19 +1061,95 @@ const actions = {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] Socket değil, düz `fetch` — oyun
   // protokolünden (socket.io) TAMAMEN AYRI bir HTTP kimlik sistemi (bkz. server/src/index.js
   // /api/auth/*). fetchPlayerDb ile aynı "plain REST" deseni.
-  async register(email, password, displayName) {
+  async register(email, password, displayName, favoriteTeam = null) {
     const res = await fetch('/api/auth/register', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, displayName }),
+      body: JSON.stringify({ email, password, displayName, favoriteTeam }),
     }).then((r) => r.json());
     if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
     state.user = res.user;
+    state.store = null; state.storeError = null; // hesap değişti — önceki kullanıcının mağaza verisi kalmasın
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA ZORUNLULUĞU] Bir sonraki route()
     // çağrısında (navigateToPage aracılığıyla) `renderVerifyGate` otomatik devreye girecek —
     // burada özel bir yönlendirme gerekmiyor. Spam uyarısı — kullanıcı geri bildirimi: Resend'in
     // varsayılan test göndereni doğrulanmamış bir alan adından geldiği için sık sık spam'e düşüyor.
     toast('Hesabın oluşturuldu! E-postana bir doğrulama linki gönderdik — gelmezse spam/gereksiz klasörüne bak.');
     navigateToPage(null);
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI]
+  async setFavoriteTeam(teamId) {
+    const res = await fetch('/api/auth/team', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ teamId: teamId || null }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.user = res.user;
+    route();
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — FORMA ÇEŞİTLERİ]
+  async setFavoriteKit(kitId) {
+    const res = await fetch('/api/auth/kit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kitId }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.user = res.user;
+    route();
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Mağaza — `fetchDailyReward` ile
+  // aynı plain-REST deseni.
+  // [DÜZELTİLDİ — BUG] Başarısız istekte `storeError` işaretleniyor: views.js ensureStore bunu
+  // görünce otomatik tekrar denemiyor (eskiden 404/ağ hatasında saniyede ~100 istekle sonsuz
+  // döngüye girip sayfayı sürekli yeniden çiziyordu). Tekrar deneme sadece kullanıcı düğmesiyle.
+  async fetchStore() {
+    try {
+      const r = await fetch('/api/store');
+      const res = await r.json();
+      if (!r.ok || res.error) throw new Error(res.error || `HTTP ${r.status}`);
+      state.store = res;
+      state.storeError = null;
+    } catch (e) {
+      state.storeError = e.message || 'NETWORK';
+    }
+  },
+  async buyItem(itemId, { wear = false, equip = null } = {}) {
+    const res = await fetch('/api/store/buy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ itemId }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.user = res.user;
+    if (state.store) {
+      state.store.balance = res.user.coins;
+      state.store.owned = res.owned;
+      state.store.items = state.store.items.map((i) => ({ ...i, owned: res.owned.includes(i.id) }));
+    }
+    sfx.play('gavel');
+    toast(res.item && res.item.type === 'kit' ? 'Satın alındı! Forma dolabına eklendi.' : 'Satın alındı!');
+    if (wear && res.item && res.item.kitId) return actions.setFavoriteKit(res.item.kitId);
+    if (equip && equip.slot) return actions.setCosmetic(equip.slot, equip.key);
+    route();
+    return res;
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kozmetik tak/çıkar (key null = varsayılan).
+  // Odadaysa syncRoomAccount anahtarı değiştiği için yeniden bağlanır, oda yeni görünümü görür.
+  async setCosmetic(slot, key) {
+    const res = await fetch('/api/auth/cosmetic', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slot, key }),
+    }).then((r) => r.json());
+    if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
+    state.user = res.user;
+    route();
+    return res;
+  },
+  async sendReaction(reactionId) {
+    const res = await emitAck('room:react', { reactionId });
+    if (res && res.error === 'RATE_LIMITED') toast('Biraz yavaş — birkaç saniye sonra tekrar dene.');
+    else if (res && res.error === 'REACTION_NOT_OWNED') toast('Bu tepki paketi sende yok.');
     return res;
   },
   async login(email, password) {
@@ -1040,6 +1159,7 @@ const actions = {
     }).then((r) => r.json());
     if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
     state.user = res.user;
+    state.store = null; state.storeError = null; // hesap değişti — önceki kullanıcının mağaza verisi kalmasın
     navigateToPage(null);
     return res;
   },
@@ -1062,6 +1182,7 @@ const actions = {
     }).then((r) => r.json());
     if (res.error) { toast(AUTH_ERROR_MESSAGES[res.error] || res.error); return res; }
     state.user = res.user;
+    state.store = null; state.storeError = null; // hesap değişti — önceki kullanıcının mağaza verisi kalmasın
     state.authUi = null;
     toast('✅ Parolan değişti ve giriş yaptın. Diğer cihazlardaki oturumların kapatıldı.');
     navigateToPage(null);
@@ -1070,6 +1191,7 @@ const actions = {
   async logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     state.user = null;
+    state.store = null; state.storeError = null; // hesap değişti — önceki kullanıcının mağaza verisi kalmasın
     route();
   },
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] `fetchPlayerDb` ile AYNI "plain
@@ -1187,7 +1309,61 @@ socket.on('disconnect', () => {
   updateTopbar();
 });
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Giriş yapmışken hesabımı odadaki
+// oyuncuma bağla (coin ödülü + takım/forma buna göre). Önce HTTP'den tek kullanımlık bilet alınır
+// (güncel cookie), sonra socket ile kullanılır — bkz. server/src/auth/RoomTickets.js. Takım ya da
+// forma değişince anahtar değiştiği için yeniden bağlanır (sunucu takımı/formayı DB'den okur).
+// route() her çizimde çağırır; bağlıysa ve anahtar aynıysa hemen döner. Misafirde hiçbir şey
+// gönderilmez.
+function syncRoomAccount() {
+  const me = state.room?.players?.find((p) => p.clientId === state.clientId);
+  if (!me || !state.user) return;
+  const wantTeam = state.user.favoriteTeam || null;
+  const wantKit = wantTeam ? (state.user.favoriteKit || 'home') : null;
+  // [MAĞAZA v2] Kozmetik ya da satın alma (coin değişir → yeni tepki paketi olabilir) de yeniden bağlar.
+  const key = `${state.room.code}:${state.user.id}:${wantTeam}:${wantKit}:${JSON.stringify(state.user.cosmetics || {})}:${(state.store && state.store.owned || []).length}`;
+  const s = syncRoomAccount;
+  if ((me.accountLinked && s._done === key) || s._pending === key || s._failed === key) return;
+  s._pending = key;
+  (async () => {
+    try {
+      const t = await fetch('/api/rooms/ticket', { method: 'POST' }).then((r) => r.json());
+      if (!t.ticket) { s._failed = key; return; }
+      const res = await emitAck('room:bindAccount', { ticket: t.ticket });
+      if (res && res.error) {
+        s._failed = key;
+        if (res.error === 'ACCOUNT_ALREADY_IN_ROOM') toast('Bu hesap odada başka bir oyuncuya zaten bağlı — bu odada coin kazanamazsın.');
+      } else {
+        s._done = key;
+      }
+    } catch (e) {
+      s._failed = key;
+    } finally {
+      s._pending = null;
+    }
+  })();
+}
+
 socket.on('room:state', (room) => { state.room = room; route(); });
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Tepkiler — route() çağırmadan, üst katmanda.
+socket.on('room:reaction', (msg) => showReaction(state, msg));
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Ödül maç HESAPLANIR hesaplanmaz
+// gelir ama anlatım bitmeden gösterilmez (skoru önceden söylememek için) — bkz.
+// revealCoinAwardIfReady. Üst bardaki bakiye de o ana kadar eski değerinde kalır.
+socket.on('coins:awarded', (award) => { state.coinAward = { ...award, revealed: false }; route(); });
+
+function revealCoinAwardIfReady() {
+  const a = state.coinAward;
+  if (!a || a.revealed || !state.matchResult || a.resultId !== state.matchResult.resultId) return;
+  if (state.matchPlayback && !state.matchPlayback.done) return;
+  a.revealed = true;
+  if (state.user && typeof a.balance === 'number') state.user.coins = a.balance;
+  if (a.earned > 0) {
+    sfx.play('win');
+    toast(`+${a.earned} coin kazandın!`);
+  }
+}
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4] Asıl oda verisi zaten
 // yukarıdaki `room:state` dinleyicisiyle geliyor (matchmaker sockets'i room.code'a join ettiriyor,
@@ -1275,6 +1451,11 @@ socket.on('draft:update', (msg) => {
       state.draftHistory.push(entry);
       if (state.draftHistory.length > 80) state.draftHistory.shift();
       sfx.play(entry.clientId === state.clientId ? 'win' : 'gavel');
+    }
+    // [MAĞAZA v2] Açık arttırmayı kazananın satıldı damgası sesi (damganın kendisi views.js'te).
+    if (msg.event.type === 'auction_resolved' || msg.event.type === 'blind_auction_resolved') {
+      const st = cosmeticOf(state.room && state.room.players.find((p) => p.clientId === msg.event.winnerClientId), 'stamp');
+      if (st) setTimeout(() => playStampSound(st), 260);
     }
 
     if (msg.event.type === 'auction_resolved' || msg.event.type === 'blind_auction_resolved') {
@@ -1428,5 +1609,7 @@ if (joinParam) {
 // GET /api/auth/me) — misafir zaten normal/beklenen bir durum.
 fetch('/api/auth/me').then((r) => r.json()).then((json) => {
   state.user = json.user || null;
+  // /magaza doğrudan açılınca mağaza bu cevaptan ÖNCE misafir olarak yüklenmiş olabilir.
+  if (state.user) { state.store = null; state.storeError = null; }
   route();
 }).catch(() => {});

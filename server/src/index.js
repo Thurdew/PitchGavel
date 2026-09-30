@@ -9,6 +9,7 @@ const express = require('express');
 const { Server } = require('socket.io');
 
 const { RoomManager } = require('./rooms/RoomManager');
+const { isValidTeamId, isValidKitId } = require('./shared/teams');
 const { registerRoomSockets } = require('./sockets/roomSockets');
 const { registerDraftSockets } = require('./sockets/draftSockets');
 const { registerLineupSockets } = require('./sockets/lineupSockets');
@@ -35,6 +36,9 @@ const { PasswordResetRateLimiter } = require('./auth/PasswordResetRateLimiter');
 const { ResendVerificationRateLimiter } = require('./auth/ResendVerificationRateLimiter');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] bkz. claude.md.
 const { RewardsService } = require('./rewards/RewardsService');
+const { CoinService } = require('./coins/CoinService');
+const { isValidCosmetic } = require('./shared/economy');
+const { RoomTickets } = require('./auth/RoomTickets');
 
 const PORT = process.env.PORT || 3000;
 
@@ -195,11 +199,12 @@ app.post('/api/auth/register', async (req, res) => {
   }
   registerRateLimiter.recordAttempt(ip);
 
-  const { email, password, displayName } = req.body || {};
+  const { email, password, displayName, favoriteTeam } = req.body || {};
   if (!isValidEmail(email) || !isValidPassword(password) || !isValidDisplayName(displayName)) {
     return res.status(400).json({ error: 'INVALID_INPUT' });
   }
-  const result = await authService.register(email, password, displayName);
+  if (favoriteTeam != null && !isValidTeamId(favoriteTeam)) return res.status(400).json({ error: 'INVALID_INPUT' });
+  const result = await authService.register(email, password, displayName, favoriteTeam || null);
   if (result.error) {
     return res.status(result.error === 'EMAIL_TAKEN' ? 409 : 400).json({ error: result.error });
   }
@@ -321,6 +326,65 @@ app.post('/api/auth/resendVerification', async (req, res) => {
   res.json({ ok: true });
 });
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI] Hesap ekranından takım değiştirme.
+app.post('/api/auth/team', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const { teamId } = req.body || {};
+  if (teamId != null && !isValidTeamId(teamId)) return res.status(400).json({ error: 'INVALID_INPUT' });
+  res.json({ user: await authService.setFavoriteTeam(user.id, teamId || null) });
+});
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — FORMA ÇEŞİTLERİ] Forma dolabından seçim.
+// [OYUN İÇİ PARA (COIN)] Premium formalar artık mağazadan alınmış olmalı.
+const coinService = new CoinService(db);
+app.post('/api/auth/kit', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const { kitId } = req.body || {};
+  if (!isValidKitId(kitId)) return res.status(400).json({ error: 'INVALID_INPUT' });
+  if (!(await coinService.ownsKit(user.id, kitId))) return res.status(403).json({ error: 'KIT_NOT_OWNED' });
+  res.json({ user: await authService.setFavoriteKit(user.id, kitId) });
+});
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kozmetik tak/çıkar. key null = varsayılan.
+app.post('/api/auth/cosmetic', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const { slot, key } = req.body || {};
+  const k = key == null || key === '' ? null : String(key);
+  if (!isValidCosmetic(slot, k)) return res.status(400).json({ error: 'INVALID_INPUT' });
+  if (k && !(await coinService.ownsItem(user.id, `${slot}:${k}`))) return res.status(403).json({ error: 'COSMETIC_NOT_OWNED' });
+  res.json({ user: await authService.setCosmetic(user.id, slot, k) });
+});
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Mağaza. Katalog misafire de
+// gösterilir (fiyatlar, nasıl kazanılır); satın alma giriş gerektirir.
+app.get('/api/store', async (req, res) => {
+  const user = await authService.getUserByToken(parseCookies(req)[SESSION_COOKIE_NAME]);
+  const store = await coinService.storeFor(user ? user.id : null);
+  res.json({ ...store, owned: user ? await coinService.ownedItemIds(user.id) : [] });
+});
+
+app.post('/api/store/buy', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  if (!user.emailVerified) return res.status(403).json({ error: 'EMAIL_NOT_VERIFIED' });
+  const { itemId } = req.body || {};
+  const result = await coinService.buy(user.id, itemId);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({ ok: true, item: result.item, user: await authService.getUserById(user.id), owned: await coinService.ownedItemIds(user.id) });
+});
+
+// Odadaki oyuncuyu hesaba bağlamak için kısa ömürlü bilet (bkz. auth/RoomTickets.js). IP burada,
+// güncel HTTP isteğinden alınır (trust proxy ayarı rate limiter'larla aynı).
+const roomTickets = new RoomTickets();
+app.post('/api/rooms/ticket', async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  res.json({ ticket: roomTickets.issue(user.id, req.ip) });
+});
+
 app.get('/api/rewards/status', async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -352,7 +416,7 @@ draftEngine.setRewardsService(rewardsService);
 // Eşleşme"] Yeni bir draft/oda motoru YOK — roomManager/draftEngine'in mevcut metodlarını
 // (createRoom/joinRoom/bindSocket/startDraft) birebir reuse ediyor.
 const matchmaker = new Matchmaker(io, roomManager, draftEngine);
-const ctx = { roomManager, draftEngine, tradeEngine, matchmaker };
+const ctx = { roomManager, draftEngine, tradeEngine, matchmaker, authService, coinService, roomTickets };
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] Socket EVENT'İ DEĞİL, HTTP —
 // bkz. claude.md "kimlik doğrulama tasarımı" notu: bir socket'in handshake cookie'si bağlantı

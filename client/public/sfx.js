@@ -251,6 +251,43 @@ const SOUNDS = {
   },
   wheel: () => { noise({ dur: 0.9, gain: 0.07, filter: 'bandpass', freq: 1800, to: 500, q: 3 }); },
 
+  // ---------------- mağaza kozmetikleri ----------------
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Tribün sesleri (golü atan tarafın seçimi,
+  // standart gol sesinin ÜSTÜNE çalar) + satıldı damgası sesleri. Hepsi sentez, telifsiz.
+  crowd_drum: () => {
+    // Tribün davulu: "güm güm güm-güm-güm" — alçak rezonanslı vuruşlar
+    [0, 0.34, 0.68, 0.86, 1.04].forEach((d, i) => {
+      hit({ freq: 95, dur: 0.28, gain: i >= 2 ? 0.34 : 0.3, q: 5, drop: 0.6, delay: d });
+      noise({ dur: 0.06, gain: 0.05, delay: d, filter: 'highpass', freq: 2400 });
+    });
+    crowd({ dur: 1.6, gain: 0.1, delay: 0.1, up: true });
+  },
+  crowd_roar: () => {
+    crowd({ dur: 2.4, gain: 0.24, delay: 0, up: true });
+    crowd({ dur: 2.0, gain: 0.14, delay: 0.5, up: true });
+    noise({ dur: 1.8, gain: 0.05, delay: 0.2, filter: 'bandpass', freq: 700, to: 1100, q: 0.8 });
+  },
+  crowd_horn: () => {
+    [0, 0.42, 0.84].forEach((d, i) => {
+      const dur = i === 2 ? 0.7 : 0.3;
+      tone({ freq: 233, dur, type: 'sawtooth', gain: 0.12, delay: d });
+      tone({ freq: 294, dur, type: 'sawtooth', gain: 0.09, delay: d, detune: 8 });
+    });
+    crowd({ dur: 1.5, gain: 0.1, delay: 0.2, up: true });
+  },
+  stamp_gold: () => {
+    // Altın tokmak: üç tahta vuruş + parlak bir "ting"
+    [0, 0.2, 0.4].forEach((d) => hit({ freq: 420, dur: 0.16, gain: 0.3, q: 7, drop: 0.3, delay: d }));
+    tone({ freq: 1568, dur: 0.5, type: 'triangle', gain: 0.08, delay: 0.46 });
+    tone({ freq: 2093, dur: 0.6, type: 'sine', gain: 0.05, delay: 0.5 });
+  },
+  stamp_seal: () => {
+    // Mühür: yumuşak bir basış + düşük "pof"
+    hit({ freq: 140, dur: 0.3, gain: 0.3, q: 2, drop: 0.5 });
+    noise({ dur: 0.22, gain: 0.07, delay: 0.02, filter: 'lowpass', freq: 600 });
+  },
+  reaction: () => { tone({ freq: 740, to: 990, dur: 0.07, type: 'triangle', gain: 0.07 }); },
+
   // ---------------- arayüz ----------------
   // [KULLANICI İSTEĞİ] "Butonları dahil hallet" — her butona kısık, nötr bir dokunma sesi
   // (app.js'te global delegasyonla bağlanıyor; kendi sesi olan butonlar hariç).

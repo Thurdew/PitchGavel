@@ -1,5 +1,8 @@
 import { sfx } from './sfx.js';
-import { el, toast, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney } from './helpers.js';
+import { el, toast, confirmDialog, playerCard, squadChip, slotGroup, fmtMoney, countUpMoney } from './helpers.js';
+import { TEAMS, teamById, kitBackground, teamCardVars, KIT_VARIANTS, kitFor, resolveClash } from './teams.js';
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2]
+import { STORE_CATS, SLOT_DEFAULTS, COSMETIC_META, REACTIONS, reactionById, cosmeticOf, cosmeticName, cosmeticPreview, playGoalFx, playCrowd, reactionsHidden, setReactionsHidden } from './cosmetics.js';
 
 // [KULLANICI İSTEĞİ] v5 — hesap/şifre düğmelerindeki emojiler yerine tek çizgi SVG ikonlar.
 const TICKET_ICONS = {"mail":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"5\" width=\"18\" height=\"14\" rx=\"2\"/><path d=\"m3 7 9 6 9-6\"/></svg>","key":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4\"/><path d=\"m10 17 5-5-5-5\"/><path d=\"M15 12H3\"/></svg>","lock":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"4\" y=\"11\" width=\"16\" height=\"10\" rx=\"2\"/><path d=\"M8 11V7a4 4 0 0 1 8 0v4\"/></svg>","gift":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"8\" width=\"18\" height=\"4\" rx=\"1\"/><path d=\"M12 8v13\"/><path d=\"M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7\"/><path d=\"M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5\"/></svg>","spin":"<svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12a9 9 0 1 1-2.64-6.36\"/><path d=\"M21 3v6h-6\"/></svg>"};
@@ -524,7 +527,7 @@ export function renderHowToPlay({ state, actions }) {
 export function renderVerifyGate({ state, actions }) {
   const email = state.user.email;
   const lic = buildLicenseCard({
-    name: state.user.displayName, email, pending: true, large: true,
+    name: state.user.displayName, email, pending: true, large: true, teamId: state.user.favoriteTeam,
     footLeft: 'Envanter · kilitli', footRight: 'Onay bekliyor',
   });
   const resendLabel = el('span', { class: 'ticket-btn-label' }, 'Tekrar Gönder');
@@ -587,23 +590,133 @@ function inventoryTotal(inv) {
   return Object.values(inv || {}).reduce((a, b) => a + (b || 0), 0);
 }
 
-function buildLicenseCard({ name, email, footLeft, footRight, active, pending, large }) {
+function buildLicenseCard({ name, email, footLeft, footRight, active, pending, large, teamId, frame = null, title = null }) {
   const nameEl = el('div', { class: `lic-name ${name ? '' : 'empty'}` }, name || 'Adın burada');
   const emailEl = el('div', { class: 'lic-email' }, email || 'e-posta@adresin.com');
-  const card = el('div', { class: `lic-card ${large ? 'large' : ''} ${active ? 'active' : ''} ${pending ? 'pending' : ''}` }, [
+  const logoEl = el('img', { class: 'lic-logo', src: '/assets/icon.png', alt: '' });
+  const crestEl = el('div', { class: 'lic-crest' });
+  const teamEl = el('div', { class: 'lic-team' });
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kart çerçevesi (.lic-frame katmanı) + unvan.
+  const titleEl = title ? el('span', { class: 'lic-title' }, cosmeticName('title', title)) : null;
+  const card = el('div', { class: `lic-card ${large ? 'large' : ''} ${active ? 'active' : ''} ${pending ? 'pending' : ''} ${frame ? `frame-${frame}` : ''}` }, [
+    el('span', { class: 'lic-frame' }),
     el('div', { class: 'lic-strip' }, [el('span', {}, 'Menajer Lisansı'), el('span', { class: 'lic-code' }, 'PG-2026')]),
-    el('img', { class: 'lic-logo', src: '/assets/icon.png', alt: '' }),
+    logoEl, crestEl,
     el('div', { class: 'lic-body' }, [
+      teamEl,
       pending
         ? el('div', { class: 'lic-status pending' }, [el('span', { class: 'lic-dot' }), 'Onay bekliyor'])
         : active
           ? el('div', { class: 'lic-status' }, [el('span', { class: 'lic-dot' }), 'Aktif'])
           : el('div', { class: 'lic-kicker' }, 'Görünen ad'),
-      nameEl, emailEl,
+      nameEl, titleEl, emailEl,
     ]),
     el('div', { class: 'lic-foot' }, [el('span', {}, footLeft), el('span', { class: 'lic-foot-accent' }, footRight)]),
   ]);
-  return { card, nameEl, emailEl };
+  const lic = { card, nameEl, emailEl, logoEl, crestEl, teamEl };
+  paintLicenseTeam(lic, teamId);
+  return lic;
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI] Kartı tuttuğu takımın renklerine boyar —
+// route() çağırmadan (kayıt formunda input odağı kaybolmasın diye) doğrudan DOM üzerinden.
+function paintLicenseTeam(lic, teamId) {
+  const t = teamById(teamId);
+  lic.card.classList.toggle('themed', !!t);
+  lic.card.style.cssText = t ? teamCardVars(t) : '';
+  lic.crestEl.textContent = t ? t.short : '';
+  lic.crestEl.hidden = !t;
+  lic.logoEl.hidden = !!t;
+  lic.teamEl.textContent = t ? `Taraftar · ${t.name}` : '';
+  lic.teamEl.hidden = !t;
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — FORMA ÇEŞİTLERİ] Forma dolabı: tuttuğu takımın 6 varyantı.
+// Premium olanlar ileride ücretli olacak — şimdilik hepsi seçilebilir.
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Mağaza verisi (fiyatlar + sahip
+// olunanlar) ekranlar arasında ortak — yoksa bir kez çekilip yeniden çizilir.
+function ensureStore(state, actions) {
+  if (!state.store && !state.storeLoading && !state.storeError) {
+    state.storeLoading = true;
+    actions.fetchStore().finally(() => { state.storeLoading = false; actions.route(); });
+  }
+  return state.store || null;
+}
+const storeItemForKit = (store, kitId) => (store ? store.items.find((i) => i.kitId === kitId) : null) || null;
+const coinIco = (size = 14) => el('span', { class: 'coin-ico', html: `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M14.5 9.2A3 3 0 0 0 12 8c-1.7 0-3 .9-3 2s1.3 1.6 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-2.5-1.2"/><path d="M12 6.5V8"/><path d="M12 16v1.5"/></svg>` });
+const fmtCoins = (n) => Number(n || 0).toLocaleString('tr-TR');
+
+// Satın al + hemen giy. Onay penceresi fiyatı ve kalan bakiyeyi gösterir; yetmiyorsa nasıl
+// kazanılacağını söyler (sunucu da ayrıca reddeder).
+async function buyKitFlow(state, actions, item, label) {
+  const balance = state.user ? state.user.coins || 0 : 0;
+  if (!state.user) { actions.navigateToPage('login'); return; }
+  if (balance < item.price) {
+    toast(`Bu forma ${fmtCoins(item.price)} coin — ${fmtCoins(item.price - balance)} coin daha lazım. Giriş yapmış bir rakiple maç kazanarak topla.`);
+    return;
+  }
+  const ok = await confirmDialog({
+    title: `${label} formasını al`,
+    body: `${fmtCoins(item.price)} coin harcanacak (kalan: ${fmtCoins(balance - item.price)}). Forma tuttuğun takımın renklerinde giyilir; takımını değiştirsen de sende kalır.`,
+    confirmLabel: 'Satın al ve giy',
+  });
+  if (ok) await actions.buyItem(item.id, { wear: true });
+}
+
+function kitLocker(state, actions) {
+  const user = state.user;
+  const team = teamById(user.favoriteTeam);
+  const store = ensureStore(state, actions);
+  const owned = new Set(store ? store.owned : []);
+  const current = user.favoriteKit || 'home';
+  return el('div', { class: 'kit-locker' }, [
+    el('span', { class: 'auth-label' }, [el('span', {}, 'Forma dolabı'), el('span', { class: 'auth-hint' }, 'maçta oyuncuların bunu giyer')]),
+    el('div', { class: 'kit-grid' }, KIT_VARIANTS.map((v) => {
+      const k = kitFor(team, v.id);
+      const item = v.tier === 'premium' ? storeItemForKit(store, v.id) : null;
+      const locked = v.tier === 'premium' && !owned.has(item ? item.id : `kit:${v.id}`);
+      const on = current === v.id && !locked;
+      let tierText = 'Ücretsiz';
+      let tierCls = 'free';
+      if (on) { tierText = 'Giyiliyor'; tierCls = 'on'; } else if (v.tier === 'premium' && !locked) { tierText = 'Sende'; tierCls = 'owned'; } else if (locked) { tierText = item ? fmtCoins(item.price) : '…'; tierCls = 'premium'; }
+      return el('button', {
+        type: 'button', class: `kit-opt ${on ? 'on' : ''} ${locked ? 'locked' : ''}`, 'aria-pressed': String(on), title: k.name,
+        disabled: locked && !item ? 'disabled' : null, // el() false'u da attribute olarak yazar
+        onclick: () => {
+          if (on) return;
+          if (locked) buyKitFlow(state, actions, item, k.name);
+          else actions.setFavoriteKit(v.id);
+        },
+      }, [
+        el('span', { class: 'kit-shirt-wrap' }, el('span', { class: 'kit-shirt', style: `background:${kitBackground(k, 7)}` })),
+        el('span', { class: 'kit-opt-name' }, v.label),
+        el('span', { class: `kit-tier ${tierCls}` }, [locked ? coinIco(11) : null, tierText]),
+      ]);
+    })),
+    el('p', { class: 'kit-note' }, [
+      'Premium formaları maç kazanarak topladığın coinlerle alabilirsin. ',
+      el('button', { type: 'button', class: 'linklike', onclick: () => actions.navigateToPage('store') }, 'Mağazaya git →'),
+    ]),
+  ]);
+}
+
+// Takım seçici: renk örnekli hap düğmeler (ilk seçenek "Takım tutmuyorum").
+function teamPicker(current, onPick) {
+  const opts = [{ id: null, name: 'Takım tutmuyorum' }, ...TEAMS];
+  const buttons = opts.map((t) => el('button', {
+    type: 'button', class: `team-opt ${(current || null) === t.id ? 'on' : ''} ${t.id ? '' : 'none'}`,
+    'aria-pressed': String((current || null) === t.id),
+    onclick: () => {
+      buttons.forEach((b) => { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); });
+      btnFor.get(t.id).classList.add('on'); btnFor.get(t.id).setAttribute('aria-pressed', 'true');
+      onPick(t.id);
+    },
+  }, [
+    t.id ? el('span', { class: 'team-swatch', style: `background:${kitBackground(t, 3)}` }) : null,
+    el('span', { class: 'team-opt-name' }, t.name),
+  ]));
+  const btnFor = new Map(opts.map((t, i) => [t.id, buttons[i]]));
+  return el('div', { class: 'team-picker' }, buttons);
 }
 
 function authField(label, input, hint) {
@@ -714,7 +827,8 @@ export function renderLogin({ state, actions }) {
     const total = dr ? inventoryTotal(dr.inventory) : null;
     const { card } = buildLicenseCard({
       name: state.user.displayName, email: state.user.email,
-      active: !!state.user.emailVerified, pending: !state.user.emailVerified, large: true,
+      active: !!state.user.emailVerified, pending: !state.user.emailVerified, large: true, teamId: state.user.favoriteTeam,
+      frame: (state.user.cosmetics || {}).frame || null, title: (state.user.cosmetics || {}).title || null,
       footLeft: `Envanter · ${total ?? '–'} perk`,
       footRight: dr ? `Bugün ${dr.spinsUsedToday} çevirme` : '',
     });
@@ -741,6 +855,11 @@ export function renderLogin({ state, actions }) {
             el('button', { class: 'btn small secondary', onclick: () => actions.resendVerification() }, 'Tekrar gönder'),
           ]),
         ]),
+        el('div', { class: 'acct-team' }, [
+          el('span', { class: 'auth-label' }, [el('span', {}, 'Tuttuğun takım'), el('span', { class: 'auth-hint' }, 'renk teman buna göre ayarlanır')]),
+          teamPicker(state.user.favoriteTeam, (id) => actions.setFavoriteTeam(id)),
+        ]),
+        state.user.favoriteTeam ? kitLocker(state, actions) : null,
         dr ? el('div', { class: 'acct-stats' }, [
           stat('Biriken perk', String(total)),
           stat('Bugünkü hak', `${dr.spinsUsedToday}/${dr.spinsPerDay}`, dr.spinAvailable),
@@ -756,7 +875,7 @@ export function renderLogin({ state, actions }) {
     return root;
   }
 
-  if (!state.authUi) state.authUi = { mode: 'login', email: '', password: '', displayName: '' };
+  if (!state.authUi) state.authUi = { mode: 'login', email: '', password: '', displayName: '', favoriteTeam: null };
   const ui = state.authUi;
   if (ui.mode === 'forgot') {
     root.appendChild(renderPasswordRecovery({ state, actions }));
@@ -766,7 +885,7 @@ export function renderLogin({ state, actions }) {
 
   const lic = buildLicenseCard({
     name: isReg ? ui.displayName.trim() : '', email: ui.email.trim(),
-    footLeft: 'Envanter · 0 perk', footRight: 'Taslak',
+    footLeft: 'Envanter · 0 perk', footRight: 'Taslak', teamId: isReg ? ui.favoriteTeam : null,
   });
   if (!isReg) { lic.nameEl.textContent = 'Menajer'; }
 
@@ -813,7 +932,7 @@ export function renderLogin({ state, actions }) {
     if (!ui.email.trim() || !ui.password) { toast('E-posta ve parola gerekli.'); return; }
     if (ui.mode === 'register') {
       if (!ui.displayName.trim()) { toast('Görünen ad gerekli.'); nameInput.focus(); return; }
-      actions.register(ui.email.trim(), ui.password, ui.displayName.trim());
+      actions.register(ui.email.trim(), ui.password, ui.displayName.trim(), ui.favoriteTeam || null);
     } else {
       actions.login(ui.email.trim(), ui.password);
     }
@@ -831,6 +950,10 @@ export function renderLogin({ state, actions }) {
     isReg ? el('label', { class: 'auth-field' }, [
       el('span', { class: 'auth-label' }, [el('span', {}, 'Görünen ad'), el('span', { class: 'auth-hint' }, nameCount)]),
       nameInput,
+    ]) : null,
+    isReg ? el('div', { class: 'auth-field' }, [
+      el('span', { class: 'auth-label' }, [el('span', {}, 'Tuttuğun takım'), el('span', { class: 'auth-hint' }, 'isteğe bağlı · ücretsiz')]),
+      teamPicker(ui.favoriteTeam, (id) => { ui.favoriteTeam = id; paintLicenseTeam(lic, id); }),
     ]) : null,
     el('button', { class: 'btn block ticket-btn', type: 'submit' }, [
       ticketIco('key'),
@@ -891,8 +1014,9 @@ const splitPerkLabel = (label) => {
 function dailyWheelEl(state, spinKey, targetLabel, { spinning = false, landed = false, locked = false } = {}) {
   const geo = wheelGeometry(dailyRewardSegmentsFor(state));
   const disk = buildWheelDiskEl(geo, spinKey, targetLabel, dailyRewardSpinAnimated, dailyRewardSpinStartedAt);
+  const skin = state.user && state.user.cosmetics ? state.user.cosmetics.wheel : null;
   return el('div', { class: `dr-wheel ${locked ? 'locked' : ''} ${landed ? 'landed' : ''}` }, [
-    el('div', { class: `wheel-stage ${spinning ? 'spinning' : ''}` }, [
+    el('div', { class: `wheel-stage ${spinning ? 'spinning' : ''} ${skin ? `wheel-skin-${skin}` : ''}` }, [
       el('div', { class: `wheel-pointer ${landed ? 'landed' : ''}` }), disk,
     ]),
     el('div', { class: 'dr-hub' }, locked ? '🔒' : el('img', { src: '/assets/icon.png', alt: '' })),
@@ -1067,6 +1191,286 @@ function lobbyModeCardLink(actions, emoji, title, desc, page) {
   ]);
 }
 
+// ============================== MAĞAZA ==============================
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] "Mağaza gibi bir şey olsun header'da."
+// Katalog misafire de gösterilir (neyin satıldığını görsün, kayıt olmak için bir sebep); satın
+// alma giriş + doğrulanmış e-posta ister. Formalar tuttuğun takımın renklerinde önizlenir —
+// takım seçilmemişse oyunun kendi renklerinde bir örnekle.
+const STORE_PREVIEW_TEAM = { id: 'pitchgavel', colors: ['#ff9500', '#0b1422'], pattern: 'stripes', accent: '#ff9500', ink: '#1a0e00', theme: 'Örnek' };
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kozmetik satın al (+ slotluysa hemen tak).
+async function buyCosmeticFlow(state, actions, item, meta, cat) {
+  if (!state.user) { actions.navigateToPage('login'); return; }
+  const balance = state.user.coins || 0;
+  if (balance < item.price) {
+    toast(`${meta.name} ${fmtCoins(item.price)} coin — ${fmtCoins(item.price - balance)} coin daha lazım. Giriş yapmış bir rakiple maç kazanarak topla.`);
+    return;
+  }
+  const ok = await confirmDialog({
+    title: `${meta.name} al`,
+    body: `${fmtCoins(item.price)} coin harcanacak (kalan: ${fmtCoins(balance - item.price)}). ${cat.who || ''}`,
+    confirmLabel: cat.slot ? 'Satın al ve kullan' : 'Satın al',
+  });
+  if (ok) await actions.buyItem(item.id, { equip: cat.slot ? { slot: cat.id, key: item.key } : null });
+}
+
+function cosmeticPanel(state, actions, store, cat, ctx) {
+  const user = state.user;
+  const owned = new Set(store.owned || []);
+  const equipped = (user && user.cosmetics) || {};
+  const balance = user ? user.coins || 0 : 0;
+  const card = ({ key, meta, has, on, priceEl, action }) => el('div', { class: `store-card cos-card ${has ? 'owned' : ''} ${on ? 'on' : ''}` }, [
+    el('div', { class: 'cos-prev' }, cosmeticPreview(cat.id, key, ctx)),
+    el('div', { class: 'store-card-name' }, meta.name),
+    el('div', { class: 'store-card-sub' }, meta.desc),
+    el('div', { class: 'store-card-foot' }, [priceEl, action]),
+  ]);
+  const cards = [];
+  if (cat.slot) {
+    const on = !equipped[cat.id];
+    cards.push(card({
+      key: null, meta: SLOT_DEFAULTS[cat.id], has: true, on,
+      priceEl: el('span', { class: 'store-price owned' }, 'Ücretsiz'),
+      action: !user ? null : on ? el('span', { class: 'store-state on' }, 'Kullanılıyor')
+        : el('button', { class: 'btn small secondary', onclick: () => actions.setCosmetic(cat.id, null) }, 'Kullan'),
+    }));
+  }
+  for (const item of store.items.filter((i) => i.type === cat.id)) {
+    const meta = COSMETIC_META[item.id] || { name: item.key, desc: '' };
+    const has = owned.has(item.id);
+    const on = !!cat.slot && has && equipped[cat.id] === item.key;
+    let action;
+    if (!user) action = el('button', { class: 'btn small secondary', onclick: () => actions.navigateToPage('login') }, 'Giriş yap');
+    else if (on) action = el('span', { class: 'store-state on' }, 'Kullanılıyor');
+    else if (has) action = cat.slot
+      ? el('button', { class: 'btn small secondary', onclick: () => actions.setCosmetic(cat.id, item.key) }, 'Kullan')
+      : el('span', { class: 'store-state owned' }, 'Sende');
+    else action = el('button', {
+      class: `btn small ${balance >= item.price ? '' : 'secondary'}`,
+      onclick: () => buyCosmeticFlow(state, actions, item, meta, cat),
+    }, balance >= item.price ? 'Satın al' : 'Coin yetmiyor');
+    cards.push(card({
+      key: item.key, meta, has, on,
+      priceEl: has ? el('span', { class: 'store-price owned' }, 'Sende') : el('span', { class: 'store-price' }, [coinIco(15), fmtCoins(item.price)]),
+      action,
+    }));
+  }
+  return el('div', { class: 'panel store-panel' }, [
+    el('h3', {}, cat.label),
+    cat.who ? el('p', { class: 'muted store-cat-who' }, cat.who) : null,
+    el('div', { class: `store-grid cos-grid cos-${cat.id}` }, cards),
+  ]);
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Tepki paneli (bekleme odası, hazırlık çarkı,
+// draft, takas, dizilim). Küçük bir düğme; açılınca tepkiler. Ücretli paket sahibi değilse o
+// tepkiler görünmez (sunucu ayrıca reddeder). "Gizle" rakip tepkilerini bu cihazda kapatır.
+export function reactionDock({ state, actions }) {
+  const store = state.user ? ensureStore(state, actions) : null;
+  const owned = new Set(store ? store.owned : []);
+  const open = !!state.reactOpen;
+  const hidden = reactionsHidden();
+  const list = REACTIONS.filter((r) => !r.pack || owned.has(r.pack));
+  return el('div', { class: `react-dock ${open ? 'open' : ''}` }, [
+    open ? el('div', { class: 'react-dock-panel' }, [
+      el('div', { class: 'react-dock-list' }, list.map((r) => el('button', {
+        type: 'button', class: `react-chip ${r.emoji ? 'emoji' : `tone-${r.tone}`}`,
+        onclick: () => actions.sendReaction(r.id),
+      }, r.text))),
+      el('button', {
+        type: 'button', class: 'linklike react-dock-hide',
+        onclick: () => { setReactionsHidden(!hidden); actions.route(); },
+      }, hidden ? 'Rakip tepkilerini göster' : 'Rakip tepkilerini gizle'),
+    ]) : null,
+    el('button', {
+      type: 'button', class: 'react-dock-btn', 'aria-expanded': String(open), title: 'Tepki gönder',
+      onclick: () => { state.reactOpen = !open; actions.route(); },
+    }, open ? '×' : '🔥'),
+  ]);
+}
+
+// Gelen tepkiyi ekranın sağ altında kısa süre gösterir (route()'tan bağımsız, body'ye iner).
+export function showReaction(state, { clientId, reactionId }) {
+  const r = reactionById(reactionId);
+  if (!r) return;
+  const mine = clientId === state.clientId;
+  if (!mine && reactionsHidden()) return;
+  const p = (state.room && state.room.players.find((x) => x.clientId === clientId)) || {};
+  let stack = document.querySelector('.react-stack');
+  if (!stack) { stack = el('div', { class: 'react-stack' }); document.body.appendChild(stack); }
+  const bubble = el('div', { class: `react-bubble ${mine ? 'mine' : ''}` }, [
+    el('span', { class: 'react-bubble-who' }, mine ? 'Sen' : (p.name || '?')),
+    el('span', { class: `react-chip ${r.emoji ? 'emoji' : `tone-${r.tone}`}` }, r.text),
+  ]);
+  stack.appendChild(bubble);
+  while (stack.children.length > 4) stack.firstChild.remove();
+  if (!mine) sfx.play('reaction');
+  setTimeout(() => bubble.remove(), 2800);
+}
+
+export function renderStore({ state, actions }) {
+  const root = el('div', { class: 'view store-view' });
+  root.appendChild(el('button', {
+    class: 'btn small secondary', style: 'align-self:flex-start',
+    onclick: () => actions.navigateToPage(null),
+  }, '← Geri dön'));
+
+  const store = ensureStore(state, actions);
+  if (!store && state.storeError) {
+    root.appendChild(el('div', { class: 'panel store-panel' }, [
+      el('h3', {}, 'Mağaza şu an açılamadı'),
+      el('p', { class: 'muted' }, 'Sunucuya ulaşılamadı. Biraz sonra tekrar dene.'),
+      el('button', { class: 'btn small', onclick: () => { state.storeError = null; actions.route(); } }, 'Tekrar dene'),
+    ]));
+    return root;
+  }
+  if (!store) {
+    root.appendChild(loadingPanel('Mağaza yükleniyor...'));
+    return root;
+  }
+  const user = state.user;
+  const team = user ? teamById(user.favoriteTeam) : null;
+  const previewTeam = team || STORE_PREVIEW_TEAM;
+  const balance = user ? user.coins || 0 : 0;
+  const r = store.rewards;
+
+  root.appendChild(el('div', { class: 'store-head' }, [
+    el('div', { class: 'store-head-text' }, [
+      el('h1', { class: 'dr-title' }, 'Mağaza'),
+      el('p', { class: 'dr-lead' }, 'Maç kazanarak coin topla; formalar, kart çerçeveleri, saha zeminleri, gol efektleri ve daha fazlasını al. Hepsi kozmetik — maçın sonucunu etkilemez.'),
+    ]),
+    user
+      ? el('div', { class: 'store-balance' }, [
+        el('span', { class: 'dr-kicker' }, 'Bakiyen'),
+        el('span', { class: 'store-balance-v' }, [coinIco(22), fmtCoins(balance)]),
+        el('span', { class: 'store-balance-sub' }, `Bugün maçlardan: ${fmtCoins(store.todayEarned)} / ${fmtCoins(r.dailyCap)}`),
+      ])
+      : el('button', { class: 'btn', onclick: () => actions.navigateToPage('login') }, 'Giriş Yap / Kayıt Ol'),
+  ]));
+
+  if (user && !team) {
+    root.appendChild(el('div', { class: 'store-notice' }, [
+      el('span', {}, 'Formalar tuttuğun takımın renklerinde giyilir. Henüz takım seçmedin — aşağıdaki önizlemeler örnek renklerde.'),
+      el('button', { class: 'btn small secondary', onclick: () => actions.navigateToPage('login') }, 'Takımını seç'),
+    ]));
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kategori sekmeleri. Seçili sekme state'te.
+  const tab = STORE_CATS.some((c) => c.id === state.storeTab) ? state.storeTab : 'kit';
+  const countOf = (type) => store.items.filter((i) => i.type === type).length;
+  root.appendChild(el('div', { class: 'store-tabs', role: 'tablist' }, STORE_CATS.map((c) => el('button', {
+    type: 'button', role: 'tab', class: `store-tab ${tab === c.id ? 'on' : ''}`, 'aria-selected': String(tab === c.id),
+    onclick: () => { state.storeTab = c.id; actions.route(); },
+  }, [c.label, el('span', { class: 'store-tab-n' }, String(countOf(c.id)))]))));
+
+  const owned = new Set(store.owned || []);
+  const current = user ? user.favoriteKit || 'home' : null;
+  if (tab !== 'kit') {
+    root.appendChild(cosmeticPanel(state, actions, store, STORE_CATS.find((c) => c.id === tab), {
+      name: user ? user.displayName : 'Menajer',
+      kit: kitFor(previewTeam, current || 'home'),
+    }));
+  } else root.appendChild(el('div', { class: 'panel store-panel' }, [
+    el('h3', {}, 'Premium Formalar'),
+    el('div', { class: 'store-grid' }, store.items.filter((i) => i.type === 'kit').map((item) => {
+      const variant = KIT_VARIANTS.find((v) => v.id === item.kitId);
+      const k = kitFor(previewTeam, item.kitId);
+      const has = owned.has(item.id);
+      const wearing = has && team && current === item.kitId;
+      let action;
+      if (!user) action = el('button', { class: 'btn small secondary', onclick: () => actions.navigateToPage('login') }, 'Giriş yap');
+      else if (wearing) action = el('span', { class: 'store-state on' }, 'Giyiliyor');
+      else if (has) action = team
+        ? el('button', { class: 'btn small secondary', onclick: () => actions.setFavoriteKit(item.kitId) }, 'Giy')
+        : el('span', { class: 'store-state owned' }, 'Sende');
+      else action = el('button', {
+        class: `btn small ${balance >= item.price ? '' : 'secondary'}`,
+        onclick: () => buyKitFlow(state, actions, item, variant ? variant.label : item.kitId),
+      }, balance >= item.price ? 'Satın al' : 'Coin yetmiyor');
+      return el('div', { class: `store-card ${has ? 'owned' : ''}` }, [
+        el('span', { class: 'kit-shirt-wrap big' }, el('span', { class: 'kit-shirt', style: `background:${kitBackground(k, 9)}` })),
+        el('div', { class: 'store-card-name' }, variant ? variant.label : item.kitId),
+        el('div', { class: 'store-card-sub' }, team ? k.name : 'Takımının renklerinde'),
+        el('div', { class: 'store-card-foot' }, [
+          has ? el('span', { class: 'store-price owned' }, 'Sende') : el('span', { class: 'store-price' }, [coinIco(15), fmtCoins(item.price)]),
+          action,
+        ]),
+      ]);
+    })),
+  ]));
+
+  // Kurallar kullanıcıyla kararlaştırıldı (bkz. server/src/coins/CoinService.js) — şeffaf olsun
+  // diye mağazada açıkça yazıyor.
+  const row = (label, value) => el('div', { class: 'store-rule' }, [el('span', {}, label), el('b', {}, value)]);
+  root.appendChild(el('div', { class: 'panel store-panel' }, [
+    el('h3', {}, 'Coin Nasıl Kazanılır?'),
+    el('div', { class: 'store-rules' }, [
+      row('Galibiyet (her maç)', `+${r.win}`),
+      row('Beraberlik', `+${r.draw}`),
+      row('Mağlubiyet (maçı bitirmek)', `+${r.loss}`),
+      row('Günün ilk galibiyeti', `+${r.firstWinBonus} bonus`),
+      row('Günlük sınır', `${fmtCoins(r.dailyCap)} coin`),
+    ]),
+    el('ul', { class: 'store-fine' }, [
+      el('li', {}, 'Ev sahibi ve deplasman maçları ayrı ayrı ödüllendirilir.'),
+      el('li', {}, 'İki tarafın da giriş yapmış, e-postası doğrulanmış farklı hesaplar olması gerekir — misafirle oynanan maç coin vermez.'),
+      el('li', {}, `Aynı rakiple günde en fazla ${r.pairDailyLimit} maç coin verir.`),
+      el('li', {}, 'Aynı internet bağlantısından oynayan iki hesap arasında sadece galibiyet coin verir.'),
+      el('li', {}, 'Coinler sadece kozmetik ürünler içindir — maçın sonucunu etkilemez.'),
+    ]),
+  ]));
+  return root;
+}
+
+// Maç sonu coin paneli — anlatım bittikten sonra (bkz. app.js revealCoinAwardIfReady).
+const COIN_LINE_LABELS = { win: 'Galibiyet', draw: 'Beraberlik', loss: 'Mağlubiyet', first_win: 'Günün ilk galibiyeti bonusu' };
+function coinNoteText(note, rules) {
+  switch (note) {
+    case 'GUEST': return 'Giriş yapmadığın için coin kazanamadın.';
+    case 'OPPONENT_GUEST': return 'Rakibin giriş yapmadığı için o maç coin vermedi.';
+    case 'UNVERIFIED': return 'Coin için iki tarafın da e-postası doğrulanmış olmalı.';
+    case 'PAIR_LIMIT': return `Bu rakiple bugünkü ödüllü maç sınırına (${rules ? rules.pairDailyLimit : 3}) ulaştınız.`;
+    case 'SAME_NETWORK': return 'Aynı internet bağlantısından oynadığınız için sadece galibiyetler coin verdi.';
+    case 'DAILY_CAP': return `Günlük coin sınırına (${rules ? fmtCoins(rules.dailyCap) : 500}) ulaştın.`;
+    default: return null;
+  }
+}
+function coinAwardPanel(state, actions, result) {
+  const a = state.coinAward;
+  if (a && a.resultId === result.resultId) {
+    const notes = (a.notes || []).map((n) => coinNoteText(n, a.rules)).filter(Boolean);
+    return el('div', { class: `panel coin-award ${a.earned > 0 ? 'got' : 'none'}` }, [
+      el('div', { class: 'coin-award-head' }, [
+        el('span', { class: 'coin-award-amt' }, [coinIco(26), a.earned > 0 ? `+${fmtCoins(a.earned)}` : '0']),
+        el('div', { class: 'coin-award-text' }, [
+          el('b', {}, a.earned > 0 ? 'Coin kazandın' : 'Bu maçtan coin çıkmadı'),
+          typeof a.balance === 'number' ? el('span', {}, `Bakiyen: ${fmtCoins(a.balance)} coin`) : null,
+        ]),
+        a.earned > 0 ? el('button', { class: 'btn small secondary', onclick: () => actions.navigateToPage('store') }, 'Mağaza') : null,
+      ]),
+      a.lines && a.lines.length ? el('div', { class: 'coin-award-lines' }, a.lines.map((l) => el('div', { class: 'coin-award-line' }, [
+        el('span', {}, `${COIN_LINE_LABELS[l.outcome] || l.outcome}${l.score ? ` (${l.score})` : ''}`),
+        el('b', {}, `+${l.amount}`),
+      ]))) : null,
+      notes.length ? el('ul', { class: 'coin-award-notes' }, notes.map((n) => el('li', {}, n))) : null,
+    ]);
+  }
+  // Misafir: kayıt olmaya bir sebep.
+  if (!state.user) {
+    return el('div', { class: 'panel coin-award none' }, [
+      el('div', { class: 'coin-award-head' }, [
+        el('span', { class: 'coin-award-amt' }, [coinIco(26)]),
+        el('div', { class: 'coin-award-text' }, [
+          el('b', {}, 'Hesabın olsaydı bu maçtan coin kazanabilirdin'),
+          el('span', {}, 'Giriş yapmış rakiplerle oynadığın her maç coin verir; coinlerle premium forma alabilirsin.'),
+        ]),
+        el('button', { class: 'btn small secondary', onclick: () => actions.navigateToPage('login') }, 'Kayıt Ol'),
+      ]),
+    ]);
+  }
+  return null;
+}
+
 // ============================== WAITING ROOM ==============================
 // Bekleme Odası v2 — "Yayın Kontrol Odası" düzeni.
 // [KULLANICI İSTEĞİ] "Lobi ekranı çok kötü, daha profesyonel olsun, çok basit ve yapay duruyor"
@@ -1117,9 +1521,10 @@ export function renderWaitingRoom({ state, actions }) {
     rows.push(el('div', { class: cls }, [
       el('div', { class: 'wr-row-num' }, String(i + 1)),
       el('div', { class: 'wr-row-who' }, [
-        el('div', { class: 'wr-avatar' }, p ? p.name.charAt(0).toUpperCase() : '–'),
+        el('div', { class: `wr-avatar ${cosmeticOf(p, 'frame') ? `frame-${cosmeticOf(p, 'frame')}` : ''}` }, p ? p.name.charAt(0).toUpperCase() : '–'),
         el('div', { style: 'min-width:0' }, [
           el('div', { class: 'wr-row-name' }, p ? p.name + (isMe ? ' (sen)' : '') : 'Boş'),
+          cosmeticOf(p, 'title') ? el('span', { class: 'lic-title small' }, cosmeticName('title', cosmeticOf(p, 'title'))) : null,
           el('div', { class: 'wr-row-sub' }, p
             ? (offline ? 'bağlantı yok' : isHost ? 'kaptan · bağlı' : 'bağlı')
             : 'katılım bekleniyor'),
@@ -1317,8 +1722,9 @@ export function renderPrepWheel({ state, actions }) {
     const spinKey = `prep-${spin.clientId}-${spin.startedAt}`;
     const geo = wheelGeometry(prepWheelSegmentsFor(state));
     const disk = buildWheelDiskEl(geo, spinKey, spin.perk.label, prepWheelSpinAnimated, prepWheelSpinStartedAt);
+    const prepSkin = cosmeticOf(room.players.find((p) => p.clientId === spin.clientId), 'wheel');
     const stage = el('div', {
-      class: `wheel-stage ${!revealReady ? 'spinning' : ''}`,
+      class: `wheel-stage ${!revealReady ? 'spinning' : ''} ${prepSkin ? `wheel-skin-${prepSkin}` : ''}`,
     }, [el('div', { class: `wheel-pointer ${revealReady ? 'landed' : ''}` }), disk]);
 
     if (!prepWheelSpinScheduled.has(spinKey)) {
@@ -2272,11 +2678,12 @@ function renderWheelRound({ state, actions, round, paused }) {
   // (bkz. buildWheelDiskEl).
   const disk = buildWheelDiskEl(geo, spinKey, round.currentSpin ? round.currentSpin.label : null, wheelSpinAnimated, wheelSpinStartedAt);
 
+  const turnSkin = cosmeticOf(state.room.players.find((p) => p.clientId === round.clientId), 'wheel');
   const stage = el('div', {
     // [KULLANICI İSTEĞİ] "Döndüğü belli olsun" — dönerken (reveal'a kadar) bir glow/pulse
     // halkası, iniş anında pointer'da kısa bir "bounce" (bkz. styles.css .wheel-stage.spinning /
     // .wheel-pointer.landed).
-    class: `wheel-stage ${round.currentSpin && !revealReady ? 'spinning' : ''}`,
+    class: `wheel-stage ${round.currentSpin && !revealReady ? 'spinning' : ''} ${turnSkin ? `wheel-skin-${turnSkin}` : ''}`,
   }, [el('div', { class: `wheel-pointer ${revealReady ? 'landed' : ''}` }), disk]);
   wrap.appendChild(wheelFrameEl(stage, { landed: !!(round.currentSpin && revealReady), pool: round.currentSpin && round.currentSpin.pool }));
 
@@ -2550,10 +2957,11 @@ function renderRoundResultPanel(event, state) {
     emoji: '🏆', headline: `${winner} → ${event.main.name}`,
     sub: `${fmtMoney(event.price)} karşılığında kadroya kattı${progressSub}`,
   }));
+  const winnerStamp = cosmeticOf(state.room.players.find((p) => p.clientId === event.winnerClientId), 'stamp');
   wrap.appendChild(el('div', { class: 'reveal-row' }, [
     // .sold-wrap: saf CSS'te (bkz. styles.css) dönen bir "SATILDI" damgası basar — bu turun
-    // dramatik anını (kim aldı) vurgulamak için.
-    el('div', { class: 'sold-wrap' }, [playerCard(event.main, {
+    // dramatik anını (kim aldı) vurgulamak için. [MAĞAZA v2] Kazananın damgası (stamp-*).
+    el('div', { class: `sold-wrap ${winnerStamp ? `stamp-${winnerStamp}` : ''}` }, [playerCard(event.main, {
       slot: event.slotType, extraClass: 'main',
       tag: `🏆 ${winner} — ${fmtMoney(event.price)}`,
     })]),
@@ -3495,10 +3903,14 @@ function createMiniPitch(onGoalImpact, opts = {}) {
     return pitchDotPositions(slots.length ? slots : ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CM', 'CM', 'LW', 'ST', 'RW'])
       .map((p) => {
         const x = side === 'home' ? p.x : 100 - p.x;
+        // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI] Menajerin tuttuğu takımın forması;
+        // kaleci kendi (ayrı) rengini korur, takımsız menajerde eski renkler aynen kalır.
+        const kit = side === 'home' ? opts.homeKit : opts.awayKit;
+        const kitStyle = kit && p.group !== 'GK' ? ` background:${kitBackground(kit, 2)}; border-color:${kit.colors[1]};` : '';
         const node = el('span', {
-          class: `pitch-dot ${side} group-${p.group}`,
+          class: `pitch-dot ${side} group-${p.group} ${kit ? 'kit' : ''}`,
           title: p.slot,
-          style: `left:${x}%; top:${p.y}%`,
+          style: `left:${x}%; top:${p.y}%;${kitStyle}`,
         });
         bag.push({ node, baseX: x, side });
         return node;
@@ -3507,7 +3919,7 @@ function createMiniPitch(onGoalImpact, opts = {}) {
   const homeNodes = buildTeam(opts.homeSlots || [], 'home', homeDots);
   const awayNodes = buildTeam(opts.awaySlots || [], 'away', awayDots);
 
-  const field = el('div', { class: 'pitch-field' }, [
+  const field = el('div', { class: `pitch-field ${opts.pitchSkin ? `skin-${opts.pitchSkin}` : ''}` }, [
     el('div', { class: 'pitch-halfline' }),
     el('div', { class: 'pitch-circle' }),
     el('div', { class: 'pitch-box left' }),
@@ -3575,8 +3987,11 @@ function createMiniPitch(onGoalImpact, opts = {}) {
     showPhase(kind === 'red' ? 'Kırmızı kart — oyun durdu' : 'Faul — sarı kart', kind === 'red' ? 'red' : 'yellow');
   }
 
-  function showCaption(text, kind) {
+  function showCaption(text, kind, kit) {
     caption.textContent = text;
+    caption.style.background = kit ? kit.accent : '';
+    caption.style.color = kit ? kit.ink : '';
+    caption.style.borderColor = kit ? kit.accent : '';
     caption.className = `pitch-caption show ${kind}`;
     setTimeout(() => { caption.className = 'pitch-caption'; }, 1300);
   }
@@ -3666,9 +4081,9 @@ function createMiniPitch(onGoalImpact, opts = {}) {
           if (mySeq !== seq) return;
           flashGoal(targetSide, hitPost ? 'post' : '');
           if (isGoal) {
-            showCaption('GOOOL! ⚽', 'goal');
+            showCaption('GOOOL! ⚽', 'goal', attackRight ? opts.homeKit : opts.awayKit);
             showPhase(`Gol — ${defenderName} kalesi`, 'goal');
-            if (onGoalImpact) onGoalImpact(); // gol sesi + konfeti + ekran sallanması
+            if (onGoalImpact) onGoalImpact(attackRight ? 'home' : 'away'); // gol sesi + konfeti + ekran sallanması
           } else if (hitPost) {
             // [KULLANICI İSTEĞİ] direkten dönme: kendi sesi, kendi yazısı, kendi rengi.
             showCaption('DİREK! 🥁', 'post');
@@ -3710,6 +4125,12 @@ export function renderMatchPlayback({ state, actions }) {
   const nameOf = (id) => (state.room.players.find((p) => p.clientId === id) || {}).name || '?';
   const homeName = nameOf(m.homeClientId);
   const awayName = nameOf(m.awayClientId);
+  const roomPlayer = (id) => state.room.players.find((p) => p.clientId === id) || {};
+  const hp = roomPlayer(m.homeClientId);
+  const ap = roomPlayer(m.awayClientId);
+  const homeKit = kitFor(teamById(hp.teamId), hp.kitId);
+  const awayKitT = resolveClash(homeKit, kitFor(teamById(ap.teamId), ap.kitId), teamById(ap.teamId));
+  const kitSwatch = (k) => (k ? el('span', { class: 'kit-swatch', style: `background:${kitBackground(k, 3)}`, title: k.name }) : null);
   const fixtureTag = r.fixtures.length > 1 ? `Eşleşme ${step.fixtureIndex + 1}/${r.fixtures.length} — ` : '';
   const progressTag = pb.order.length > 2 ? ` (Maç ${pb.pos + 1}/${pb.order.length})` : '';
 
@@ -3764,9 +4185,9 @@ export function renderMatchPlayback({ state, actions }) {
   const clockLabel = el('div', { class: 'match-clock' }, `${pb.clock}'`);
   const scoreNum = el('span', {}, `${pb.score.home} - ${pb.score.away}`);
   const scoreEl = el('div', { class: 'scoreline' }, [
-    el('div', { class: 'team' }, homeName),
+    el('div', { class: 'team' }, [kitSwatch(homeKit), homeName]),
     el('div', { class: 'score' }, scoreNum),
-    el('div', { class: 'team' }, awayName),
+    el('div', { class: 'team' }, [awayName, kitSwatch(awayKitT)]),
   ]);
   const logEl = el('div', { class: 'event-log commentary-log' });
 
@@ -3775,9 +4196,14 @@ export function renderMatchPlayback({ state, actions }) {
 
   // Gol anında hem konfeti (liveSide'a bindirilir) hem de tüm anlatım kutusunda kısa bir
   // ekran sallanması tetikler — [KULLANICI İSTEĞİ] "enerjik/oyun gibi" hissi.
-  const pitch = createMiniPitch(() => {
+  // [MAĞAZA v2] Gol efekti + tribün sesi golü atan tarafın seçimi; saha zemini ev sahibinin.
+  const pitch = createMiniPitch((side) => {
+    const scorer = side === 'away' ? ap : hp;
     sfx.play('goal');
-    spawnConfetti(liveSide);
+    playGoalFx(cosmeticOf(scorer, 'goalfx'), {
+      container: liveSide, field: pitch.el.querySelector('.pitch-field'), side, kit: side === 'away' ? awayKitT : homeKit,
+    });
+    playCrowd(cosmeticOf(scorer, 'crowd'));
     layoutEl.classList.remove('shake');
     void layoutEl.offsetWidth;
     layoutEl.classList.add('shake');
@@ -3785,7 +4211,8 @@ export function renderMatchPlayback({ state, actions }) {
     // Saha noktaları gerçek dizilimden çizilir (bkz. createMiniPitch v2).
     homeSlots: (m.lineupHome || []).map((e) => e.slot),
     awaySlots: (m.lineupAway || []).map((e) => e.slot),
-    homeName, awayName,
+    homeName, awayName, homeKit, awayKit: awayKitT,
+    pitchSkin: cosmeticOf(hp, 'pitch'),
   });
 
   if (pb.shown.length === 0) {
@@ -4121,6 +4548,8 @@ export function renderMatch({ state, actions }) {
   // kodunu yeniden paylaşmadan sıfırdan bir draft başlatır (bkz. actions.rematch).
   // [KULLANICI İSTEĞİ] Maç sonu aksiyonları v3: büyük birincil "Tekrar Oyna" + iki ikincil kart.
   const actIco = (p) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+  const coinPanel = coinAwardPanel(state, actions, r);
+  if (coinPanel) root.appendChild(coinPanel);
   const actBtn = (cls, icon, title, sub, onclick) => el('button', { class: `end-act ${cls}`, type: 'button', onclick }, [
     el('span', { class: 'end-act-ico', html: actIco(icon) }),
     el('span', { class: 'end-act-text' }, [el('b', {}, title), el('small', {}, sub)]),

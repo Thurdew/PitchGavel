@@ -90,6 +90,43 @@ const SCHEMA_SQL = `
     granted_at  INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_perk_grants_user_id ON perk_grants(user_id);
+
+  -- [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Bakiye users.coins'te (aşağıdaki
+  -- guard'lı ALTER); her hareket (maç ödülü +, satın alma -) ayrıca bu deftere yazılır.
+  CREATE TABLE IF NOT EXISTS coin_ledger (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    amount     INTEGER NOT NULL,
+    reason     TEXT NOT NULL,
+    meta       TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_coin_ledger_user_id ON coin_ledger(user_id);
+
+  -- Günlük maç kazancı (tavan) + günün ilk galibiyet bonusu verildi mi.
+  CREATE TABLE IF NOT EXISTS coin_daily (
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day       TEXT NOT NULL,
+    earned    INTEGER NOT NULL DEFAULT 0,
+    first_win INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+  );
+
+  -- Aynı iki hesap arasında o gün kaç ödüllü maç oynandı (pair_key = "küçükId:büyükId").
+  CREATE TABLE IF NOT EXISTS coin_pair_daily (
+    day      TEXT NOT NULL,
+    pair_key TEXT NOT NULL,
+    count    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, pair_key)
+  );
+
+  -- Mağazadan alınan ürünler (item_id ör. "kit:retro").
+  CREATE TABLE IF NOT EXISTS user_items (
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id     TEXT NOT NULL,
+    acquired_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, item_id)
+  );
 `;
 
 // Şema + guard'lı ALTER'lar. Asenkron — index.js sunucuyu dinlemeye açmadan önce `ready`'i bekler.
@@ -110,6 +147,22 @@ async function initSchema(database) {
   const usersCols = (await database.all('PRAGMA table_info(users)')).map((c) => c.name);
   if (!usersCols.includes('email_verified_at')) {
     await database.exec('ALTER TABLE users ADD COLUMN email_verified_at INTEGER');
+  }
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI] Tuttuğu takım (ücretsiz, bilgi amaçlı).
+  if (!usersCols.includes('favorite_team')) {
+    await database.exec('ALTER TABLE users ADD COLUMN favorite_team TEXT');
+  }
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — FORMA ÇEŞİTLERİ] Seçili forma varyantı (null = iç saha).
+  if (!usersCols.includes('favorite_kit')) {
+    await database.exec('ALTER TABLE users ADD COLUMN favorite_kit TEXT');
+  }
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Coin bakiyesi.
+  if (!usersCols.includes('coins')) {
+    await database.exec('ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0');
+  }
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Takılı kozmetikler, JSON: { frame: 'gold', ... }.
+  if (!usersCols.includes('cosmetics')) {
+    await database.exec('ALTER TABLE users ADD COLUMN cosmetics TEXT');
   }
 }
 
