@@ -1,4 +1,7 @@
 const { STATUS } = require('../rooms/RoomManager');
+const { isValidTeamId, isValidKitId } = require('../shared/teams');
+const { canonicalEmail } = require('../coins/CoinService');
+const { REACTIONS, REACTION_LIMIT } = require('../shared/economy');
 
 function registerRoomSockets(io, socket, ctx) {
   const { roomManager } = ctx;
@@ -93,6 +96,72 @@ function registerRoomSockets(io, socket, ctx) {
       if (changed) broadcastState(changed);
     }
     if (socket.data.roomCode === targetCode) socket.data.roomCode = null;
+    cb?.({ ok: true });
+  });
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Giriş yapmış oyuncu hesabını
+  // odadaki oyuncusuna bağlar (bkz. auth/RoomTickets.js — bilet HTTP'den, güncel cookie ile
+  // alınır). Coin ödülü bu bağa göre yazılır. Takım/forma da artık istemcinin söylediğinden değil
+  // veritabanından okunuyor (eski `room:setTeam` herkesin herhangi bir premium formayı
+  // "giymesine" izin veriyordu). Matchmaking dahil her oda türünde çalışır; takım/forma
+  // değiştirildiğinde istemci aynı event'i tekrar çağırır.
+  socket.on('room:bindAccount', async ({ ticket } = {}, cb) => {
+    const room = roomManager.getRoom((socket.data.roomCode || '').toUpperCase());
+    if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
+    const player = room.players.find((p) => p.clientId === socket.data.clientId);
+    if (!player) return cb?.({ error: 'NOT_IN_ROOM' });
+    const entry = ctx.roomTickets.consume(ticket);
+    if (!entry) return cb?.({ error: 'INVALID_TICKET' });
+    let user;
+    try { user = await ctx.authService.getUserById(entry.userId); } catch (e) { return cb?.({ error: 'SERVER_ERROR' }); }
+    if (!user) return cb?.({ error: 'INVALID_TICKET' });
+    // Bir oyuncu oda ömrü boyunca tek bir hesaba bağlanır — sonradan başka bir hesaba
+    // devredilemez (ör. biri o oyuncunun clientId'siyle bağlanıp kazancı kendine yazamasın).
+    if (player.account && player.account.userId !== user.id) return cb?.({ error: 'ALREADY_LINKED' });
+    const canonical = canonicalEmail(user.email);
+    const clash = room.players.some((p) => p !== player && p.account
+      && (p.account.userId === user.id || p.account.canonicalEmail === canonical));
+    if (clash) return cb?.({ error: 'ACCOUNT_ALREADY_IN_ROOM' });
+
+    let kitId = null;
+    if (user.favoriteTeam && isValidTeamId(user.favoriteTeam)) {
+      kitId = isValidKitId(user.favoriteKit) && (await ctx.coinService.ownsKit(user.id, user.favoriteKit)) ? user.favoriteKit : 'home';
+    }
+    player.account = { userId: user.id, canonicalEmail: canonical, verified: !!user.emailVerified, ip: entry.ip };
+    player.teamId = kitId ? user.favoriteTeam : null;
+    player.kitId = kitId;
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kozmetikler de DB'den, sahiplik süzgecinden
+    // geçerek — istemci ne söylerse söylesin almadığı bir ürünü odada gösteremez.
+    try {
+      player.cosmetics = await ctx.coinService.equippedCosmetics(user.id, user.cosmetics);
+      player.reactionPacks = await ctx.coinService.ownedReactionPacks(user.id);
+    } catch (e) {
+      player.cosmetics = null;
+      player.reactionPacks = [];
+    }
+    cb?.({ ok: true });
+    broadcastState(room);
+  });
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Draft/takas tepkileri. Oda içine yayınlanır;
+  // odada kalıcı bir kaydı yok. Kova: en fazla REACTION_LIMIT.burst birikir, refillMs'de bir dolar.
+  socket.on('room:react', ({ reactionId } = {}, cb) => {
+    const room = roomManager.getRoom((socket.data.roomCode || '').toUpperCase());
+    if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
+    const player = room.players.find((p) => p.clientId === socket.data.clientId);
+    if (!player) return cb?.({ error: 'NOT_IN_ROOM' });
+    const def = Object.prototype.hasOwnProperty.call(REACTIONS, reactionId) ? REACTIONS[reactionId] : null;
+    if (!def) return cb?.({ error: 'UNKNOWN_REACTION' });
+    if (def.pack && !(player.reactionPacks || []).includes(def.pack)) return cb?.({ error: 'REACTION_NOT_OWNED' });
+    const now = Date.now();
+    const b = player.reactBucket || { tokens: REACTION_LIMIT.burst, at: now };
+    const refill = Math.floor((now - b.at) / REACTION_LIMIT.refillMs);
+    if (refill > 0) { b.tokens = Math.min(REACTION_LIMIT.burst, b.tokens + refill); b.at += refill * REACTION_LIMIT.refillMs; }
+    if (b.tokens >= REACTION_LIMIT.burst) b.at = now;
+    if (b.tokens <= 0) { player.reactBucket = b; return cb?.({ error: 'RATE_LIMITED' }); }
+    b.tokens -= 1;
+    player.reactBucket = b;
+    io.to(room.code).emit('room:reaction', { clientId: player.clientId, reactionId, at: now });
     cb?.({ ok: true });
   });
 

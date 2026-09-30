@@ -72,6 +72,8 @@ function registerMatchSockets(io, socket, ctx) {
     const result = playRoundRobin(room);
     if (result.error) return cb?.({ error: result.error });
     result.matchOrder = buildMatchOrder((result.fixtures || []).length);
+    // Coin ödülü (aşağıda) bu kimlikle eşleşir — rövanşta eski ödül yeni sonuca karışmasın.
+    result.resultId = `${room.code}-${Date.now()}`;
 
     room.matchState = result;
     room.status = STATUS.FINISHED;
@@ -84,7 +86,27 @@ function registerMatchSockets(io, socket, ctx) {
     // istemcideki eski 'match' durumu güncellenmez ve sonuç ekranına geçilmez.
     io.to(room.code).emit('room:state', roomManager.toPublicState(room));
     io.to(room.code).emit('match:result', result);
+    awardCoins(room, result);
   });
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Maç sonucu kesinleşince sunucuda
+  // ödül yazılır (istemci "kazandım" diyemez). Sonuç her oyuncuya KENDİ socket'ine gönderilir;
+  // istemci bunu anlatım bitene kadar göstermez (skoru önceden söylememek için). Veritabanı
+  // hatası maç akışını asla bozmaz — sadece loglanır.
+  function awardCoins(room, result) {
+    const accounts = {};
+    for (const p of room.players) if (p.account) accounts[p.clientId] = p.account;
+    if (Object.keys(accounts).length === 0) return;
+    ctx.coinService.awardRoomResult(result.fixtures, accounts, room.players.map((p) => p.clientId))
+      .then((awards) => {
+        for (const p of room.players) {
+          const award = awards[p.clientId];
+          if (!award || !p.socketId) continue;
+          io.to(p.socketId).emit('coins:awarded', { resultId: result.resultId, ...award });
+        }
+      })
+      .catch((e) => console.error('[coins] maç ödülü yazılamadı:', e.message));
+  }
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Anlatım hızı OY: sadece bu oyuncunun oyu kaydedilir —
   // gerçek değişiklik SADECE room.players'ın TAMAMI aynı hızı oyladığında uygulanır (bkz. yukarıdaki

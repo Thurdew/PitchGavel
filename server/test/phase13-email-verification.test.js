@@ -37,7 +37,7 @@ async function unitTests() {
     CREATE TABLE users (
       id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, display_name TEXT NOT NULL,
-      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, email_verified_at INTEGER
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, email_verified_at INTEGER, favorite_team TEXT, favorite_kit TEXT
     );
     CREATE TABLE sessions (
       token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -25,8 +25,14 @@ function verifyPassword(password, hash, salt) {
   return crypto.timingSafeEqual(candidate, stored);
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] users.cosmetics JSON; bozuksa boş obje.
+function parseCosmetics(raw) {
+  if (!raw) return {};
+  try { const o = JSON.parse(raw); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { return {}; }
+}
+
 function toPublicUser(row) {
-  return { id: row.id, email: row.email, displayName: row.display_name, emailVerified: !!row.email_verified_at };
+  return { id: row.id, email: row.email, displayName: row.display_name, emailVerified: !!row.email_verified_at, favoriteTeam: row.favorite_team || null, favoriteKit: row.favorite_kit || 'home', coins: Number(row.coins || 0), cosmetics: parseCosmetics(row.cosmetics) };
 }
 
 class AuthService {
@@ -36,7 +42,7 @@ class AuthService {
     this._sweepTimer.unref?.();
   }
 
-  async register(email, password, displayName) {
+  async register(email, password, displayName, favoriteTeam = null) {
     const normEmail = normalizeEmail(email);
     const existing = await this.db.get('SELECT id FROM users WHERE email = ?', normEmail);
     if (existing) return { error: 'EMAIL_TAKEN' };
@@ -46,9 +52,9 @@ class AuthService {
     let info;
     try {
       info = await this.db.run(
-        `INSERT INTO users (email, password_hash, password_salt, display_name, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        normEmail, hash, salt, displayName.trim().slice(0, 24), now, now
+        `INSERT INTO users (email, password_hash, password_salt, display_name, favorite_team, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        normEmail, hash, salt, displayName.trim().slice(0, 24), favoriteTeam || null, now, now
       );
     } catch (e) {
       // Asenkron DB'de yukarıdaki SELECT ile bu INSERT arasında aynı e-postayla eşzamanlı bir
@@ -60,6 +66,35 @@ class AuthService {
     const user = await this.db.get('SELECT * FROM users WHERE id = ?', info.lastInsertRowid);
     const token = await this._createSession(user.id);
     return { user: toPublicUser(user), token };
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Odaya hesap bağlanırken (bkz.
+  // roomSockets room:bindAccount) — kullanıcı bilgisi token'dan değil kısa ömürlü bilet'ten gelir.
+  async getUserById(userId) {
+    const row = await this.db.get('SELECT * FROM users WHERE id = ?', userId);
+    return row ? toPublicUser(row) : null;
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI] null = "takım tutmuyorum".
+  async setFavoriteTeam(userId, teamId) {
+    await this.db.run('UPDATE users SET favorite_team = ?, updated_at = ? WHERE id = ?', teamId || null, Date.now(), userId);
+    return toPublicUser(await this.db.get('SELECT * FROM users WHERE id = ?', userId));
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — FORMA ÇEŞİTLERİ]
+  async setFavoriteKit(userId, kitId) {
+    await this.db.run('UPDATE users SET favorite_kit = ?, updated_at = ? WHERE id = ?', kitId, Date.now(), userId);
+    return toPublicUser(await this.db.get('SELECT * FROM users WHERE id = ?', userId));
+  }
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Tek slotu değiştirir; key null = varsayılana dön.
+  // Sahiplik kontrolü çağıranda (index.js /api/auth/cosmetic).
+  async setCosmetic(userId, slot, key) {
+    const row = await this.db.get('SELECT cosmetics FROM users WHERE id = ?', userId);
+    const cur = parseCosmetics(row && row.cosmetics);
+    if (key) cur[slot] = key; else delete cur[slot];
+    await this.db.run('UPDATE users SET cosmetics = ?, updated_at = ? WHERE id = ?', JSON.stringify(cur), Date.now(), userId);
+    return toPublicUser(await this.db.get('SELECT * FROM users WHERE id = ?', userId));
   }
 
   async login(email, password) {
