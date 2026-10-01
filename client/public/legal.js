@@ -8,7 +8,7 @@
 import { el } from './helpers.js';
 
 // !!! YAYINDAN ÖNCE DOLDUR: KVKK başvuruları için gerçek bir iletişim adresi (ör. destek@pitchgavel.com).
-export const CONTACT_EMAIL = 'noreply@pitchgavel.com';
+export const CONTACT_EMAIL = 'semihturkoglu@gmail.com';
 export const DATA_CONTROLLER = 'PitchGavel';
 const POLICY_DATE = '1 Ekim 2026';
 
