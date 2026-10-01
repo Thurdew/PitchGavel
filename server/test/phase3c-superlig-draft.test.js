@@ -39,10 +39,10 @@ async function main() {
   const guest = connect();
   await Promise.all([once(host, 'connect'), once(guest, 'connect')]);
 
-  const created = await emitAck(host, 'room:create', { clientId: hostId, name: 'Host', playerPool: 'super-lig' });
+  const created = await emitAck(host, 'room:create', { clientId: hostId, clientSecret: `seat-secret-${hostId}`, name: 'Host', playerPool: 'super-lig' });
   const code = created.room.code;
   console.assert(created.room.playerPool === 'super-lig', 'oda playerPool=super-lig olarak kurulmalı: ' + created.room.playerPool);
-  await emitAck(guest, 'room:join', { clientId: guestId, name: 'Guest', code });
+  await emitAck(guest, 'room:join', { clientId: guestId, clientSecret: `seat-secret-${guestId}`, name: 'Guest', code });
   console.log('[test3c] oda hazır:', code, 'playerPool:', created.room.playerPool);
 
   let latestDraftUpdate = null;

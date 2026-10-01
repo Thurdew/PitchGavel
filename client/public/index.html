@@ -5,6 +5,15 @@
      GTM (GTM-PQJZG74P) içinden bir "GA4 Configuration" tag'iyle yönetiyoruz — hem gtag.js hem
      GTM aynı anda GA4'ü yapılandırırsa page_view ÇİFT sayılır. Measurement ID (G-HFXJF7G9JL)
      GTM tarafında Constant değişkeni olarak tutulmalı. -->
+<!-- [YASAL — KVKK / ÇEREZ ONAYI] Google Consent Mode v2: GTM'den ÖNCE varsayılan "reddedildi".
+     Kullanıcı daha önce "Kabul et" dediyse (localStorage pg_consent) hemen "granted" uygulanır;
+     ilk ziyarette karar bekler, onay şeridi legal.js'te. GA4 etiketi bu ayarlara uyar. -->
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', wait_for_update: 500 });
+try { if (localStorage.getItem('pg_consent') === 'granted') gtag('consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted' }); } catch (e) {}
+</script>
 <!-- Google Tag Manager -->
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -81,6 +90,10 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </header>
 
   <main id="app" class="app"></main>
+
+  <footer class="site-footer">
+    <a href="/gizlilik">Gizlilik ve Çerez Politikası</a>
+  </footer>
 
   <div id="toastHost" class="toast-host"></div>
 

@@ -194,9 +194,9 @@ async function e2e() {
   await Promise.all([once(host, 'connect'), once(guest, 'connect')]);
   const hostId = `coins-h-${stamp}`;
   const guestId = `coins-g-${stamp}`;
-  const created = await emitAck(host, 'room:create', { clientId: hostId, name: 'Host' });
+  const created = await emitAck(host, 'room:create', { clientId: hostId, clientSecret: `seat-secret-${hostId}`, name: 'Host' });
   const code = created.room.code;
-  await emitAck(guest, 'room:join', { clientId: guestId, name: 'Guest', code });
+  await emitAck(guest, 'room:join', { clientId: guestId, clientSecret: `seat-secret-${guestId}`, name: 'Guest', code });
 
   const ticket = async (acc) => (await http('POST', '/api/rooms/ticket', acc.cookie)).json.ticket;
   assert.strictEqual((await http('POST', '/api/rooms/ticket')).status, 401, 'misafir bilet alamaz');

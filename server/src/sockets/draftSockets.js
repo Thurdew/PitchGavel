@@ -1,10 +1,11 @@
 const { STATUS } = require('../rooms/RoomManager');
+const { roomCode } = require('./safeHandlers');
 
 function registerDraftSockets(io, socket, ctx) {
   const { roomManager, draftEngine } = ctx;
 
   function getRoom(code) {
-    return roomManager.getRoom((code || socket.data.roomCode || '').toUpperCase());
+    return roomManager.getRoom(roomCode(code) || roomCode(socket.data.roomCode));
   }
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kişi gelirse gelsin, herkes hazır verdikten

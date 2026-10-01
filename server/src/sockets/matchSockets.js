@@ -1,4 +1,5 @@
 const { STATUS } = require('../rooms/RoomManager');
+const { roomCode } = require('./safeHandlers');
 const { playRoundRobin } = require('../match/orchestrate');
 
 // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "3 arkadaş oynuyoruz, herkesin ekranında o sırada
@@ -45,7 +46,7 @@ function registerMatchSockets(io, socket, ctx) {
   // artık tek çağrı maçı BAŞLATMIYOR — her çağrı caller'ın "hazırım" oyunu açıp/kapatıyor,
   // sadece iki oy da varken gerçek simülasyon tetiklenir (draft:start ile aynı desen).
   socket.on('match:simulate', ({ code } = {}, cb) => {
-    const room = roomManager.getRoom((code || socket.data.roomCode || '').toUpperCase());
+    const room = roomManager.getRoom(roomCode(code) || roomCode(socket.data.roomCode));
     if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
     const isMember = room.players.some((p) => p.clientId === socket.data.clientId);
     if (!isMember) return cb?.({ error: 'NOT_IN_ROOM' });
@@ -113,7 +114,7 @@ function registerMatchSockets(io, socket, ctx) {
   // playbackSyncPublic/initPlaybackSync notu). Zaten anlaşılmış bir hızdan farklı bir öneri oy
   // birliğine ulaşana kadar mevcut anlaşılan hız DEĞİŞMEDEN kalır — "herkes aynı şekilde izler".
   socket.on('match:playbackSpeedVote', ({ code, speed } = {}, cb) => {
-    const room = roomManager.getRoom((code || socket.data.roomCode || '').toUpperCase());
+    const room = roomManager.getRoom(roomCode(code) || roomCode(socket.data.roomCode));
     if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
     const clientId = socket.data.clientId;
     if (!room.players.some((p) => p.clientId === clientId)) return cb?.({ error: 'NOT_IN_ROOM' });
@@ -137,7 +138,7 @@ function registerMatchSockets(io, socket, ctx) {
   // (room.players.length'e ulaşınca) `skip` kalıcı olarak true olur ve herkes AYNI ANDA sonuç
   // ekranına geçer (bkz. app.js applyPlaybackSync).
   socket.on('match:playbackSkipToggle', ({ code } = {}, cb) => {
-    const room = roomManager.getRoom((code || socket.data.roomCode || '').toUpperCase());
+    const room = roomManager.getRoom(roomCode(code) || roomCode(socket.data.roomCode));
     if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
     const clientId = socket.data.clientId;
     if (!room.players.some((p) => p.clientId === clientId)) return cb?.({ error: 'NOT_IN_ROOM' });

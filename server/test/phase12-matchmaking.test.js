@@ -84,16 +84,16 @@ async function e2eTest() {
   await Promise.all([once(s1, 'connect'), once(s2, 'connect'), once(s3, 'connect')]);
 
   // s3 farklı bir kombinasyonla kuyrukta bekleyecek — s1/s2 ile eşleşMEMELİ (regresyon/izolasyon).
-  const s3res = await emitAck(s3, 'matchmaking:join', { clientId: 'mm-lonely', name: 'Lonely', draftMode: 'blind', playerPool: 'all' });
+  const s3res = await emitAck(s3, 'matchmaking:join', { clientId: 'mm-lonely', clientSecret: `seat-secret-${'mm-lonely'}`, name: 'Lonely', draftMode: 'blind', playerPool: 'all' });
   assert.strictEqual(s3res.queued, true);
   let s3Matched = false;
   s3.once('matchmaking:matched', () => { s3Matched = true; });
 
   const matched1 = once(s1, 'matchmaking:matched');
   const matched2 = once(s2, 'matchmaking:matched');
-  const res1 = await emitAck(s1, 'matchmaking:join', { clientId: 'mm-a', name: 'A', draftMode: 'live', playerPool: 'all' });
+  const res1 = await emitAck(s1, 'matchmaking:join', { clientId: 'mm-a', clientSecret: `seat-secret-${'mm-a'}`, name: 'A', draftMode: 'live', playerPool: 'all' });
   assert.strictEqual(res1.queued, true);
-  const res2 = await emitAck(s2, 'matchmaking:join', { clientId: 'mm-b', name: 'B', draftMode: 'live', playerPool: 'all' });
+  const res2 = await emitAck(s2, 'matchmaking:join', { clientId: 'mm-b', clientSecret: `seat-secret-${'mm-b'}`, name: 'B', draftMode: 'live', playerPool: 'all' });
   assert.strictEqual(res2.queued, true);
 
   const [m1, m2] = await Promise.all([matched1, matched2]);

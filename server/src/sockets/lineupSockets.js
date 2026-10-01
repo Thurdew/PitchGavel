@@ -1,4 +1,5 @@
 const { STATUS } = require('../rooms/RoomManager');
+const { roomCode } = require('./safeHandlers');
 const { buildableFormations, validateAssignment } = require('../lineup/lineup');
 const { FORMATIONS } = require('../shared/football');
 const { normalizeStyle } = require('../match/cards');
@@ -19,7 +20,7 @@ function registerLineupSockets(io, socket, ctx) {
   const { roomManager } = ctx;
 
   function getRoom(code) {
-    return roomManager.getRoom((code || socket.data.roomCode || '').toUpperCase());
+    return roomManager.getRoom(roomCode(code) || roomCode(socket.data.roomCode));
   }
 
   socket.on('lineup:options', ({ code } = {}, cb) => {

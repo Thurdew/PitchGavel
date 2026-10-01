@@ -4052,3 +4052,24 @@ button:disabled, .btn:disabled {
   .react-dock { left: 10px; bottom: 10px; }
   .react-stack { right: 10px; bottom: 70px; }
 }
+
+/* [YASAL — KVKK / ÇEREZ ONAYI] Onay şeridi, alt bilgi ve politika sayfası (bkz. legal.js). */
+.consent-banner {
+  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 1000;
+  max-width: 720px; margin: 0 auto;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
+  padding: 14px 16px; border-radius: 12px;
+  background: var(--bg-elevated); color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+}
+.consent-text { flex: 1 1 320px; margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-muted); }
+.consent-text a, .site-footer a, .legal-section a { color: var(--accent); }
+.consent-actions { display: flex; gap: 8px; margin-left: auto; }
+.site-footer { padding: 24px 16px 32px; text-align: center; font-size: 12.5px; }
+.site-footer a { color: var(--text-faint); text-decoration: none; }
+.site-footer a:hover { color: var(--text-muted); text-decoration: underline; }
+.legal-view { max-width: 820px; }
+.legal-section p, .legal-list { color: var(--text-muted); line-height: 1.6; font-size: 14px; }
+.legal-list { padding-left: 20px; margin: 8px 0; }
+.legal-list li + li { margin-top: 6px; }

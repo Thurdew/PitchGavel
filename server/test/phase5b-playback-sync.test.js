@@ -39,9 +39,9 @@ async function main() {
   const sockets = Array.from({ length: N }, () => connect());
   await Promise.all(sockets.map((s) => once(s, 'connect')));
 
-  const created = await emitAck(sockets[0], 'room:create', { clientId: ids[0], name: 'P0' });
+  const created = await emitAck(sockets[0], 'room:create', { clientId: ids[0], clientSecret: `seat-secret-${ids[0]}`, name: 'P0' });
   const code = created.room.code;
-  for (let i = 1; i < N; i++) await emitAck(sockets[i], 'room:join', { clientId: ids[i], name: `P${i}`, code });
+  for (let i = 1; i < N; i++) await emitAck(sockets[i], 'room:join', { clientId: ids[i], clientSecret: `seat-secret-${ids[i]}`, name: `P${i}`, code });
   console.log('[test5b] oda hazır:', code);
 
   let latestDraftUpdate = null;

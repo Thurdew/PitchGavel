@@ -25,7 +25,7 @@ async function main() {
   await once(hostSocket, 'connect');
 
   const created = await new Promise((resolve) => {
-    hostSocket.emit('room:create', { clientId: hostId, name: 'Semih' }, resolve);
+    hostSocket.emit('room:create', { clientId: hostId, clientSecret: `seat-secret-${hostId}`, name: 'Semih' }, resolve);
   });
   console.assert(created.room && created.room.code, 'oda kodu oluşmalı');
   console.assert(created.room.hostClientId === hostId, 'odayı kuran kişi hostClientId olarak işaretlenmeli: ' + created.room.hostClientId);
@@ -38,7 +38,7 @@ async function main() {
   const readyPromise = once(hostSocket, 'room:ready');
 
   const joined = await new Promise((resolve) => {
-    guestSocket.emit('room:join', { clientId: guestId, name: 'Rakip', code }, resolve);
+    guestSocket.emit('room:join', { clientId: guestId, clientSecret: `seat-secret-${guestId}`, name: 'Rakip', code }, resolve);
   });
   console.assert(joined.room && joined.room.players.length === 2, 'iki oyuncu da odada olmalı');
   console.log('[test] katılım sonrası oda:', joined.room);
@@ -52,7 +52,7 @@ async function main() {
   const thirdSocket = connect();
   await once(thirdSocket, 'connect');
   const thirdJoin = await new Promise((resolve) => {
-    thirdSocket.emit('room:join', { clientId: 'client-third-1', name: 'Üçüncü', code }, resolve);
+    thirdSocket.emit('room:join', { clientId: 'client-third-1', clientSecret: `seat-secret-${'client-third-1'}`, name: 'Üçüncü', code }, resolve);
   });
   console.assert(!thirdJoin.error && thirdJoin.room.players.length === 3, '3. kişi de rahatça katılabilmeli: ' + JSON.stringify(thirdJoin));
   console.log('[test] 3. kişi başarıyla katıldı, oda artık', thirdJoin.room.players.length, 'kişilik');
@@ -67,7 +67,7 @@ async function main() {
   const guestSocket2 = connect();
   await once(guestSocket2, 'connect');
   const reconnected = await new Promise((resolve) => {
-    guestSocket2.emit('room:reconnect', { clientId: guestId, code }, resolve);
+    guestSocket2.emit('room:reconnect', { clientId: guestId, clientSecret: `seat-secret-${guestId}`, code }, resolve);
   });
   console.assert(reconnected.room.players.length === 3, 'reconnect sonrası hâlâ 3 oyuncu olmalı (host+guest+üçüncü)');
   console.log('[test] reconnect başarılı:', reconnected.room);
@@ -79,12 +79,12 @@ async function main() {
   const strangerSocket = connect();
   await once(strangerSocket, 'connect');
   const strangerJoin = await new Promise((resolve) => {
-    strangerSocket.emit('room:join', { clientId: 'client-stranger-1', name: 'Yabancı', code }, resolve);
+    strangerSocket.emit('room:join', { clientId: 'client-stranger-1', clientSecret: `seat-secret-${'client-stranger-1'}`, name: 'Yabancı', code }, resolve);
   });
   console.assert(strangerJoin.error === 'ROOM_IN_PROGRESS', 'oyun başladıktan sonra YENİ biri katılamamalı: ' + JSON.stringify(strangerJoin));
   console.log('[test] oyun içindeyken yeni katılım engellendi:', strangerJoin.error);
   const existingRejoin = await new Promise((resolve) => {
-    guestSocket2.emit('room:join', { clientId: guestId, name: 'Rakip', code }, resolve);
+    guestSocket2.emit('room:join', { clientId: guestId, clientSecret: `seat-secret-${guestId}`, name: 'Rakip', code }, resolve);
   });
   console.assert(!existingRejoin.error, 'var olan bir oyuncu draft sırasında da room:join ile geri dönebilmeli: ' + JSON.stringify(existingRejoin));
   console.log('[test] var olan oyuncunun draft sırasında geri katılması hâlâ çalışıyor');

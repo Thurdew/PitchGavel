@@ -62,6 +62,9 @@ async function unitTests() {
       expires_at INTEGER NOT NULL
     );
   `);
+  // [GÜVENLİK] Elle yazılmış DDL'e gerçek initSchema'nın guard'lı ALTER'larını da uygula
+  // (ör. token'ların hash'li saklandığını gösteren `hashed` kolonu) — DDL kopyası geride kalmasın.
+  await require('../src/db/db').initSchema(wrapSqlite(db));
   const auth = new AuthService(wrapSqlite(db));
 
   // --- register başarılı, hash/salt asla dışarı sızmıyor ---
@@ -102,8 +105,8 @@ async function unitTests() {
   // --- sweepExpiredSessions ---
   const stillValid = (await auth.login('test@example.com', 'password123')).token;
   const now = Date.now();
-  db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-    .run('expired-token-for-test', reg.user.id, now - 1000, now - 1);
+  db.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at, hashed) VALUES (?, ?, ?, ?, 1)')
+    .run(require('../src/db/db').sha256('expired-token-for-test'), reg.user.id, now - 1000, now - 1);
   await auth.sweepExpiredSessions();
   assert.strictEqual(await auth.getUserByToken('expired-token-for-test'), null, 'süresi geçmiş oturum temizlenmeli');
   assert(await auth.getUserByToken(stillValid), 'geçerli oturum sweep\'ten etkilenmemeli');

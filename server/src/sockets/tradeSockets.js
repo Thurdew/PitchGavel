@@ -1,12 +1,13 @@
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] Socket katmanı — tüm kural/doğrulama
 // TradeEngine'de (sunucu asıl otorite); burada sadece oda/oyuncu çözümleme ve ack dönüşü var.
 const { STATUS } = require('../rooms/RoomManager');
+const { roomCode } = require('./safeHandlers');
 
 function registerTradeSockets(io, socket, ctx) {
   const { roomManager, tradeEngine } = ctx;
 
   function getRoom(code) {
-    return roomManager.getRoom((code || socket.data.roomCode || '').toUpperCase());
+    return roomManager.getRoom(roomCode(code) || roomCode(socket.data.roomCode));
   }
   function resolve(code, cb) {
     const room = getRoom(code);

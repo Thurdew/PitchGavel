@@ -170,13 +170,13 @@ async function e2eTest() {
   await Promise.all([once(sHost, 'connect'), once(sGuest, 'connect')]);
 
   const createRes = await emitAck(sHost, 'room:create', {
-    clientId: clientIdHost, name: 'Host', draftMode: 'live', playerPool: 'all',
+    clientId: clientIdHost, clientSecret: `seat-secret-${clientIdHost}`, name: 'Host', draftMode: 'live', playerPool: 'all',
     prepWheelEnabled: true, bankedPerksEnabled: true,
   });
   assert(createRes.room, 'oda kurulmalı: ' + JSON.stringify(createRes));
   assert.strictEqual(createRes.room.bankedPerksEnabled, true, 'bankedPerksEnabled true olarak yansımalı');
   const code = createRes.room.code;
-  await emitAck(sGuest, 'room:join', { clientId: clientIdGuest, name: 'Guest', code });
+  await emitAck(sGuest, 'room:join', { clientId: clientIdGuest, clientSecret: `seat-secret-${clientIdGuest}`, name: 'Guest', code });
   await emitAck(sHost, 'draft:readyToggle', { code });
   await emitAck(sGuest, 'draft:readyToggle', { code });
 
@@ -188,14 +188,22 @@ async function e2eTest() {
   const firstTurnClientId = stateAfterStart.prepWheel.order[0];
   console.log(`[test11] e2e: prep_wheel fazı başladı, ilk sıra: ${firstTurnClientId}`);
 
-  // --- redeemInRoom'u SIRASI GELMEYEN biri için dene -> 400 NOT_YOUR_TURN ---
+  // --- [GÜVENLİK] Hesap, sırası gelen oyuncuya bağlanır (istemci bunu giriş yapmışken otomatik
+  // yapar — bkz. app.js syncRoomAccount). redeemInRoom artık SADECE kullanıcının kendi hesabına
+  // bağlı oyuncu için çalışıyor. ---
+  const firstSocket = firstTurnClientId === clientIdHost ? sHost : sGuest;
+  const ticketRes = await fetch(`${BASE}/api/rooms/ticket`, { method: 'POST', headers: { cookie } }).then((r) => r.json());
+  const bindRes = await emitAck(firstSocket, 'room:bindAccount', { ticket: ticketRes.ticket });
+  assert.strictEqual(bindRes.ok, true, 'hesap bağlanmalı: ' + JSON.stringify(bindRes));
+
+  // --- redeemInRoom'u BAŞKASININ oyuncusu için dene -> 403 NOT_YOUR_PLAYER ---
   const notFirst = firstTurnClientId === clientIdHost ? clientIdGuest : clientIdHost;
   const wrongTurnRes = await fetch(`${BASE}/api/rewards/redeemInRoom`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
     body: JSON.stringify({ roomCode: code, clientId: notFirst, kind: wonKind }),
   });
-  assert.strictEqual(wrongTurnRes.status, 400);
-  console.log('[test11] e2e: sırası gelmeyen clientId için redeemInRoom 400 döndürüyor ✅');
+  assert.strictEqual(wrongTurnRes.status, 403);
+  console.log('[test11] e2e: hesaba bağlı olmayan bir oyuncu için redeemInRoom 403 döndürüyor ✅');
 
   // --- gerçek sırası gelen kişi için redeemInRoom -> başarılı, prepWheel:resolved yayılıyor ---
   const resolvedPromise = new Promise((resolve) => sGuest.once('prepWheel:resolved', resolve));
