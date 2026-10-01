@@ -4,8 +4,13 @@ import { sfx } from './sfx.js';
 import { applyTeamTheme } from './teams.js';
 import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
 import { cosmeticOf, playStampSound } from './cosmetics.js';
+// [YASAL — KVKK / ÇEREZ ONAYI] bkz. legal.js
+import { renderPrivacy, renderNotFound, mountConsentBanner, resetConsent } from './legal.js';
 
 const LS_CLIENT_ID = 'kk_clientId';
+// [GÜVENLİK — KOLTUK ELE GEÇİRME] clientId odadaki herkese görünür; koltuğun sahibi olduğunu bu
+// sekmeye özel GİZLİ anahtar kanıtlar (sunucu sadece hash'ini tutar, kimseye yayınlamaz).
+const LS_CLIENT_SECRET = 'kk_clientSecret';
 const LS_NAME = 'kk_name';
 const LS_CODE = 'kk_code';
 
@@ -23,8 +28,24 @@ function getOrCreateClientId() {
   return id;
 }
 
+function randomSecret() {
+  if (crypto.randomUUID) return `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, '');
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+function getOrCreateClientSecret() {
+  let secret = sessionStorage.getItem(LS_CLIENT_SECRET);
+  if (!secret || secret.length < 16) {
+    secret = randomSecret();
+    sessionStorage.setItem(LS_CLIENT_SECRET, secret);
+  }
+  return secret;
+}
+
 const state = {
   clientId: getOrCreateClientId(),
+  clientSecret: getOrCreateClientSecret(),
   name: sessionStorage.getItem(LS_NAME) || '',
   code: sessionStorage.getItem(LS_CODE) || null,
   room: null,
@@ -208,6 +229,19 @@ const PAGE_PATHS = {
   dailyReward: '/gunluk-odul',
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — OYUN İÇİ PARA (COIN)] Mağaza — misafire de açık (katalog).
   store: '/magaza',
+  // [YASAL — KVKK] Gizlilik ve çerez politikası (aydınlatma metni).
+  privacy: '/gizlilik',
+};
+// [GÜVENLİK/YASAL] Oda/eşleşme hata kodlarının Türkçe karşılıkları.
+const ROOM_ERRORS = {
+  ROOM_NOT_FOUND: 'Oda bulunamadı.',
+  ROOM_FULL: 'Oda dolu.',
+  ROOM_IN_PROGRESS: 'Bu odada oyun zaten başladı.',
+  SEAT_TAKEN: 'Bu oyuncu koltuğu başka bir sekmeye ait.',
+  CLIENT_ID_TAKEN: 'Bu kimlik başka bir sekmede kullanılıyor — sayfayı yenile.',
+  INVALID_IDENTITY: 'Oturum bilgisi geçersiz — sayfayı yenile.',
+  PLAYER_NOT_IN_ROOM: 'Bu odada kaydın bulunamadı.',
+  SERVER_ERROR: 'Sunucuda bir hata oluştu, tekrar dene.',
 };
 const PATH_TO_PAGE = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page]));
 // draftMode ('live'/'blind'/'wheel') <-> ilgili lobi sayfası arasında çift yönlü eşleme —
@@ -216,9 +250,23 @@ const DRAFT_MODE_BY_PAGE = { 'mode-live': 'live', 'mode-blind': 'blind', 'mode-w
 const PAGE_BY_DRAFT_MODE = { live: 'mode-live', blind: 'mode-blind', wheel: 'mode-wheel' };
 
 function pathForPage(page) { return PAGE_PATHS[page] || '/'; }
-function pageForPath(pathname) { return PATH_TO_PAGE[pathname] || null; }
+// [SEO] Tanınmayan bir yol artık sessizce lobiyi göstermiyor — "Sayfa bulunamadı" görünümü
+// (sunucu da bu yollar için 404 durum kodu döner, bkz. server index.js SPA_ROUTES).
+function pageForPath(rawPathname) {
+  const pathname = (rawPathname || '/').replace(/\/+$/, '') || '/';
+  if (PATH_TO_PAGE[pathname]) return PATH_TO_PAGE[pathname];
+  return !pathname || pathname === '/' ? null : 'notFound';
+}
 
 const PAGE_META = {
+  privacy: {
+    title: 'Gizlilik ve Çerez Politikası — PitchGavel',
+    description: 'PitchGavel KVKK aydınlatma metni: hangi verileri neden işliyoruz, çerezler ve hakların.',
+  },
+  notFound: {
+    title: 'Sayfa bulunamadı — PitchGavel',
+    description: 'Aradığın sayfa bulunamadı.',
+  },
   default: {
     title: 'PitchGavel — Açık Arttırmalı Kadro Kurma',
     description: 'Rakibinle canlı açık arttırmada 11 kişilik kadro topla, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla.',
@@ -740,6 +788,18 @@ function route() {
   // (lobi, oyuncu veritabanı, nasıl oynanır, günlük ödül) göremez — SADECE bu duvarı görür.
   // `renderVerifyGate` kendi "tekrar gönder"/"çıkış yap" düğmelerini taşıyor, bu yüzden
   // /giris'i özel olarak muaf tutmaya gerek yok.
+  // [YASAL] Gizlilik politikası ve 404 her durumda (doğrulama duvarı dahil) görülebilmeli.
+  if (state.page === 'privacy') {
+    appRoot.appendChild(renderPrivacy({ state, actions }));
+    finish();
+    return;
+  }
+  if (state.page === 'notFound') {
+    appRoot.appendChild(renderNotFound({ state, actions }));
+    finish();
+    return;
+  }
+
   if (state.user && !state.user.emailVerified && !state.room) {
     appRoot.appendChild(renderVerifyGate({ state, actions }));
     finish();
@@ -831,14 +891,16 @@ function route() {
 }
 
 const actions = {
+  // [YASAL — ÇEREZ ONAYI] Politika sayfasındaki "tercihimi değiştir" düğmesi.
+  resetConsent() { resetConsent(() => navigateToPage('privacy')); },
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK ÖZELLEŞTİRME] wheelSegmentLabels: host'un elle
   // işaretlediği tam WHEEL_CUSTOM_PICK_COUNT etiket (bkz. views.js renderLobby wheel checklist'i)
   // ya da boş dizi/undefined (işaretlemediyse — sunucu auto-balance'a düşer).
   async createRoom(name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled) {
     state.name = name;
     sessionStorage.setItem(LS_NAME, name);
-    const res = await emitAck('room:create', { clientId: state.clientId, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled });
-    if (res.error) return toast('Oda oluşturulamadı: ' + res.error);
+    const res = await emitAck('room:create', { clientId: state.clientId, clientSecret: state.clientSecret, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled });
+    if (res.error) return toast('Oda oluşturulamadı: ' + (ROOM_ERRORS[res.error] || res.error));
     state.room = res.room;
     setCode(res.room.code);
     pushDataLayer('room_create', { draft_mode: draftMode, player_pool: playerPool, trade_round: !!tradeRoundEnabled });
@@ -848,8 +910,8 @@ const actions = {
   async joinRoom(name, code) {
     state.name = name;
     sessionStorage.setItem(LS_NAME, name);
-    const res = await emitAck('room:join', { clientId: state.clientId, name, code: code.toUpperCase() });
-    if (res.error) return toast('Odaya katılınamadı: ' + res.error);
+    const res = await emitAck('room:join', { clientId: state.clientId, clientSecret: state.clientSecret, name, code: code.toUpperCase() });
+    if (res.error) return toast('Odaya katılınamadı: ' + (ROOM_ERRORS[res.error] || res.error));
     state.room = res.room;
     setCode(res.room.code);
     pushDataLayer('room_join');
@@ -1231,14 +1293,14 @@ const actions = {
   async quickMatch(name, draftMode, playerPool) {
     state.name = name;
     sessionStorage.setItem(LS_NAME, name);
-    const res = await emitAck('matchmaking:join', { clientId: state.clientId, name, draftMode, playerPool });
-    if (res.error) return toast('Eşleşmeye girilemedi: ' + res.error);
+    const res = await emitAck('matchmaking:join', { clientId: state.clientId, clientSecret: state.clientSecret, name, draftMode, playerPool });
+    if (res.error) return toast('Eşleşmeye girilemedi: ' + (ROOM_ERRORS[res.error] || res.error));
     state.matchmaking = { draftMode, playerPool };
     pushDataLayer('matchmaking_join', { draft_mode: draftMode, player_pool: playerPool });
     route();
   },
   async cancelQuickMatch() {
-    await emitAck('matchmaking:leave', { clientId: state.clientId });
+    await emitAck('matchmaking:leave', {});
     state.matchmaking = null;
     route();
   },
@@ -1287,9 +1349,9 @@ socket.on('connect', async () => {
     try { state.config = await fetch('/api/config').then((r) => r.json()); } catch (e) { /* ignore */ }
   }
   if (state.code) {
-    const res = await emitAck('room:reconnect', { clientId: state.clientId, code: state.code });
+    const res = await emitAck('room:reconnect', { clientId: state.clientId, clientSecret: state.clientSecret, code: state.code });
     if (res.error) {
-      toast('Odaya yeniden bağlanılamadı: ' + res.error);
+      toast('Odaya yeniden bağlanılamadı: ' + (ROOM_ERRORS[res.error] || res.error));
       setCode(null);
     } else {
       state.room = res.room;
@@ -1569,6 +1631,8 @@ socket.on('match:playbackSync', (sync) => { applyPlaybackSync(sync); route(); })
 state.page = pageForPath(location.pathname);
 syncLobbyUiForPage(state.page);
 route();
+// [YASAL — ÇEREZ ONAYI] Henüz seçim yapılmadıysa alt şeritte onay sor (bkz. legal.js).
+mountConsentBanner(() => navigateToPage('privacy'));
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — E-POSTA DOĞRULAMA] E-postadaki doğrulama linki
 // `/api/auth/verify`'ye gidip oradan `/giris?verified=1|0`'a REDIRECT ediyor (bkz. server

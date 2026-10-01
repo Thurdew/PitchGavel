@@ -18,6 +18,7 @@ const { registerMatchSockets } = require('./sockets/matchSockets');
 const { registerTradeSockets } = require('./sockets/tradeSockets');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4, "Yabancılarla Online Eşleşme"]
 const { registerMatchmakingSockets } = require('./sockets/matchmakingSockets');
+const { hardenSocket } = require('./sockets/safeHandlers');
 const { DraftEngine } = require('./draft/DraftEngine');
 const { TradeEngine } = require('./trade/TradeEngine');
 const { Matchmaker } = require('./matchmaking/Matchmaker');
@@ -66,6 +67,9 @@ app.use((req, res, next) => {
 
 // Client: build aracı olmadan doğrudan sunulan statik dosyalar (bkz. client/public).
 const CLIENT_PUBLIC = path.join(__dirname, '..', '..', 'client', 'public');
+// [PERFORMANS] Görseller nadiren değişir — 1 gün tarayıcı önbelleği. JS/CSS dosya adları
+// hash'lenmediği için (build aracı yok) onlar her açılışta ETag ile doğrulanmaya devam ediyor.
+app.use('/assets', express.static(path.join(CLIENT_PUBLIC, 'assets'), { maxAge: '1d' }));
 app.use(express.static(CLIENT_PUBLIC));
 app.use(express.json());
 
@@ -399,8 +403,16 @@ app.post('/api/rewards/spin', async (req, res) => {
   res.json(result);
 });
 
+// [SEO] İstemcinin tanıdığı sayfa yolları (bkz. client app.js PAGE_PATHS). Bunların dışındaki
+// yollar da SPA'yı yükler (istemci "Sayfa bulunamadı" gösterir) ama 404 durum koduyla — aksi
+// halde Google her uydurma URL'i lobinin kopyası ("soft 404") sayıyordu.
+const SPA_ROUTES = new Set([
+  '/', '/players', '/canli-arttirma', '/kor-draft', '/cark', '/nasil-oynanir',
+  '/giris', '/gunluk-odul', '/magaza', '/gizlilik',
+]);
 app.get(/^\/(?!api|socket\.io).*/, (req, res) => {
-  res.sendFile(path.join(CLIENT_PUBLIC, 'index.html'));
+  const known = SPA_ROUTES.has(req.path.replace(/\/+$/, '') || '/');
+  res.status(known ? 200 : 404).sendFile(path.join(CLIENT_PUBLIC, 'index.html'));
 });
 
 const roomManager = new RoomManager();
@@ -429,18 +441,34 @@ app.post('/api/rewards/redeemInRoom', async (req, res) => {
   const { roomCode, clientId, kind } = req.body || {};
   const room = roomManager.getRoom(String(roomCode || '').toUpperCase());
   if (!room) return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+  // [GÜVENLİK] clientId odadaki herkese açık — kullanıcı perk'ini sadece KENDİ hesabına bağlı
+  // oyuncusu için harcayabilir (istemci giriş yapmışken hesabı otomatik bağlıyor, bkz. app.js
+  // syncRoomAccount). Aksi halde başkasının sırasına müdahale edilebiliyordu.
+  const player = room.players.find((p) => p.clientId === clientId);
+  if (!player || !player.account || player.account.userId !== user.id) {
+    return res.status(403).json({ error: 'NOT_YOUR_PLAYER' });
+  }
   const result = await draftEngine.redeemBankedPerk(room, clientId, kind, user.id);
   if (result.error) return res.status(400).json({ error: result.error });
   res.json(result);
 });
 
 io.on('connection', (socket) => {
+  // [GÜVENLİK SERTLEŞTİRME — KOD İNCELEMESİ] Bir handler'daki hata artık süreci (ve bellekteki
+  // tüm odaları) çökertmiyor — bkz. sockets/safeHandlers.js. Kayıtlardan ÖNCE çağrılmalı.
+  hardenSocket(socket);
   registerRoomSockets(io, socket, ctx);
   registerDraftSockets(io, socket, ctx);
   registerLineupSockets(io, socket, ctx);
   registerMatchSockets(io, socket, ctx);
   registerMatchmakingSockets(io, socket, ctx);
   registerTradeSockets(io, socket, ctx);
+});
+
+// [GÜVENLİK SERTLEŞTİRME] Yakalanmamış bir async hata (Node 15+ varsayılanı) süreci kapatır ve
+// bellekteki tüm odalar silinir. Loglayıp devam ediyoruz; asıl hata kaydı journalctl'de görünür.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] yakalanmamış promise reddi:', reason && reason.stack ? reason.stack : reason);
 });
 
 // Sunucu başlarken veri setini bir kez belleğe al (eksikse net hata ver).

@@ -24,20 +24,20 @@ async function testCapacityCap() {
   const capSockets = Array.from({ length: MAX_ROOM_PLAYERS }, () => connect());
   await Promise.all(capSockets.map((s) => once(s, 'connect')));
 
-  const created = await emitAck(capSockets[0], 'room:create', { clientId: 'cap-0', name: 'Cap0' });
+  const created = await emitAck(capSockets[0], 'room:create', { clientId: 'cap-0', clientSecret: `seat-secret-${'cap-0'}`, name: 'Cap0' });
   let ok = created.room.maxPlayers === MAX_ROOM_PLAYERS;
   console.assert(ok, `oda tavanı ${MAX_ROOM_PLAYERS} olmalı: ${created.room.maxPlayers}`);
   const code = created.room.code;
 
   for (let i = 1; i < MAX_ROOM_PLAYERS; i++) {
-    const joined = await emitAck(capSockets[i], 'room:join', { clientId: `cap-${i}`, name: `Cap${i}`, code });
+    const joined = await emitAck(capSockets[i], 'room:join', { clientId: `cap-${i}`, clientSecret: `seat-secret-cap-${i}`, name: `Cap${i}`, code });
     if (joined.error) ok = false;
     console.assert(!joined.error, `cap-${i} katılabilmeli: ${JSON.stringify(joined.error)}`);
   }
 
   const extra = connect();
   await once(extra, 'connect');
-  const rejected = await emitAck(extra, 'room:join', { clientId: 'cap-extra', name: 'Fazla', code });
+  const rejected = await emitAck(extra, 'room:join', { clientId: 'cap-extra', clientSecret: `seat-secret-${'cap-extra'}`, name: 'Fazla', code });
   ok = ok && rejected.error === 'ROOM_FULL';
   console.assert(rejected.error === 'ROOM_FULL', `${MAX_ROOM_PLAYERS + 1}. kişi ROOM_FULL ile reddedilmeli: ` + JSON.stringify(rejected));
   console.log(`[test6] kapasite tavanı (${MAX_ROOM_PLAYERS}) doğru uygulanıyor:`, ok);
@@ -59,11 +59,11 @@ async function main() {
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] room:create artık bir hedef oyuncu sayısı almıyor —
   // odayı kuran sockets[0] otomatik olarak hostClientId olur (bkz. RoomManager.createRoom).
-  const created = await emitAck(sockets[0], 'room:create', { clientId: ids[0], name: 'P0' });
+  const created = await emitAck(sockets[0], 'room:create', { clientId: ids[0], clientSecret: `seat-secret-${ids[0]}`, name: 'P0' });
   const code = created.room.code;
   console.assert(created.room.hostClientId === ids[0], 'odayı kuran host olmalı: ' + created.room.hostClientId);
   for (let i = 1; i < N; i++) {
-    const joined = await emitAck(sockets[i], 'room:join', { clientId: ids[i], name: `P${i}`, code });
+    const joined = await emitAck(sockets[i], 'room:join', { clientId: ids[i], clientSecret: `seat-secret-${ids[i]}`, name: `P${i}`, code });
     console.assert(!joined.error, `P${i} odaya katılabilmeli: ${JSON.stringify(joined.error)}`);
   }
   console.log('[test6] oda hazır:', code, `(${N} kişilik, host: ${created.room.hostClientId})`);

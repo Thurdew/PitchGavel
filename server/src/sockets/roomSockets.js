@@ -1,4 +1,5 @@
-const { STATUS } = require('../rooms/RoomManager');
+const { STATUS, isValidSecret } = require('../rooms/RoomManager');
+const { str, roomCode } = require('./safeHandlers');
 const { isValidTeamId, isValidKitId } = require('../shared/teams');
 const { canonicalEmail } = require('../coins/CoinService');
 const { REACTIONS, REACTION_LIMIT } = require('../shared/economy');
@@ -10,9 +11,16 @@ function registerRoomSockets(io, socket, ctx) {
     io.to(room.code).emit('room:state', roomManager.toPublicState(room));
   }
 
-  socket.on('room:create', ({ clientId, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled } = {}, cb) => {
+  // [GÜVENLİK] clientId makul bir string olmalı; clientSecret koltuğun sahiplik kanıtı (bkz.
+  // RoomManager.verifySecret) — odadaki kimseye yayınlanmaz.
+  function validIdentity(clientId, clientSecret) {
+    return typeof clientId === 'string' && clientId.length > 0 && clientId.length <= 100 && isValidSecret(clientSecret);
+  }
+
+  socket.on('room:create', ({ clientId, clientSecret, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled } = {}, cb) => {
     if (!clientId) return cb?.({ error: 'CLIENT_ID_REQUIRED' });
-    const room = roomManager.createRoom(clientId, name, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled);
+    if (!validIdentity(clientId, clientSecret)) return cb?.({ error: 'INVALID_IDENTITY' });
+    const room = roomManager.createRoom(clientId, str(name), str(draftMode), str(playerPool), wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled, clientSecret);
     roomManager.bindSocket(room.code, clientId, socket.id);
     socket.join(room.code);
     socket.data.clientId = clientId;
@@ -22,9 +30,10 @@ function registerRoomSockets(io, socket, ctx) {
     broadcastState(room);
   });
 
-  socket.on('room:join', ({ clientId, name, code } = {}, cb) => {
+  socket.on('room:join', ({ clientId, clientSecret, name, code } = {}, cb) => {
     if (!clientId || !code) return cb?.({ error: 'MISSING_FIELDS' });
-    const result = roomManager.joinRoom(code.toUpperCase(), clientId, name);
+    if (!validIdentity(clientId, clientSecret) || !roomCode(code)) return cb?.({ error: 'INVALID_IDENTITY' });
+    const result = roomManager.joinRoom(roomCode(code), clientId, str(name), clientSecret);
     if (result.error) return cb?.({ error: result.error });
 
     const { room } = result;
@@ -45,12 +54,16 @@ function registerRoomSockets(io, socket, ctx) {
   });
 
   // Sayfa yenilemesi/ağ kopması sonrası aynı clientId ile yeniden bağlanma.
-  socket.on('room:reconnect', ({ clientId, code } = {}, cb) => {
+  socket.on('room:reconnect', ({ clientId, clientSecret, code } = {}, cb) => {
     if (!clientId || !code) return cb?.({ error: 'MISSING_FIELDS' });
-    const room = roomManager.getRoom(code.toUpperCase());
+    const room = roomManager.getRoom(roomCode(code));
     if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
     const player = room.players.find((p) => p.clientId === clientId);
     if (!player) return cb?.({ error: 'PLAYER_NOT_IN_ROOM' });
+    // [GÜVENLİK — KOLTUK ELE GEÇİRME] clientId herkese açık; koltuğu sadece gizli anahtarın
+    // sahibi geri alabilir. Aksi halde odadaki biri rakibinin clientId'siyle onun yerine geçip
+    // bütçesiyle teklif verebiliyor, dizilişini değiştirebiliyordu.
+    if (!roomManager.verifySecret(player, clientSecret)) return cb?.({ error: 'SEAT_TAKEN' });
 
     roomManager.bindSocket(room.code, clientId, socket.id);
     socket.join(room.code);
@@ -66,7 +79,7 @@ function registerRoomSockets(io, socket, ctx) {
   // başlatılabilir hale getirebilir. Maç zaten bittiği için (kaybedecek bir şey olmadığından)
   // tek taraflı onay yeterli — draft/açık arttırmadaki gibi iki taraflı bir onaya gerek yok.
   socket.on('room:rematch', ({ code } = {}, cb) => {
-    const room = roomManager.getRoom((code || socket.data.roomCode || '').toUpperCase());
+    const room = roomManager.getRoom(roomCode(code) || roomCode(socket.data.roomCode));
     if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
     const isMember = room.players.some((p) => p.clientId === socket.data.clientId);
     if (!isMember) return cb?.({ error: 'NOT_IN_ROOM' });
@@ -88,7 +101,7 @@ function registerRoomSockets(io, socket, ctx) {
   // reconnect'te olduğu gibi devam edebilir) kasıtlı/istemci tetiklemeli olarak uygular, ARTI
   // socket'i o odanın broadcast grubundan gerçekten çıkarır (socket.leave).
   socket.on('room:leave', ({ code } = {}, cb) => {
-    const targetCode = (code || socket.data.roomCode || '').toUpperCase();
+    const targetCode = roomCode(code) || roomCode(socket.data.roomCode);
     const room = roomManager.getRoom(targetCode);
     if (room) {
       const changed = roomManager.handleDisconnect(socket.id);
@@ -106,7 +119,7 @@ function registerRoomSockets(io, socket, ctx) {
   // "giymesine" izin veriyordu). Matchmaking dahil her oda türünde çalışır; takım/forma
   // değiştirildiğinde istemci aynı event'i tekrar çağırır.
   socket.on('room:bindAccount', async ({ ticket } = {}, cb) => {
-    const room = roomManager.getRoom((socket.data.roomCode || '').toUpperCase());
+    const room = roomManager.getRoom(roomCode(socket.data.roomCode));
     if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
     const player = room.players.find((p) => p.clientId === socket.data.clientId);
     if (!player) return cb?.({ error: 'NOT_IN_ROOM' });
@@ -146,7 +159,7 @@ function registerRoomSockets(io, socket, ctx) {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Draft/takas tepkileri. Oda içine yayınlanır;
   // odada kalıcı bir kaydı yok. Kova: en fazla REACTION_LIMIT.burst birikir, refillMs'de bir dolar.
   socket.on('room:react', ({ reactionId } = {}, cb) => {
-    const room = roomManager.getRoom((socket.data.roomCode || '').toUpperCase());
+    const room = roomManager.getRoom(roomCode(socket.data.roomCode));
     if (!room) return cb?.({ error: 'ROOM_NOT_FOUND' });
     const player = room.players.find((p) => p.clientId === socket.data.clientId);
     if (!player) return cb?.({ error: 'NOT_IN_ROOM' });

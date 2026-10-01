@@ -35,10 +35,10 @@ async function main() {
   const guest = connect();
   await Promise.all([once(host, 'connect'), once(guest, 'connect')]);
 
-  const created = await emitAck(host, 'room:create', { clientId: hostId, name: 'Host', draftMode: 'wheel' });
+  const created = await emitAck(host, 'room:create', { clientId: hostId, clientSecret: `seat-secret-${hostId}`, name: 'Host', draftMode: 'wheel' });
   const code = created.room.code;
   console.assert(created.room.draftMode === 'wheel', 'oda draftMode=wheel olmalı: ' + JSON.stringify(created.room));
-  await emitAck(guest, 'room:join', { clientId: guestId, name: 'Guest', code });
+  await emitAck(guest, 'room:join', { clientId: guestId, clientSecret: `seat-secret-${guestId}`, name: 'Guest', code });
   console.log('[test7] oda hazır:', code, 'draftMode:', created.room.draftMode);
 
   let latestDraftUpdate = null;
@@ -222,10 +222,10 @@ async function main() {
   await Promise.all([once(host2, 'connect'), once(guest2, 'connect')]);
   const customLabels = WHEEL_SEGMENT_CATALOG.slice(0, WHEEL_CUSTOM_PICK_COUNT).map((s) => s.label);
   const created2 = await emitAck(host2, 'room:create', {
-    clientId: 'wheel-host-2', name: 'Host2', draftMode: 'wheel', wheelSegmentLabels: customLabels,
+    clientId: 'wheel-host-2', clientSecret: `seat-secret-${'wheel-host-2'}`, name: 'Host2', draftMode: 'wheel', wheelSegmentLabels: customLabels,
   });
   const code2 = created2.room.code;
-  await emitAck(guest2, 'room:join', { clientId: 'wheel-guest-2', name: 'Guest2', code: code2 });
+  await emitAck(guest2, 'room:join', { clientId: 'wheel-guest-2', clientSecret: `seat-secret-${'wheel-guest-2'}`, name: 'Guest2', code: code2 });
   let draftUpdate2 = null;
   host2.on('draft:update', (msg) => { if (!draftUpdate2) draftUpdate2 = msg; });
   await emitAck(host2, 'draft:readyToggle', { code: code2 });
@@ -242,10 +242,10 @@ async function main() {
   const guest3 = connect();
   await Promise.all([once(host3, 'connect'), once(guest3, 'connect')]);
   const created3 = await emitAck(host3, 'room:create', {
-    clientId: 'wheel-host-3', name: 'Host3', draftMode: 'wheel', wheelSegmentLabels: customLabels.slice(0, 3),
+    clientId: 'wheel-host-3', clientSecret: `seat-secret-${'wheel-host-3'}`, name: 'Host3', draftMode: 'wheel', wheelSegmentLabels: customLabels.slice(0, 3),
   });
   const code3 = created3.room.code;
-  await emitAck(guest3, 'room:join', { clientId: 'wheel-guest-3', name: 'Guest3', code: code3 });
+  await emitAck(guest3, 'room:join', { clientId: 'wheel-guest-3', clientSecret: `seat-secret-${'wheel-guest-3'}`, name: 'Guest3', code: code3 });
   let draftUpdate3 = null;
   host3.on('draft:update', (msg) => { if (!draftUpdate3) draftUpdate3 = msg; });
   await emitAck(host3, 'draft:readyToggle', { code: code3 });

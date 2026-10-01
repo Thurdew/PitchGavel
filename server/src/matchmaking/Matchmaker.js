@@ -14,7 +14,13 @@ class Matchmaker {
 
   _key(draftMode, playerPool) { return `${draftMode}:${playerPool}`; }
 
-  join(clientId, name, socketId, draftMode, playerPool) {
+  join(clientId, name, socketId, draftMode, playerPool, secret) {
+    // [GÜVENLİK] Aynı clientId kuyruktaysa sadece aynı gizli anahtarın sahibi (aynı sekme, ör.
+    // yeniden bağlanmış) onun yerine geçebilir — başkası bu clientId ile kaydı ezemez.
+    for (const q of this.queues.values()) {
+      const existing = q.find((e) => e.clientId === clientId);
+      if (existing && existing.secret !== secret) return { error: 'CLIENT_ID_TAKEN' };
+    }
     this.leave(clientId); // olası eski/bayat kuyruk kaydı önce temizlenir
     // Çark Modu bütçesiz/kendi mekaniğine sahip olduğu için hızlı eşleşmede YOK (MVP kapsamı
     // dışı — v2 fikri); Kör Draft/Canlı Açık Arttırma ikisi de geçerli.
@@ -22,7 +28,7 @@ class Matchmaker {
     const resolvedPlayerPool = playerPool === 'super-lig' ? 'super-lig' : 'all';
     const key = this._key(resolvedDraftMode, resolvedPlayerPool);
     const q = this.queues.get(key) || [];
-    q.push({ clientId, name, socketId });
+    q.push({ clientId, name, socketId, secret });
     this.queues.set(key, q);
 
     if (q.length >= 2) {
@@ -44,12 +50,24 @@ class Matchmaker {
     }
   }
 
+  // Bir socket'in (bağlantı koptuğunda ya da istemci vazgeçtiğinde) kendi kuyruk kaydını siler.
+  leaveBySocket(socketId) {
+    for (const [key, q] of this.queues) {
+      const idx = q.findIndex((e) => e.socketId === socketId);
+      if (idx !== -1) {
+        q.splice(idx, 1);
+        if (q.length === 0) this.queues.delete(key);
+        return;
+      }
+    }
+  }
+
   _pair(a, b, draftMode, playerPool) {
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Rastgele bir yabancıyla otomatik eşleşen odada
     // prepWheel/tradeRound/bankedPerks hepsi KAPALI — bunlar host'un bilinçli seçimi, rastgele
     // bir eşleşmede otomatik açılması anlamlı olmaz. Sade/hızlı bir deneyim.
-    const room = this.roomManager.createRoom(a.clientId, a.name, draftMode, playerPool, null, false, false, false);
-    this.roomManager.joinRoom(room.code, b.clientId, b.name);
+    const room = this.roomManager.createRoom(a.clientId, a.name, draftMode, playerPool, null, false, false, false, a.secret);
+    this.roomManager.joinRoom(room.code, b.clientId, b.name, b.secret);
     for (const entry of [a, b]) {
       this.roomManager.bindSocket(room.code, entry.clientId, entry.socketId);
       const sock = this.io.sockets.sockets.get(entry.socketId);

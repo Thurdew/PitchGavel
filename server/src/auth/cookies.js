@@ -10,7 +10,10 @@ function parseCookies(req) {
     if (eq === -1) continue;
     const k = part.slice(0, eq).trim();
     const v = part.slice(eq + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
+    if (!k) continue;
+    // [GÜVENLİK] Bozuk bir yüzde kodlaması (ör. "%E0") decodeURIComponent'i fırlatıyordu ve her
+    // istek 500 dönüyordu — o cookie yok sayılır.
+    try { out[k] = decodeURIComponent(v); } catch (e) { /* bozuk cookie değeri yok sayılır */ }
   }
   return out;
 }

@@ -95,9 +95,9 @@ async function e2e() {
   const host = connect();
   const guest = connect();
   await Promise.all([once(host, 'connect'), once(guest, 'connect')]);
-  const created = await emitAck(host, 'room:create', { clientId: `cos-h-${stamp}`, name: 'Host' });
+  const created = await emitAck(host, 'room:create', { clientId: `cos-h-${stamp}`, clientSecret: `seat-secret-cos-h-${stamp}`, name: 'Host' });
   const code = created.room.code;
-  await emitAck(guest, 'room:join', { clientId: `cos-g-${stamp}`, name: 'Misafir', code });
+  await emitAck(guest, 'room:join', { clientId: `cos-g-${stamp}`, clientSecret: `seat-secret-cos-g-${stamp}`, name: 'Misafir', code });
 
   const statePromise = new Promise((resolve) => guest.on('room:state', (s) => { if (s.players.some((p) => p.cosmetics && p.cosmetics.frame === 'gold')) resolve(s); }));
   const ticket = (await http('POST', '/api/rooms/ticket', H.cookie)).json.ticket;

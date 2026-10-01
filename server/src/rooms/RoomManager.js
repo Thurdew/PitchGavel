@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { generateRoomCode } = require('../utils/ids');
 const {
   STARTING_BUDGET, ROOM_TTL_MS, MAX_ROOM_PLAYERS,
@@ -10,6 +11,15 @@ const {
 // girer. ÜÇ draft modunda da geçerli (live/blind/wheel).
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] `prep_wheel` isteğe bağlı bir ara faz —
 // sadece room.prepWheelEnabled ise (host oda kurarken seçti) lobby ile draft arasına girer.
+// [GÜVENLİK — KOLTUK ELE GEÇİRME] İstemcinin sekmeye özel ürettiği gizli anahtar (bkz. client
+// app.js getOrCreateClientSecret). Makul uzunlukta bir string olmalı.
+function isValidSecret(secret) {
+  return typeof secret === 'string' && secret.length >= 16 && secret.length <= 200;
+}
+function hashSecret(secret) {
+  return isValidSecret(secret) ? crypto.createHash('sha256').update(secret).digest('hex') : null;
+}
+
 const STATUS = {
   LOBBY: 'lobby',
   PREP_WHEEL: 'prep_wheel',
@@ -36,7 +46,7 @@ class RoomManager {
   // gelirse gelsin" — host'a hedef bir sayı SORULMUYOR. Oda sadece dokümandaki N ≤ 8 sınırına
   // kadar (MAX_ROOM_PLAYERS) katılım kabul eder; draftı ne zaman/kaç kişiyle başlatacağına
   // (herkes hazır olduktan sonra) oda sahibi (hostClientId) kendisi karar verir.
-  createRoom(hostClientId, hostName, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled) {
+  createRoom(hostClientId, hostName, draftMode, playerPool, wheelSegmentLabels, prepWheelEnabled, tradeRoundEnabled, bankedPerksEnabled, hostSecret) {
     let code;
     do { code = generateRoomCode(); } while (this.rooms.has(code));
 
@@ -85,7 +95,7 @@ class RoomManager {
       // sadece bu kişide (bkz. draftSockets.js `draft:start`). Oda ömrü boyunca değişmez.
       hostClientId,
       players: [
-        this._makePlayer(hostClientId, hostName),
+        this._makePlayer(hostClientId, hostName, hostSecret),
       ],
       draft: null, // Faz 3
       squads: {}, // Faz 4: { [clientId]: { home: {...}, away: {...} } }
@@ -115,10 +125,15 @@ class RoomManager {
     return unique;
   }
 
-  _makePlayer(clientId, name) {
+  _makePlayer(clientId, name, secret) {
+    const cleanName = typeof name === 'string' ? name.trim().slice(0, 24) : '';
     return {
       clientId,
-      name: (name || 'Oyuncu').slice(0, 24),
+      name: cleanName || 'Oyuncu',
+      // [GÜVENLİK — KOLTUK ELE GEÇİRME] clientId odadaki herkese yayınlanıyor (toPublicState), bu
+      // yüzden tek başına kimlik kanıtı DEĞİL. Koltuğu sadece bu gizli anahtarı bilen (onu ilk
+      // oluşturan sekme) geri alabilir. Sadece hash'i tutulur ve hiçbir yere yayınlanmaz.
+      secretHash: hashSecret(secret),
       socketId: null,
       connected: false,
       budget: STARTING_BUDGET,
@@ -147,12 +162,14 @@ class RoomManager {
     };
   }
 
-  joinRoom(code, clientId, name) {
+  joinRoom(code, clientId, name, secret) {
     const room = this.rooms.get(code);
     if (!room) return { error: 'ROOM_NOT_FOUND' };
 
     const existing = room.players.find((p) => p.clientId === clientId);
     if (existing) {
+      // [GÜVENLİK — KOLTUK ELE GEÇİRME] Var olan bir koltuğa geri dönmek gizli anahtarı ister.
+      if (!this.verifySecret(existing, secret)) return { error: 'SEAT_TAKEN' };
       this.clientRoomIndex.set(clientId, code);
       return { room, player: existing };
     }
@@ -172,11 +189,19 @@ class RoomManager {
       return { error: 'ROOM_FULL' };
     }
 
-    const player = this._makePlayer(clientId, name);
+    const player = this._makePlayer(clientId, name, secret);
     room.players.push(player);
     room.updatedAt = Date.now();
     this.clientRoomIndex.set(clientId, code);
     return { room, player };
+  }
+
+  // Sabit zamanlı karşılaştırma — anahtarın hash'i zamanlamadan tahmin edilemesin.
+  verifySecret(player, secret) {
+    if (!player || !player.secretHash || !isValidSecret(secret)) return false;
+    const a = Buffer.from(player.secretHash, 'hex');
+    const b = Buffer.from(hashSecret(secret), 'hex');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
   }
 
   bindSocket(code, clientId, socketId) {
@@ -339,4 +364,4 @@ class RoomManager {
   }
 }
 
-module.exports = { RoomManager, STATUS };
+module.exports = { RoomManager, STATUS, isValidSecret };

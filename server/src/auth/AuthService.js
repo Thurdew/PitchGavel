@@ -12,18 +12,33 @@ function sha256(value) { return crypto.createHash('sha256').update(String(value)
 
 function normalizeEmail(email) { return String(email || '').trim().toLowerCase(); }
 
-function hashPassword(password) {
+// [GÜVENLİK — KOD İNCELEMESİ] scrypt artık ASENKRON (libuv thread pool'unda) — senkron
+// `scryptSync` her giriş denemesinde event loop'u ~50ms kilitliyor, o sırada canlı açık
+// arttırmalar ve maçlar takılıyordu; toplu giriş denemesi tüm oyunu durdurabiliyordu.
+function scryptAsync(password, salt) {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, SCRYPT_KEYLEN, (err, key) => (err ? reject(err) : resolve(key)));
+  });
+}
+
+async function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex');
+  const hash = (await scryptAsync(password, salt)).toString('hex');
   return { hash, salt };
 }
 
-function verifyPassword(password, hash, salt) {
-  const candidate = crypto.scryptSync(password, salt, SCRYPT_KEYLEN);
+async function verifyPassword(password, hash, salt) {
+  const candidate = await scryptAsync(password, salt);
   const stored = Buffer.from(hash, 'hex');
   if (candidate.length !== stored.length) return false;
   return crypto.timingSafeEqual(candidate, stored);
 }
+
+// [GÜVENLİK] Kayıtlı olmayan bir e-postayla giriş denemesinde de AYNI maliyette bir scrypt
+// çalıştırılır — aksi halde bilinmeyen e-postalar anında, kayıtlılar ~50ms geç yanıt alıyor ve
+// bu süre farkından hangi e-postaların kayıtlı olduğu öğrenilebiliyordu.
+const DUMMY_SALT = crypto.randomBytes(16).toString('hex');
+const DUMMY_HASH = crypto.scryptSync(crypto.randomBytes(16).toString('hex'), DUMMY_SALT, SCRYPT_KEYLEN).toString('hex');
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] users.cosmetics JSON; bozuksa boş obje.
 function parseCosmetics(raw) {
@@ -47,7 +62,7 @@ class AuthService {
     const existing = await this.db.get('SELECT id FROM users WHERE email = ?', normEmail);
     if (existing) return { error: 'EMAIL_TAKEN' };
 
-    const { hash, salt } = hashPassword(password);
+    const { hash, salt } = await hashPassword(password);
     const now = Date.now();
     let info;
     try {
@@ -102,7 +117,11 @@ class AuthService {
     const user = await this.db.get('SELECT * FROM users WHERE email = ?', normEmail);
     // Bilinmeyen e-posta ile yanlış parola AYNI hata kodunu döner — e-posta enumeration'a
     // izin vermemek için.
-    if (!user || !verifyPassword(password, user.password_hash, user.password_salt)) {
+    if (!user) {
+      await verifyPassword(password, DUMMY_HASH, DUMMY_SALT);
+      return { error: 'INVALID_CREDENTIALS' };
+    }
+    if (!(await verifyPassword(password, user.password_hash, user.password_salt))) {
       return { error: 'INVALID_CREDENTIALS' };
     }
     const token = await this._createSession(user.id);
@@ -114,7 +133,7 @@ class AuthService {
     const row = await this.db.get(
       `SELECT users.* FROM sessions JOIN users ON users.id = sessions.user_id
        WHERE sessions.token = ? AND sessions.expires_at > ?`,
-      token, Date.now()
+      sha256(token), Date.now()
     );
     return row ? toPublicUser(row) : null;
   }
@@ -122,7 +141,7 @@ class AuthService {
   // Sadece sunulan token'a ait oturumu kapatır ("bu cihazdan çıkış") — aynı kullanıcının diğer
   // cihaz/tarayıcılardaki oturumları doğal süresi (30 gün) dolana kadar geçerli kalır.
   async logout(token) {
-    await this.db.run('DELETE FROM sessions WHERE token = ?', token);
+    await this.db.run('DELETE FROM sessions WHERE token = ?', sha256(token));
   }
 
   async sweepExpiredSessions() {
@@ -162,7 +181,7 @@ class AuthService {
     const del = await this.db.run('DELETE FROM password_resets WHERE token_hash = ?', tokenHash);
     if (del.changes !== 1) return { error: 'INVALID_OR_EXPIRED_TOKEN' };
 
-    const { hash, salt } = hashPassword(newPassword);
+    const { hash, salt } = await hashPassword(newPassword);
     const now = Date.now();
     await this.db.run(
       'UPDATE users SET password_hash = ?, password_salt = ?, email_verified_at = COALESCE(email_verified_at, ?), updated_at = ? WHERE id = ?',
@@ -181,7 +200,8 @@ class AuthService {
   async createVerificationToken(userId) {
     const token = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    await this.db.run('INSERT INTO email_verifications (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', token, userId, now, now + EMAIL_VERIFICATION_TTL_MS);
+    // [GÜVENLİK] DB'ye token'ın hash'i yazılır (password_resets ile aynı) — düz token sadece e-postada.
+    await this.db.run('INSERT INTO email_verifications (token, user_id, created_at, expires_at, hashed) VALUES (?, ?, ?, ?, 1)', sha256(token), userId, now, now + EMAIL_VERIFICATION_TTL_MS);
     return token;
   }
 
@@ -192,7 +212,9 @@ class AuthService {
   // "doğrulandı" işaretlemekle kalmıyor, AYRICA yeni bir oturum (session token) açıyor. Bu
   // sayede link HANGİ tarayıcı/cihazda tıklanırsa (kayıt olunan cihazdan farklı olsa bile) o
   // tarayıcı da otomatik giriş yapmış oluyor — parolayı tekrar girmeye gerek kalmıyor.
-  async verifyEmailToken(token) {
+  async verifyEmailToken(rawToken) {
+    if (!rawToken) return { error: 'INVALID_OR_EXPIRED_TOKEN' };
+    const token = sha256(rawToken);
     const row = await this.db.get(
       `SELECT email_verifications.user_id AS user_id FROM email_verifications
        WHERE token = ? AND expires_at > ?`,
@@ -216,7 +238,8 @@ class AuthService {
   async _createSession(userId) {
     const token = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
-    await this.db.run('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', token, userId, now, now + SESSION_TTL_MS);
+    // [GÜVENLİK] Tarayıcıya düz token (cookie), veritabanına sadece hash'i.
+    await this.db.run('INSERT INTO sessions (token, user_id, created_at, expires_at, hashed) VALUES (?, ?, ?, ?, 1)', sha256(token), userId, now, now + SESSION_TTL_MS);
     return token;
   }
 }

@@ -1,4 +1,7 @@
 const path = require('path');
+const crypto = require('crypto');
+
+function sha256(value) { return crypto.createHash('sha256').update(String(value)).digest('hex'); }
 const fs = require('fs');
 const { wrapSqlite, wrapLibsql } = require('./adapter');
 
@@ -164,8 +167,26 @@ async function initSchema(database) {
   if (!usersCols.includes('cosmetics')) {
     await database.exec('ALTER TABLE users ADD COLUMN cosmetics TEXT');
   }
+  // [GÜVENLİK] Token'ları hash'le saklama geçişi — bkz. migrateTokenHashing.
+  await migrateTokenHashing(database, 'sessions');
+  await migrateTokenHashing(database, 'email_verifications');
+}
+
+// [GÜVENLİK — KOD İNCELEMESİ] Oturum ve e-posta doğrulama token'ları artık (password_resets gibi)
+// düz değil SHA-256 hash'i olarak saklanıyor — veritabanı sızsa bile bu satırlarla hesaplara
+// girilemesin. Mevcut düz satırlar bir kereye mahsus yerinde hash'leniyor (`hashed` bayrağı),
+// böylece deploy sonrası kimsenin oturumu düşmüyor.
+async function migrateTokenHashing(database, table) {
+  const cols = (await database.all(`PRAGMA table_info(${table})`)).map((c) => c.name);
+  if (!cols.includes('hashed')) {
+    await database.exec(`ALTER TABLE ${table} ADD COLUMN hashed INTEGER NOT NULL DEFAULT 0`);
+  }
+  const rows = await database.all(`SELECT token FROM ${table} WHERE hashed = 0`);
+  for (const row of rows) {
+    await database.run(`UPDATE ${table} SET token = ?, hashed = 1 WHERE token = ? AND hashed = 0`, sha256(row.token), row.token);
+  }
 }
 
 const ready = initSchema(db);
 
-module.exports = { db, ready, initSchema, SCHEMA_SQL, DB_PATH, usingTurso: !!TURSO_URL };
+module.exports = { db, ready, initSchema, migrateTokenHashing, sha256, SCHEMA_SQL, DB_PATH, usingTurso: !!TURSO_URL };

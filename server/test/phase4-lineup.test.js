@@ -60,9 +60,9 @@ async function main() {
   const guest = connect();
   await Promise.all([once(host, 'connect'), once(guest, 'connect')]);
 
-  const created = await emitAck(host, 'room:create', { clientId: hostId, name: 'Host' });
+  const created = await emitAck(host, 'room:create', { clientId: hostId, clientSecret: `seat-secret-${hostId}`, name: 'Host' });
   const code = created.room.code;
-  await emitAck(guest, 'room:join', { clientId: guestId, name: 'Guest', code });
+  await emitAck(guest, 'room:join', { clientId: guestId, clientSecret: `seat-secret-${guestId}`, name: 'Guest', code });
 
   await runDraftToCompletion(host, guest, hostId, guestId, code);
   const room = roomManager.getRoom(code);

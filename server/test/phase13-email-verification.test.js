@@ -54,6 +54,9 @@ async function unitTests() {
       created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
     );
   `);
+  // [GÜVENLİK] Elle yazılmış DDL'e gerçek initSchema'nın guard'lı ALTER'larını da uygula
+  // (ör. token'ların hash'li saklandığını gösteren `hashed` kolonu) — DDL kopyası geride kalmasın.
+  await require('../src/db/db').initSchema(wrapSqlite(db));
   const auth = new AuthService(wrapSqlite(db));
   const reg = await auth.register('verify-test@example.com', 'password123', 'VerifyTest');
   assert.strictEqual(reg.user.emailVerified, false, 'yeni kayıt emailVerified:false olmalı');
@@ -87,8 +90,8 @@ async function unitTests() {
   // --- süresi geçmiş token ---
   const reg2 = await auth.register('verify-test-2@example.com', 'password123', 'VerifyTest2');
   const now = Date.now();
-  db.prepare('INSERT INTO email_verifications (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-    .run('expired-token-for-test', reg2.user.id, now - 1000, now - 1);
+  db.prepare('INSERT INTO email_verifications (token, user_id, created_at, expires_at, hashed) VALUES (?, ?, ?, ?, 1)')
+    .run(require('../src/db/db').sha256('expired-token-for-test'), reg2.user.id, now - 1000, now - 1);
   const expiredVerify = await auth.verifyEmailToken('expired-token-for-test');
   assert.strictEqual(expiredVerify.error, 'INVALID_OR_EXPIRED_TOKEN');
   console.log('[test13] süresi geçmiş token reddediliyor ✅');
@@ -121,9 +124,14 @@ async function e2eTest() {
   assert.strictEqual(regJson.user.emailVerified, false, 'register response emailVerified:false döndürmeli');
   console.log('[test13] e2e: register sonrası emailVerified:false ✅');
 
-  // Token asla HTTP response'da dönmüyor — testte doğrudan DB'den okunuyor (bkz. index.js db export'u).
-  const row = await db.get('SELECT token FROM email_verifications WHERE user_id = ?', regJson.user.id);
-  assert(row && row.token, 'kayıt sonrası bir doğrulama token\'ı oluşmuş olmalı');
+  // Token asla HTTP response'da dönmüyor. [GÜVENLİK] DB'de artık sadece hash'i var (düz token
+  // sadece e-postadaki linkte) — test, kendi bildiği bir token'ın hash'ini DB'ye ekleyip onu kullanıyor.
+  const dbRow = await db.get('SELECT token, hashed FROM email_verifications WHERE user_id = ?', regJson.user.id);
+  assert(dbRow && dbRow.token, 'kayıt sonrası bir doğrulama token\'ı oluşmuş olmalı');
+  assert.strictEqual(Number(dbRow.hashed), 1, 'doğrulama token\'ı DB\'de hash\'li saklanmalı');
+  const row = { token: require('crypto').randomBytes(32).toString('hex') };
+  await db.run('INSERT INTO email_verifications (token, user_id, created_at, expires_at, hashed) VALUES (?, ?, ?, ?, 1)',
+    require('../src/db/db').sha256(row.token), regJson.user.id, Date.now(), Date.now() + 60 * 60 * 1000);
   console.log('[test13] e2e: kayıt sonrası DB\'de bir doğrulama token\'ı oluştu (token response\'da YOK) ✅');
 
   // --- geçersiz token -> redirect verified=0 ---

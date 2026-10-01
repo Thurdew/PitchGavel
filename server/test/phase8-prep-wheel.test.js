@@ -162,9 +162,9 @@ async function e2eTest() {
   {
     const s0 = connect(), s1 = connect();
     await Promise.all([once(s0, 'connect'), once(s1, 'connect')]);
-    const created = await emitAck(s0, 'room:create', { clientId: 'reg-0', name: 'R0' });
+    const created = await emitAck(s0, 'room:create', { clientId: 'reg-0', clientSecret: `seat-secret-${'reg-0'}`, name: 'R0' });
     assert.strictEqual(created.room.prepWheelEnabled, false, 'varsayılan prepWheelEnabled false olmalı');
-    await emitAck(s1, 'room:join', { clientId: 'reg-1', name: 'R1', code: created.room.code });
+    await emitAck(s1, 'room:join', { clientId: 'reg-1', clientSecret: `seat-secret-${'reg-1'}`, name: 'R1', code: created.room.code });
     await emitAck(s0, 'draft:readyToggle', { code: created.room.code });
     await emitAck(s1, 'draft:readyToggle', { code: created.room.code });
     const start = await emitAck(s0, 'draft:start', { code: created.room.code });
@@ -179,7 +179,7 @@ async function e2eTest() {
   {
     const s0 = connect();
     await once(s0, 'connect');
-    const created = await emitAck(s0, 'room:create', { clientId: 'wheelreg-0', name: 'W0', draftMode: 'wheel', prepWheelEnabled: true });
+    const created = await emitAck(s0, 'room:create', { clientId: 'wheelreg-0', clientSecret: `seat-secret-${'wheelreg-0'}`, name: 'W0', draftMode: 'wheel', prepWheelEnabled: true });
     assert.strictEqual(created.room.prepWheelEnabled, false, 'Çark Modu\'nda prepWheelEnabled her zaman false olmalı: ' + JSON.stringify(created.room));
     s0.close();
     console.log('[test8] regresyon: Çark Modu\'nda Hazırlık Çarkı zorla kapalı ✅');
@@ -191,10 +191,10 @@ async function e2eTest() {
   const sockets = Array.from({ length: N }, () => connect());
   await Promise.all(sockets.map((s) => once(s, 'connect')));
 
-  const created = await emitAck(sockets[0], 'room:create', { clientId: ids[0], name: 'P0', prepWheelEnabled: true });
+  const created = await emitAck(sockets[0], 'room:create', { clientId: ids[0], clientSecret: `seat-secret-${ids[0]}`, name: 'P0', prepWheelEnabled: true });
   assert.strictEqual(created.room.prepWheelEnabled, true, 'oda prepWheelEnabled:true ile kurulmalı');
   const code = created.room.code;
-  for (let i = 1; i < N; i++) await emitAck(sockets[i], 'room:join', { clientId: ids[i], name: `P${i}`, code });
+  for (let i = 1; i < N; i++) await emitAck(sockets[i], 'room:join', { clientId: ids[i], clientSecret: `seat-secret-${ids[i]}`, name: `P${i}`, code });
   for (let i = 0; i < N; i++) await emitAck(sockets[i], 'draft:readyToggle', { code });
 
   const resolvedEvents = [];
