@@ -103,7 +103,9 @@ async function e2e() {
   const ticket = (await http('POST', '/api/rooms/ticket', H.cookie)).json.ticket;
   assert((await emitAck(host, 'room:bindAccount', { ticket })).ok);
   const seen = await statePromise;
-  const hostPub = seen.players.find((p) => p.name === 'Host');
+  // Hesaba bağlanan oyuncu odada hesabındaki görünen adla görünür ('Host' → 'Kozmetik').
+  const hostPub = seen.players.find((p) => p.name === 'Kozmetik');
+  assert(hostPub && !seen.players.some((p) => p.name === 'Host'), 'bağlı oyuncunun adı hesap adı olmalı');
   assert.deepStrictEqual(hostPub.cosmetics, { frame: 'gold' }, 'misafir, host\'un çerçevesini görmeli');
   assert(!('reactionPacks' in hostPub) && !('reactBucket' in hostPub), 'tepki paketleri/kovası yayınlanmamalı');
   console.log('[test16] odaya bağlanınca kozmetik herkese yayınlanıyor ✅');

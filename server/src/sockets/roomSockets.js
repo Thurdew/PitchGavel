@@ -141,6 +141,8 @@ function registerRoomSockets(io, socket, ctx) {
       kitId = isValidKitId(user.favoriteKit) && (await ctx.coinService.ownsKit(user.id, user.favoriteKit)) ? user.favoriteKit : 'home';
     }
     player.account = { userId: user.id, canonicalEmail: canonical, verified: !!user.emailVerified, ip: entry.ip };
+    // [KULLANICI İSTEĞİ] Kayıtlı kullanıcı odada hesabındaki görünen adla görünür.
+    if (user.displayName) player.name = String(user.displayName).trim().slice(0, 24) || player.name;
     player.teamId = kitId ? user.favoriteTeam : null;
     player.kitId = kitId;
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kozmetikler de DB'den, sahiplik süzgecinden

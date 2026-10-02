@@ -19,6 +19,17 @@ const KIT_ITEMS = [
   { id: 'kit:retro', type: 'kit', kitId: 'retro', price: 750 },
   { id: 'kit:sash', type: 'kit', kitId: 'sash', price: 750 },
   { id: 'kit:night', type: 'kit', kitId: 'night', price: 1000 },
+  // [MAĞAZA v3]
+  { id: 'kit:band', type: 'kit', kitId: 'band', price: 600 },
+  { id: 'kit:fade', type: 'kit', kitId: 'fade', price: 650 },
+  { id: 'kit:quarters', type: 'kit', kitId: 'quarters', price: 800 },
+  { id: 'kit:checker', type: 'kit', kitId: 'checker', price: 850 },
+  { id: 'kit:chevron', type: 'kit', kitId: 'chevron', price: 800 },
+  { id: 'kit:retro70', type: 'kit', kitId: 'retro70', price: 900 },
+  { id: 'kit:retro90', type: 'kit', kitId: 'retro90', price: 900 },
+  { id: 'kit:vintage', type: 'kit', kitId: 'vintage', price: 1000 },
+  { id: 'kit:laceup', type: 'kit', kitId: 'laceup', price: 1200 },
+  { id: 'kit:gold', type: 'kit', kitId: 'gold', price: 1500 },
 ];
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Kozmetikler. Her `type` bir "slot"tur; kullanıcı
@@ -49,6 +60,14 @@ const COSMETIC_ITEMS = [
   { id: 'pitch:night', type: 'pitch', key: 'night', price: 900 },
   { id: 'pitch:snow', type: 'pitch', key: 'snow', price: 800 },
   { id: 'pitch:retro', type: 'pitch', key: 'retro', price: 800 },
+  // [MAĞAZA v3]
+  { id: 'pitch:mowed', type: 'pitch', key: 'mowed', price: 600 },
+  { id: 'pitch:sunset', type: 'pitch', key: 'sunset', price: 850 },
+  { id: 'pitch:rain', type: 'pitch', key: 'rain', price: 850 },
+  { id: 'pitch:beach', type: 'pitch', key: 'beach', price: 900 },
+  { id: 'pitch:film70', type: 'pitch', key: 'film70', price: 900 },
+  { id: 'pitch:arcade', type: 'pitch', key: 'arcade', price: 1000 },
+  { id: 'pitch:neon', type: 'pitch', key: 'neon', price: 1100 },
 
   { id: 'goalfx:teamconfetti', type: 'goalfx', key: 'teamconfetti', price: 750 },
   { id: 'goalfx:flash', type: 'goalfx', key: 'flash', price: 1000 },

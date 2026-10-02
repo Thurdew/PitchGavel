@@ -4103,3 +4103,91 @@ button:disabled, .btn:disabled {
 .shared-result-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .shared-result-cta h3 { margin: 0 0 4px; }
 .shared-result-cta p { margin: 0; text-wrap: pretty; }
+
+/* ===================== [MAĞAZA v3] Forma serileri + yeni saha zeminleri ===================== */
+.store-series-h { margin: 18px 0 10px; font-size: 12px; font-family: var(--font-mono); letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.store-panel > h3 + .store-series-h { margin-top: 6px; }
+
+.pitch-field.skin-mowed {
+  background:
+    repeating-conic-gradient(rgba(255,255,255,.07) 0 25%, rgba(0,0,0,.09) 0 50%) 0 0 / 25% 33.34%,
+    linear-gradient(160deg, #2f8a3e, #1d6a2b);
+}
+.pitch-field.skin-mowed::before { display: none; }
+
+.pitch-field.skin-sunset {
+  background:
+    radial-gradient(70% 60% at 85% -10%, rgba(255,170,80,.55), transparent 70%),
+    linear-gradient(180deg, rgba(255,120,50,.28), transparent 60%),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.04) 0 12.5%, rgba(0,0,0,.08) 12.5% 25%),
+    linear-gradient(160deg, #3d6a2a, #1c3518);
+}
+.pitch-field.skin-sunset::before { display: none; }
+.pitch-field.skin-sunset .pitch-halfline { background: rgba(255,236,210,.7); }
+.pitch-field.skin-sunset .pitch-circle, .pitch-field.skin-sunset .pitch-box { border-color: rgba(255,236,210,.7); }
+.pitch-field.skin-sunset .pitch-dot { box-shadow: -5px 4px 5px rgba(40,10,0,.55); }
+
+.pitch-field.skin-rain {
+  background:
+    repeating-linear-gradient(105deg, rgba(210,225,255,.13) 0 1px, transparent 1px 8px),
+    radial-gradient(14% 10% at 30% 70%, rgba(170,200,230,.28), transparent 70%),
+    radial-gradient(10% 8% at 72% 28%, rgba(170,200,230,.22), transparent 70%),
+    linear-gradient(160deg, #22462e, #0f2318);
+  filter: saturate(.75);
+}
+.pitch-field.skin-rain .pitch-halfline { background: rgba(255,255,255,.5); }
+.pitch-field.skin-rain .pitch-circle, .pitch-field.skin-rain .pitch-box { border-color: rgba(255,255,255,.5); }
+
+.pitch-field.skin-beach {
+  border-color: #b48a45;
+  background:
+    radial-gradient(circle, rgba(120,85,35,.28) 1px, transparent 1.5px) 0 0 / 6px 6px,
+    radial-gradient(circle, rgba(255,255,255,.35) .8px, transparent 1.3px) 3px 2px / 7px 5px,
+    linear-gradient(160deg, #ecd49c, #c9a663);
+}
+.pitch-field.skin-beach::before { display: none; }
+.pitch-field.skin-beach .pitch-halfline, .pitch-field.skin-beach .pitch-circle::after { background: #1d4ed8; }
+.pitch-field.skin-beach .pitch-circle, .pitch-field.skin-beach .pitch-box { border-color: #1d4ed8; }
+.pitch-field.skin-beach .pitch-caption, .pitch-field.skin-beach .pitch-phase { color: #2a1d08; }
+
+.pitch-field.skin-film70 {
+  border: 5px solid #1b140c; border-radius: 22px;
+  background:
+    radial-gradient(circle, rgba(0,0,0,.2) .6px, transparent 1px) 0 0 / 3px 3px,
+    radial-gradient(120% 100% at 50% 50%, transparent 48%, rgba(40,20,0,.6)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 12.5%, rgba(0,0,0,.06) 12.5% 25%),
+    linear-gradient(160deg, #8b8a4c, #57552a);
+  filter: sepia(.45) contrast(1.05);
+}
+.pitch-field.skin-film70::before { display: none; }
+.pitch-field.skin-film70 .pitch-halfline { background: rgba(250,240,215,.6); }
+.pitch-field.skin-film70 .pitch-circle, .pitch-field.skin-film70 .pitch-box { border-color: rgba(250,240,215,.6); }
+
+.pitch-field.skin-arcade {
+  border: 4px solid #b6ff6a; border-radius: 0;
+  background:
+    linear-gradient(rgba(0,0,0,.3) 1px, transparent 1px) 0 0 / 8px 8px,
+    linear-gradient(90deg, rgba(0,0,0,.3) 1px, transparent 1px) 0 0 / 8px 8px,
+    #1f7a2e;
+  image-rendering: pixelated;
+}
+.pitch-field.skin-arcade::before { display: none; }
+.pitch-field.skin-arcade .pitch-halfline, .pitch-field.skin-arcade .pitch-circle::after { background: #b6ff6a; }
+.pitch-field.skin-arcade .pitch-circle { border-radius: 0; border-color: #b6ff6a; }
+.pitch-field.skin-arcade .pitch-box, .pitch-field.skin-arcade .pitch-goal { border-color: #b6ff6a; border-radius: 0; }
+.pitch-field.skin-arcade .pitch-dot { border-radius: 2px; }
+.pitch-field.skin-arcade .pitch-ball, .pitch-field.skin-arcade .cos-ball { border-radius: 1px; background: #fff; box-shadow: 2px 2px 0 #0b3d14; }
+.pitch-field.skin-arcade .pitch-caption, .pitch-field.skin-arcade .pitch-phase { font-family: var(--font-mono); color: #b6ff6a; }
+
+.pitch-field.skin-neon {
+  border-color: #22d3ee;
+  background:
+    radial-gradient(60% 50% at 50% 50%, rgba(34,211,238,.10), transparent 70%),
+    linear-gradient(160deg, #0b1028, #04050e);
+  box-shadow: 0 0 22px -6px rgba(34,211,238,.6), inset 0 0 30px rgba(0,0,0,.6);
+}
+.pitch-field.skin-neon::before { display: none; }
+.pitch-field.skin-neon .pitch-halfline, .pitch-field.skin-neon .pitch-circle::after { background: #22d3ee; box-shadow: 0 0 6px #22d3ee; }
+.pitch-field.skin-neon .pitch-circle { border-color: #22d3ee; box-shadow: 0 0 6px #22d3ee, inset 0 0 6px #22d3ee; }
+.pitch-field.skin-neon .pitch-box, .pitch-field.skin-neon .pitch-goal { border-color: #f472d0; box-shadow: 0 0 6px #f472d0; }
+.pitch-field.skin-neon .pitch-dot { box-shadow: 0 0 8px rgba(255,255,255,.35); }
