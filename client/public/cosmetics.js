@@ -45,6 +45,13 @@ export const COSMETIC_META = {
   'pitch:night': { name: 'Gece Işıklı', desc: 'Koyu çim, dört köşede projektör.' },
   'pitch:snow': { name: 'Karlı Saha', desc: 'Karla kaplı zemin, mavi çizgiler, turuncu top.' },
   'pitch:retro': { name: 'Retro Yayın', desc: 'Eski tüplü TV: tarama çizgileri, soluk renkler.' },
+  'pitch:mowed': { name: 'Dama Biçimli Çim', desc: 'Çim kareler halinde biçilmiş, açık-koyu desen.' },
+  'pitch:sunset': { name: 'Gün Batımı', desc: 'Turuncu akşam ışığı, uzun gölgeler.' },
+  'pitch:rain': { name: 'Yağmurlu Maç', desc: 'Islak koyu çim, eğik yağmur çizgileri, su birikintileri.' },
+  'pitch:beach': { name: 'Kumsal', desc: 'Kum zemin, mavi ip çizgiler.' },
+  'pitch:film70': { name: "70'ler Filmi", desc: 'Grenli, sepya tonlu eski film karesi.' },
+  'pitch:arcade': { name: '8-Bit Arcade', desc: 'Piksel ızgara, köşeli orta yuvarlak, kare top.' },
+  'pitch:neon': { name: 'Neon Hatlar', desc: 'Karanlık zemin, parlayan camgöbeği ve pembe çizgiler.' },
 
   'goalfx:teamconfetti': { name: 'Takım Konfetisi', desc: 'Konfeti formanın iki renginde.' },
   'goalfx:flash': { name: 'Ekran Flaşı', desc: 'Kale ağzından sahaya yayılan beyaz patlama.' },

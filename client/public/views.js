@@ -166,6 +166,10 @@ export function renderLobby({ state, actions }) {
     value: ui.code, oninput: (e) => { ui.code = e.target.value; },
   });
 
+  // [KULLANICI İSTEĞİ] Giriş yapmış kullanıcıya ad sorulmaz — kayıtta yazdığı görünen ad
+  // kullanılır (sunucu da hesap bağlanınca oyuncu adını hesap adıyla eşitler, bkz. room:bindAccount).
+  if (state.user && state.user.displayName) nameInput.value = state.user.displayName;
+
   function submit() {
     if (!nameInput.value.trim()) return toast('Önce adını yaz.');
     if (ui.mode === 'create') {
@@ -364,7 +368,15 @@ export function renderLobby({ state, actions }) {
   // kabul eder, host odadaki herkes hazır olunca kendisi başlatır (bkz. renderWaitingRoom).
 
   const formSection = ui.mode ? el('div', { class: 'lobby-form' }, [
-    el('div', { class: 'field' }, [el('label', {}, 'Adın'), nameInput]),
+    state.user && state.user.displayName
+      ? el('div', { class: 'field' }, [
+        el('label', {}, 'Adın'),
+        el('div', { class: 'muted', style: 'padding:8px 0' }, [
+          el('strong', { style: 'color:var(--text)' }, state.user.displayName),
+          ' · hesap adın kullanılacak',
+        ]),
+      ])
+      : el('div', { class: 'field' }, [el('label', {}, 'Adın'), nameInput]),
     ui.mode === 'join' ? el('div', { class: 'field' }, [el('label', {}, 'Oda Kodu'), codeInput]) : null,
     draftModePicker,
     playerPoolPicker,
@@ -1308,6 +1320,10 @@ export function showReaction(state, { clientId, reactionId }) {
   setTimeout(() => bubble.remove(), 2800);
 }
 
+// [MAĞAZA v3] Forma sekmesi seri başlıklarıyla gruplanır (teams.js KIT_VARIANTS.series).
+const KIT_SERIES = [['classic', 'Klasik Seri'], ['pattern', 'Desenli Seri'], ['retro', 'Retro Seri'], ['special', 'Özel Seri']];
+const kitSeriesOf = (kitId) => (KIT_VARIANTS.find((v) => v.id === kitId) || {}).series || 'classic';
+
 export function renderStore({ state, actions }) {
   const root = el('div', { class: 'view store-view' });
   root.appendChild(el('button', {
@@ -1372,7 +1388,10 @@ export function renderStore({ state, actions }) {
     }));
   } else root.appendChild(el('div', { class: 'panel store-panel' }, [
     el('h3', {}, 'Premium Formalar'),
-    el('div', { class: 'store-grid' }, store.items.filter((i) => i.type === 'kit').map((item) => {
+    // [MAĞAZA v3] Forma sekmesi seri başlıklarıyla gruplanır (teams.js KIT_VARIANTS.series).
+    ...KIT_SERIES.flatMap(([sid, slabel]) => {
+    const seriesItems = store.items.filter((i) => i.type === 'kit' && kitSeriesOf(i.kitId) === sid);
+    return seriesItems.length ? [el('h4', { class: 'store-series-h' }, slabel), el('div', { class: 'store-grid' }, seriesItems.map((item) => {
       const variant = KIT_VARIANTS.find((v) => v.id === item.kitId);
       const k = kitFor(previewTeam, item.kitId);
       const has = owned.has(item.id);
@@ -1396,7 +1415,8 @@ export function renderStore({ state, actions }) {
           action,
         ]),
       ]);
-    })),
+    }))] : [];
+    }),
   ]));
 
   // Kurallar kullanıcıyla kararlaştırıldı (bkz. server/src/coins/CoinService.js) — şeffaf olsun

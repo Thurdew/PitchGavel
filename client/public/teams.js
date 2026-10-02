@@ -276,6 +276,20 @@ export function kitBackground(t, w = 3) {
     case 'halves': return `linear-gradient(90deg, ${a} 50%, ${b} 50%)`;
     case 'sleeves': return `linear-gradient(90deg, ${b} 0 24%, ${a} 24% 76%, ${b} 76%)`;
     case 'sash': return `linear-gradient(135deg, ${a} 0 38%, ${b} 38% 62%, ${a} 62%)`;
+    // [MAĞAZA v3] yeni desenler — hepsi `background:` kısayoluyla kullanılır (boyut/tekrar içerir).
+    case 'quarters': return `conic-gradient(${a} 0 25%, ${b} 0 50%, ${a} 0 75%, ${b} 0)`;
+    case 'checker': return `repeating-conic-gradient(${a} 0 25%, ${b} 0 50%) 0 0 / ${w * 2}px ${w * 2}px`;
+    case 'band': return `linear-gradient(180deg, ${a} 0 32%, ${b} 32% 50%, ${a} 50%)`;
+    case 'chevron': return `linear-gradient(to top right, ${a} 0 42%, ${b} 42% 58%, ${a} 58%) 0 0 / 50.5% 100% no-repeat, linear-gradient(to top left, ${a} 0 42%, ${b} 42% 58%, ${a} 58%) 100% 0 / 50.5% 100% no-repeat, ${a}`;
+    case 'fade': return `linear-gradient(180deg, ${a} 10%, ${b} 100%)`;
+    case 'zigzag': { const s = w * 2; return `linear-gradient(135deg, ${b} 25%, transparent 25%) -${w}px 0 / ${s}px ${s}px, linear-gradient(225deg, ${b} 25%, transparent 25%) -${w}px 0 / ${s}px ${s}px, linear-gradient(315deg, ${b} 25%, transparent 25%) 0 0 / ${s}px ${s}px, linear-gradient(45deg, ${b} 25%, ${a} 25%) 0 0 / ${s}px ${s}px`; }
+    // [MAĞAZA v3] Bağcıklı yaka retro: gövde a, kollar + yaka b, ortada bağcıklı yaka açıklığı.
+    // Koordinatlar .kit-shirt clip-path'ine göre (yaka x 38-62%, kollar <28% ve >72%).
+    case 'laceup': return [
+      `repeating-linear-gradient(0deg, ${b} 0 1px, ${a} 1px 3px) 50% 10% / 6% 15% no-repeat`,
+      `linear-gradient(${b}, ${b}) 50% 0 / 28% 15% no-repeat`,
+      `linear-gradient(90deg, ${b} 0 28%, ${a} 28% 72%, ${b} 72%)`,
+    ].join(', ');
     default: return a;
   }
 }
@@ -283,13 +297,24 @@ export function kitBackground(t, w = 3) {
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — FORMA ÇEŞİTLERİ] Her takım için aynı 6 varyant, takımın
 // renklerinden türetilir (id'ler server/src/shared/teams.js KIT_IDS ile AYNI). `tier: 'premium'`
 // olanlar ileride ücretli olacak — şimdilik herkes seçebiliyor (kilit mantığı yok).
+// [MAĞAZA v3] `series` mağazadaki gruplamadır (bkz. views.js KIT_SERIES).
 export const KIT_VARIANTS = [
   { id: 'home', label: 'İç Saha', tier: 'free' },
   { id: 'away', label: 'Deplasman', tier: 'free' },
-  { id: 'plain', label: 'Düz', tier: 'premium' },
-  { id: 'retro', label: 'Retro Çizgili', tier: 'premium' },
-  { id: 'sash', label: 'Kuşaklı Özel', tier: 'premium' },
-  { id: 'night', label: 'Gece Serisi', tier: 'premium' },
+  { id: 'plain', label: 'Düz', tier: 'premium', series: 'classic' },
+  { id: 'band', label: 'Göğüs Bantlı', tier: 'premium', series: 'classic' },
+  { id: 'fade', label: 'Degrade', tier: 'premium', series: 'classic' },
+  { id: 'sash', label: 'Kuşaklı Özel', tier: 'premium', series: 'classic' },
+  { id: 'quarters', label: 'Çeyrek Bölmeli', tier: 'premium', series: 'pattern' },
+  { id: 'checker', label: 'Damalı', tier: 'premium', series: 'pattern' },
+  { id: 'chevron', label: 'V Bantlı', tier: 'premium', series: 'pattern' },
+  { id: 'retro', label: 'Retro Çizgili', tier: 'premium', series: 'retro' },
+  { id: 'retro70', label: "Retro 70'ler Kollu", tier: 'premium', series: 'retro' },
+  { id: 'retro90', label: "Retro 90'lar Zikzak", tier: 'premium', series: 'retro' },
+  { id: 'vintage', label: 'Vintage Krem', tier: 'premium', series: 'retro' },
+  { id: 'laceup', label: 'Bağcıklı Yaka Retro', tier: 'premium', series: 'retro' },
+  { id: 'night', label: 'Gece Serisi', tier: 'premium', series: 'special' },
+  { id: 'gold', label: 'Altın Seri', tier: 'premium', series: 'special' },
 ];
 const KIT_BY_ID = new Map(KIT_VARIANTS.map((v) => [v.id, v]));
 
@@ -305,6 +330,16 @@ export function kitFor(team, kitId) {
     case 'retro': return { ...base, pattern: team.pattern === 'hoops' ? 'stripes' : 'hoops', colors: [a, b], wide: true };
     case 'sash': return { ...base, pattern: 'sash', colors: team.pattern === 'sash' ? [b, a] : [a, b] };
     case 'night': return { ...base, pattern: 'pinstripes', colors: ['#0b0d12', team.accent] };
+    case 'band': return { ...base, pattern: 'band', colors: [a, b] };
+    case 'fade': return { ...base, pattern: 'fade', colors: [a, b] };
+    case 'quarters': return { ...base, pattern: 'quarters', colors: [a, b] };
+    case 'checker': return { ...base, pattern: 'checker', colors: [a, b] };
+    case 'chevron': return { ...base, pattern: 'chevron', colors: [a, b] };
+    case 'retro70': return { ...base, pattern: 'sleeves', colors: team.pattern === 'sleeves' ? [b, a] : [a, b] };
+    case 'retro90': return { ...base, pattern: 'zigzag', colors: [a, b] };
+    case 'vintage': return { ...base, pattern: 'hoops', colors: ['#efe4c8', a] };
+    case 'laceup': return { ...base, pattern: 'laceup', colors: [a, b] };
+    case 'gold': return { ...base, pattern: 'band', colors: ['#141210', '#d4af37'] };
     default: return { ...base, pattern: team.pattern, colors: [a, b] };
   }
 }
