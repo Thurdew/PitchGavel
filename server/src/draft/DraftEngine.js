@@ -1110,7 +1110,7 @@ class DraftEngine {
     if (room.draft.pauseVotes.has(clientId)) room.draft.pauseVotes.delete(clientId);
     else room.draft.pauseVotes.add(clientId);
 
-    const shouldPause = room.draft.pauseVotes.size >= room.players.length;
+    const shouldPause = this.roomManager.allHumansIn(room, room.draft.pauseVotes);
     if (shouldPause && !room.draft.paused) this.pauseDraft(room);
     else if (!shouldPause && room.draft.paused) this.resumeDraft(room);
     else this.emitDraft(room); // sadece oy durumu değişti, duraklama durumu aynı kaldı

@@ -30,6 +30,25 @@ function registerRoomSockets(io, socket, ctx) {
     broadcastState(room);
   });
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Lobideki "Bilgisayara Karşı Oyna":
+  // oyuncu + bot ile 2 kişilik oda kurulur, draft hemen başlar (Hızlı Eşleş gibi — hazır onayı
+  // yok). Hazırlık çarkı/takas turu kapalı; bota karşı maç coin vermez (bkz. matchSockets).
+  socket.on('room:createBot', ({ clientId, clientSecret, name, draftMode, playerPool } = {}, cb) => {
+    if (!clientId) return cb?.({ error: 'CLIENT_ID_REQUIRED' });
+    if (!validIdentity(clientId, clientSecret)) return cb?.({ error: 'INVALID_IDENTITY' });
+    if (!ctx.botController) return cb?.({ error: 'SERVER_ERROR' });
+    const room = roomManager.createRoom(clientId, str(name), str(draftMode), str(playerPool), null, false, false, false, clientSecret);
+    roomManager.addBot(room);
+    roomManager.bindSocket(room.code, clientId, socket.id);
+    socket.join(room.code);
+    socket.data.clientId = clientId;
+    socket.data.roomCode = room.code;
+    ctx.botController.attach(room);
+    const started = ctx.draftEngine.startDraft(room);
+    if (started && started.error) return cb?.({ error: started.error });
+    cb?.({ room: roomManager.toPublicState(room) });
+  });
+
   socket.on('room:join', ({ clientId, clientSecret, name, code } = {}, cb) => {
     if (!clientId || !code) return cb?.({ error: 'MISSING_FIELDS' });
     if (!validIdentity(clientId, clientSecret) || !roomCode(code)) return cb?.({ error: 'INVALID_IDENTITY' });

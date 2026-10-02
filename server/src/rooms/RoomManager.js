@@ -196,6 +196,38 @@ class RoomManager {
     return { room, player };
   }
 
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Odaya bot oyuncu ekler (bkz.
+  // bot/BotController.js). Socket'i yok, hep "bağlı" sayılır; koltuk anahtarı yok (kimse onun
+  // yerine geçemez). Hamlelerini denetleyici motor fonksiyonlarını doğrudan çağırarak yapar.
+  addBot(room, name = '🤖 Bilgisayar') {
+    const bot = this._makePlayer(`bot-${crypto.randomBytes(6).toString('hex')}`, name, null);
+    bot.isBot = true;
+    bot.connected = true;
+    room.players.push(bot);
+    room.updatedAt = Date.now();
+    return bot;
+  }
+
+  // "Herkes hazır / herkes oyladı" eşikleri SADECE insanları sayar — bot oy vermez, beklemez
+  // (normal odalarda humanPlayers === players, davranış aynı).
+  humanPlayers(room) {
+    return room.players.filter((p) => !p.isBot);
+  }
+
+  allHumansIn(room, votes) {
+    const humans = this.humanPlayers(room);
+    return humans.length > 0 && humans.every((p) => votes.has(p.clientId));
+  }
+
+  removeRoom(code) {
+    const room = this.rooms.get(code);
+    if (!room) return;
+    for (const p of room.players) {
+      if (this.clientRoomIndex.get(p.clientId) === code) this.clientRoomIndex.delete(p.clientId);
+    }
+    this.rooms.delete(code);
+  }
+
   // Sabit zamanlı karşılaştırma — anahtarın hash'i zamanlamadan tahmin edilemesin.
   verifySecret(player, secret) {
     if (!player || !player.secretHash || !isValidSecret(secret)) return false;
@@ -242,7 +274,7 @@ class RoomManager {
         // DÖNMÜYOR — eski host tekrar bağlansa bile host rolünü otomatik geri almaz (basit/
         // öngörülebilir kalsın, "host topu" ileri geri sıçramasın diye).
         if (room.hostClientId === player.clientId) {
-          const nextHost = room.players.find((p) => p.clientId !== player.clientId && p.connected);
+          const nextHost = room.players.find((p) => p.clientId !== player.clientId && p.connected && !p.isBot);
           if (nextHost) room.hostClientId = nextHost.clientId;
         }
         room.updatedAt = Date.now();
@@ -349,6 +381,7 @@ class RoomManager {
         clientId: p.clientId,
         name: p.name,
         connected: p.connected,
+        isBot: !!p.isBot,
         budget: p.budget,
         squadCount: p.squad.length,
         // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] Görünürlük "herkese açık" —

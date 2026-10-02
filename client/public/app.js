@@ -1347,6 +1347,19 @@ const actions = {
     pushDataLayer('matchmaking_join', { draft_mode: draftMode, player_pool: playerPool });
     route();
   },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Oyuncu + bot ile oda kurulur, draft
+  // sunucuda hemen başlar; oda verisi createRoom'daki gibi ack'ten gelir.
+  async playVsBot(name, draftMode, playerPool) {
+    state.name = name;
+    sessionStorage.setItem(LS_NAME, name);
+    const res = await emitAck('room:createBot', { clientId: state.clientId, clientSecret: state.clientSecret, name, draftMode, playerPool });
+    if (res.error) return toast('Oyun başlatılamadı: ' + (ROOM_ERRORS[res.error] || res.error));
+    state.room = res.room;
+    setCode(res.room.code);
+    pushDataLayer('bot_game_start', { draft_mode: draftMode, player_pool: playerPool });
+    syncUrlToRoomMode(res.room);
+    route();
+  },
   async cancelQuickMatch() {
     await emitAck('matchmaking:leave', {});
     state.matchmaking = null;

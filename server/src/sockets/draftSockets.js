@@ -36,7 +36,7 @@ function registerDraftSockets(io, socket, ctx) {
     const clientId = socket.data.clientId;
     if (!roomManager.isHost(room, clientId)) return cb?.({ error: 'ONLY_HOST_CAN_START' });
     if (!roomManager.allConnected(room)) return cb?.({ error: 'NOT_ENOUGH_PLAYERS' });
-    if (room.readyVotes.size < room.players.length) return cb?.({ error: 'NOT_EVERYONE_READY' });
+    if (!roomManager.allHumansIn(room, room.readyVotes)) return cb?.({ error: 'NOT_EVERYONE_READY' });
 
     room.readyVotes = new Set(); // bir sonraki faz (maç başlama onayı) için temiz başlasın
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] Host bu odada açtıysa (bkz.

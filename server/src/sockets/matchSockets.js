@@ -89,7 +89,7 @@ function registerMatchSockets(io, socket, ctx) {
     io.to(room.code).emit('room:state', roomManager.toPublicState(room));
 
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Çok Oyunculu Mod — eşik odadaki TÜM oyuncu sayısı.
-    if (room.readyVotes.size < room.players.length) {
+    if (!roomManager.allHumansIn(room, room.readyVotes)) {
       return cb?.({ ok: true, waiting: true });
     }
     room.readyVotes = new Set();
@@ -120,6 +120,9 @@ function registerMatchSockets(io, socket, ctx) {
   // istemci bunu anlatım bitene kadar göstermez (skoru önceden söylememek için). Veritabanı
   // hatası maç akışını asla bozmaz — sadece loglanır.
   function awardCoins(room, result) {
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Bota karşı oynanan maç coin vermez
+    // (istemci sonuç ekranında bunu açıklıyor — bkz. views.js coinAwardPanel).
+    if (room.players.some((p) => p.isBot)) return;
     const accounts = {};
     for (const p of room.players) if (p.account) accounts[p.clientId] = p.account;
     if (Object.keys(accounts).length === 0) return;
@@ -150,7 +153,8 @@ function registerMatchSockets(io, socket, ctx) {
     const ps = room.playbackSync;
     if (!ps.skip) {
       ps.speedVotes[clientId] = speed;
-      const allAgree = room.players.length > 0 && room.players.every((p) => ps.speedVotes[p.clientId] === speed);
+      const humans = roomManager.humanPlayers(room);
+      const allAgree = humans.length > 0 && humans.every((p) => ps.speedVotes[p.clientId] === speed);
       if (allAgree) ps.speed = speed;
     }
     const payload = playbackSyncPublic(room);
@@ -173,7 +177,7 @@ function registerMatchSockets(io, socket, ctx) {
     const ps = room.playbackSync;
     if (!ps.skip) {
       if (ps.skipVotes.has(clientId)) ps.skipVotes.delete(clientId); else ps.skipVotes.add(clientId);
-      if (room.players.length > 0 && ps.skipVotes.size >= room.players.length) ps.skip = true;
+      if (roomManager.allHumansIn(room, ps.skipVotes)) ps.skip = true;
     }
     const payload = playbackSyncPublic(room);
     cb?.({ ok: true, playbackSync: payload });
