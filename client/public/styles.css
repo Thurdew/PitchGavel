@@ -4191,3 +4191,190 @@ button:disabled, .btn:disabled {
 .pitch-field.skin-neon .pitch-circle { border-color: #22d3ee; box-shadow: 0 0 6px #22d3ee, inset 0 0 6px #22d3ee; }
 .pitch-field.skin-neon .pitch-box, .pitch-field.skin-neon .pitch-goal { border-color: #f472d0; box-shadow: 0 0 6px #f472d0; }
 .pitch-field.skin-neon .pitch-dot { box-shadow: 0 0 8px rgba(255,255,255,.35); }
+
+/* [KULLANICI İSTEĞİ] Odaya Katıl — "maç bileti" ekranı (bkz. views.js renderJoinTicket). */
+.jt-wrap { width: 100%; max-width: 620px; margin: 28px auto 0; animation: pop-in 0.3s var(--ease); }
+.jt-ticket {
+  position: relative; display: grid; grid-template-columns: 64px minmax(0, 1fr);
+  background: linear-gradient(180deg, #111d2e 0%, var(--card-solid) 100%);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,149,0,0.06) inset;
+}
+.jt-ticket::before, .jt-ticket::after {
+  content: ''; position: absolute; left: 52px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--bg); border: 1px solid var(--border-strong);
+}
+.jt-ticket::before { top: -13px; } .jt-ticket::after { bottom: -13px; }
+.jt-stub {
+  display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 22px 0;
+  background: repeating-linear-gradient(135deg, rgba(255,149,0,0.10) 0 8px, rgba(255,149,0,0.04) 8px 16px);
+  border-right: 2px dashed var(--border-strong);
+}
+.jt-stub-icon { font-size: 22px; }
+.jt-stub-text {
+  writing-mode: vertical-rl; transform: rotate(180deg); font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 3px; color: var(--accent);
+}
+.jt-main { padding: 26px 30px 22px; min-width: 0; }
+.jt-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10.5px;
+  font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted);
+}
+.jt-live { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 0 var(--success-glow); animation: jt-ping 1.6s infinite; }
+@keyframes jt-ping { 0% { box-shadow: 0 0 0 0 var(--success-glow); } 80%,100% { box-shadow: 0 0 0 8px transparent; } }
+.jt-title {
+  font-family: var(--font-display); font-weight: 800; font-size: clamp(30px, 5vw, 42px); line-height: 1;
+  text-transform: uppercase; letter-spacing: 0.3px; margin: 10px 0 8px;
+}
+.jt-title span { color: var(--accent); }
+.jt-sub { margin: 0 0 22px; color: var(--text-muted); font-size: 14px; line-height: 1.5; text-wrap: pretty; }
+.jt-label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.jt-label { display: block; font-size: 11.5px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
+.jt-paste {
+  margin-bottom: 8px; background: none; border: 1px solid var(--border-strong); color: var(--text-muted);
+  font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: var(--radius-sm); cursor: pointer;
+  transition: all 0.15s var(--ease);
+}
+.jt-paste:hover { border-color: var(--accent); color: var(--accent); }
+.jt-code { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; cursor: text; }
+.jt-cell {
+  aspect-ratio: 4 / 5; max-height: 84px; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 800; font-size: clamp(30px, 6vw, 44px); color: var(--text);
+  background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.jt-cell.filled { border-color: rgba(255,149,0,0.55); background: linear-gradient(180deg, rgba(255,149,0,0.12), rgba(255,149,0,0.03)); animation: jt-pop 0.18s var(--ease); }
+.jt-cell.caret { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.jt-cell.caret:not(.filled)::after { content: ''; width: 2px; height: 42%; background: var(--accent); animation: jt-blink 1s steps(1) infinite; }
+@keyframes jt-blink { 50% { opacity: 0; } }
+@keyframes jt-pop { from { transform: scale(0.92); } to { transform: scale(1); } }
+.jt-code-input {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0;
+  font-size: 16px; color: transparent; background: transparent; caret-color: transparent; cursor: text;
+}
+.jt-name {
+  display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 6px;
+  background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  transition: border-color 0.15s var(--ease);
+}
+.jt-name:focus-within { border-color: var(--accent); }
+.jt-avatar {
+  flex-shrink: 0; width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--accent-ink); font-family: var(--font-display); font-weight: 800; font-size: 20px;
+}
+.jt-name input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--text); font-size: 15px; font-family: inherit; padding: 8px 4px; }
+.jt-cta {
+  width: 100%; margin-top: 18px; padding: 16px 20px; display: flex; align-items: center; justify-content: center; gap: 12px;
+  border-radius: var(--radius); cursor: pointer; border: 1px solid var(--border-strong);
+  background: var(--bg-elevated); color: var(--text-faint);
+  font-family: var(--font-display); font-weight: 800; font-size: 21px; letter-spacing: 1.6px; text-transform: uppercase;
+  transition: all 0.2s var(--ease);
+}
+.jt-cta.ready { background: var(--accent); border-color: transparent; color: var(--accent-ink); box-shadow: 0 14px 30px -10px var(--accent-glow); }
+.jt-cta.ready:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.jt-cta-arrow { transition: transform 0.2s var(--ease); }
+.jt-cta.ready:hover .jt-cta-arrow { transform: translateX(4px); }
+.jt-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--border-strong); }
+.jt-step { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.jt-step b {
+  width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 11px; color: var(--accent); border: 1px solid rgba(255,149,0,0.45);
+}
+@media (max-width: 560px) {
+  .jt-ticket { grid-template-columns: minmax(0, 1fr); }
+  .jt-stub, .jt-ticket::before, .jt-ticket::after { display: none; }
+  .jt-main { padding: 22px 18px 18px; }
+  .jt-code { gap: 7px; }
+  .jt-steps { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* [KULLANICI İSTEĞİ] Dizilim sonrası "Hazırım — Maçı Başlat" CTA'sı (bkz. views.js renderLineup). */
+.mr-cta {
+  position: relative; overflow: hidden; width: 100%; margin-top: 4px; padding: 16px 18px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; text-align: left;
+  border-radius: var(--radius-lg); cursor: pointer; border: 1px solid var(--border-strong);
+  background: var(--bg-elevated); color: var(--text); transition: all 0.2s var(--ease);
+}
+.mr-icon {
+  width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 17px; font-weight: 800; border: 1px solid var(--border-strong); color: var(--text-muted); flex-shrink: 0;
+}
+.mr-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mr-title { font-family: var(--font-display); font-weight: 800; font-size: 22px; letter-spacing: 1.2px; text-transform: uppercase; line-height: 1.05; }
+.mr-sub { font-size: 12px; color: var(--text-muted); line-height: 1.35; }
+.mr-pips { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; max-width: 80px; }
+.mr-pip { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--border-strong); background: transparent; transition: all 0.2s var(--ease); }
+.mr-pip.on { background: var(--success); border-color: var(--success); box-shadow: 0 0 8px var(--success-glow); }
+.mr-cta.idle { opacity: 0.75; }
+.mr-cta.idle:hover { opacity: 1; border-color: var(--accent); }
+.mr-cta.armed {
+  border-color: transparent; color: var(--accent-ink);
+  background: linear-gradient(135deg, #ffad33 0%, var(--accent) 45%, var(--accent-strong) 100%);
+  box-shadow: 0 16px 34px -12px var(--accent-glow); animation: mr-breathe 2.2s ease-in-out infinite;
+}
+.mr-cta.armed .mr-sub { color: rgba(43, 20, 0, 0.75); }
+.mr-cta.armed .mr-icon { background: var(--accent-ink); color: var(--accent); border-color: transparent; padding-left: 3px; }
+.mr-cta.armed .mr-pip { border-color: rgba(43, 20, 0, 0.4); }
+.mr-cta.armed .mr-pip.on { background: var(--accent-ink); border-color: var(--accent-ink); box-shadow: none; }
+.mr-cta.armed::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.35), transparent); animation: mr-shine 2.8s ease-in-out infinite;
+}
+.mr-cta.armed:hover { filter: brightness(1.06); transform: translateY(-2px); }
+.mr-cta.armed:active { transform: scale(0.985); }
+@keyframes mr-breathe { 0%,100% { box-shadow: 0 16px 34px -12px var(--accent-glow); } 50% { box-shadow: 0 16px 44px -8px var(--accent-glow), 0 0 0 4px var(--accent-soft); } }
+@keyframes mr-shine { 0% { left: -60%; } 55%,100% { left: 130%; } }
+.mr-cta.waiting { border-color: rgba(34,197,94,0.5); background: linear-gradient(180deg, rgba(34,197,94,0.12), rgba(34,197,94,0.04)); }
+.mr-cta.waiting .mr-icon { background: var(--success); color: #04230f; border-color: transparent; }
+.mr-cta.waiting .mr-title { color: var(--success); }
+.mr-cta.waiting::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: repeating-linear-gradient(90deg, var(--success) 0 18px, transparent 18px 30px);
+  background-size: 30px 3px; animation: mr-march 0.8s linear infinite; opacity: 0.7;
+}
+.mr-cta.waiting:hover { border-color: var(--success); }
+@keyframes mr-march { to { background-position: 30px 0; } }
+@media (prefers-reduced-motion: reduce) { .mr-cta, .mr-cta::after, .jt-live, .jt-cell { animation: none !important; } }
+
+
+/* [DÜZELTİLDİ — MOBİL] Bütçe kartları üst üste biniyordu: eski .budget-card kuralındaki
+   min-width:220px, mobildeki 3 sütunlu (minmax(0,1fr)) ızgarada hücreden taşıp yan karta
+   biniyor ve sayfayı yatay kaydırıyordu (soldaki içerik kesik görünüyordu). Aynı kökenli diğer
+   sabit genişlikler de dar ekranda serbest bırakıldı. */
+.budget-card, .budget-card.v3 { min-width: 0; }
+.budget-card .budget { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.view, .panel, .lu-col, .lu-grid > *, .round-area { min-width: 0; }
+.timer-bar { max-width: 100%; }
+.player-card { max-width: 100%; }
+.lic-card, .lic-card.large { max-width: 100%; }
+@media (max-width: 640px) {
+  .budget-row.v3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .budget-card.v3 .budget { font-size: 20px; }
+  .budget-card .slots { white-space: normal; }
+  .lu-tab, .trade-tab { min-width: 0; padding-inline: 10px; }
+  .match-live-log { min-width: 0; }
+  .scoreline .team { width: auto; min-width: 0; flex: 1; font-size: 14px; overflow-wrap: anywhere; }
+  .dh-block { min-width: 0; }
+  .dh-block small { white-space: normal; }
+  .lic-card.large { height: auto; aspect-ratio: 420 / 252; }
+  .mr-cta { padding: 14px; gap: 12px; }
+  .mr-title { font-size: 19px; }
+  .mr-pips { max-width: 46px; }
+}
+@media (max-width: 420px) {
+  .dr-wheel { width: min(300px, calc(100vw - 40px)); height: min(300px, calc(100vw - 40px)); }
+  .wheel-stage { width: min(260px, calc(100vw - 48px)); height: min(260px, calc(100vw - 48px)); }
+  .jt-cell { font-size: 28px; }
+  .mr-icon { width: 38px; height: 38px; }
+}
+
+/* Odaya Katıl bileti — giriş yapmış kullanıcının sabit adı (ad sorulmaz). */
+.jt-name-fixed { align-self: center; font-weight: 600; color: var(--text); }
+
+/* [KULLANICI İSTEĞİ] Draft başı geri sayımı (bkz. views.js draftStartCountdown). */
+.start-cd { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 36px 16px 40px; text-align: center; animation: pop-in 0.3s var(--ease); }
+.start-cd-kicker { font-family: var(--font-mono); font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); }
+.start-cd-num { font-family: var(--font-display); font-size: clamp(88px, 22vw, 150px); line-height: 1; color: var(--text); text-shadow: 0 0 40px var(--accent-glow, rgba(255, 149, 0, .45)); animation: start-cd-pulse 1s ease-in-out infinite; }
+.start-cd-sub { color: var(--text-muted); font-size: 14px; }
+@keyframes start-cd-pulse { 0% { transform: scale(1.12); opacity: .6; } 30% { transform: scale(1); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .start-cd-num { animation: none; } }

@@ -396,6 +396,81 @@ export function renderLobby({ state, actions }) {
   // [KULLANICI İSTEĞİ] Bir mod seçilince (form açılınca) eski dar/kompakt düzen aynen kalıyor —
   // odaklanmış, sade bir form ekranı olması için split/dekoratif düzeni SADECE ilk açılış
   // ekranında (mod seçilmeden önceki hâlde) kullanıyoruz.
+  // [KULLANICI İSTEĞİ] "Odaya katıl ekranı çok sade ve basit duruyor, geliştir" — Katıl artık
+  // genel form yerine kendi "maç bileti" ekranını kullanıyor: 5 hücreli iri kod alanı (tek gerçek
+  // input hücrelerin üstünde şeffaf duruyor — yapıştırma/klavye/mobil davranışı bozulmuyor),
+  // panodan yapıştır, adın baş harfiyle avatar, kod tamamlanınca canlanan CTA, 3 adımlık ipucu.
+  if (ui.mode === 'join') return renderJoinTicket();
+
+  function renderJoinTicket() {
+    const LEN = 5;
+    const clean = (v) => (v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, LEN);
+    ui.code = clean(ui.code);
+    const cells = Array.from({ length: LEN }, () => el('div', { class: 'jt-cell' }));
+    const cta = el('button', { type: 'button', class: 'jt-cta', onclick: submit }, [
+      el('span', {}, 'Odaya Gir'), el('span', { class: 'jt-cta-arrow' }, '→'),
+    ]);
+    const avatar = el('div', { class: 'jt-avatar' });
+    const paint = () => {
+      const c = ui.code;
+      cells.forEach((cell, i) => {
+        cell.textContent = c[i] || '';
+        cell.classList.toggle('filled', !!c[i]);
+        cell.classList.toggle('caret', i === Math.min(c.length, LEN - 1) && document.activeElement === codeInput);
+      });
+      cta.classList.toggle('ready', c.length === LEN && !!nameInput.value.trim());
+      avatar.textContent = (nameInput.value.trim()[0] || '?').toUpperCase();
+    };
+    codeInput.value = ui.code;
+    codeInput.className = 'jt-code-input';
+    codeInput.removeAttribute('placeholder');
+    codeInput.setAttribute('autocomplete', 'off');
+    codeInput.setAttribute('autocapitalize', 'characters');
+    codeInput.setAttribute('spellcheck', 'false');
+    codeInput.setAttribute('aria-label', 'Oda kodu');
+    codeInput.oninput = (e) => { ui.code = clean(e.target.value); e.target.value = ui.code; paint(); };
+    codeInput.onfocus = paint; codeInput.onblur = paint;
+    nameInput.addEventListener('input', paint);
+
+    async function pasteCode() {
+      try {
+        const t = clean(await navigator.clipboard.readText());
+        if (!t) return toast('Panoda geçerli bir kod yok.');
+        ui.code = t; codeInput.value = t; paint(); nameInput.focus();
+      } catch { toast('Panoya erişilemedi — kodu elle yaz.'); }
+    }
+
+    const step = (n, t) => el('div', { class: 'jt-step' }, [el('b', {}, n), el('span', {}, t)]);
+    const ticket = el('div', { class: 'jt-ticket' }, [
+      el('div', { class: 'jt-stub', 'aria-hidden': 'true' }, [
+        el('div', { class: 'jt-stub-icon' }, '🎫'),
+        el('div', { class: 'jt-stub-text' }, 'MAÇ BİLETİ · GİRİŞ'),
+      ]),
+      el('div', { class: 'jt-main' }, [
+        el('div', { class: 'jt-eyebrow' }, [el('span', { class: 'jt-live' }), 'Odaya Katıl']),
+        el('h1', { class: 'jt-title' }, ['Rakibin ', el('span', {}, 'seni bekliyor'), '.']),
+        el('p', { class: 'jt-sub' }, 'Arkadaşının gönderdiği 5 haneli oda kodunu gir, adını yaz ve sahaya çık.'),
+        el('div', { class: 'jt-label-row' }, [
+          el('label', { class: 'jt-label' }, 'Oda Kodu'),
+          el('button', { type: 'button', class: 'jt-paste', onclick: pasteCode }, '📋 Yapıştır'),
+        ]),
+        el('div', { class: 'jt-code', onclick: () => codeInput.focus() }, [...cells, codeInput]),
+        el('label', { class: 'jt-label' }, 'Adın'),
+        el('div', { class: 'jt-name' }, [avatar, state.user && state.user.displayName ? el('span', { class: 'jt-name-fixed' }, state.user.displayName) : nameInput]),
+        cta,
+        el('div', { class: 'jt-steps' }, [step('1', 'Kodu al'), step('2', 'Adını yaz'), step('3', 'Hazır ver')]),
+      ]),
+    ]);
+    paint();
+    setTimeout(() => (ui.code.length < LEN ? codeInput : nameInput).focus(), 0);
+    return el('div', { class: 'lobby-shell' }, [
+      el('div', { class: 'jt-wrap' }, [
+        ticket,
+        el('button', { class: 'lobby-back', onclick: () => actions.selectLobbyMode(null) }, '← Geri'),
+      ]),
+    ]);
+  }
+
   if (ui.mode) {
     const hero = el('div', { class: 'lobby-hero' }, [
       el('h1', { class: 'lobby-title compact' },
@@ -2055,6 +2130,37 @@ function draftCoach(mode) {
   return wrap;
 }
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Draft başı geri sayımı — sunucu ilk turu `startsAt`'e kadar
+// açmıyor (bkz. DraftEngine.startDraft). Eleman kendini her 200 ms'de günceller; route() ekranı
+// yeniden kurarsa eskisi DOM'dan çıktığı için durur. Ses her saniye bir kez çalar (yeniden çizimde
+// tekrarlanmasın diye son çalınan saniye modül düzeyinde tutuluyor).
+let countdownSoundKey = null;
+function draftStartCountdown(d) {
+  const num = el('div', { class: 'start-cd-num' });
+  const box = el('div', { class: 'start-cd' }, [
+    el('div', { class: 'start-cd-kicker' }, 'Oyun başlıyor'),
+    num,
+    el('div', { class: 'start-cd-sub' }, d.formation ? `Kura: ${d.formation} formasyonu · hazır ol` : 'Hazır ol'),
+  ]);
+  const paint = () => {
+    const left = Math.max(0, Math.ceil((d.startsAt - Date.now()) / 1000));
+    num.textContent = left > 0 ? String(left) : 'Başla!';
+    const key = `${d.startsAt}:${left}`;
+    if (countdownSoundKey !== key && box.isConnected) {
+      countdownSoundKey = key;
+      sfx.play(left > 0 ? 'tick' : 'whistleKick');
+    }
+    return left;
+  };
+  paint();
+  const born = Date.now();
+  const timer = setInterval(() => {
+    if (!box.isConnected && Date.now() - born > 400) { clearInterval(timer); return; }
+    if (paint() <= 0) clearInterval(timer);
+  }, 200);
+  return box;
+}
+
 export function renderDraft({ state, actions }) {
   const d = state.draft;
   const root = el('div', { class: 'view' });
@@ -2153,7 +2259,9 @@ export function renderDraft({ state, actions }) {
   const RESOLVED_EVENT_TYPES = ['auction_resolved', 'blind_auction_resolved', 'one_sided_assigned', 'wheel_turn_resolved', 'joker_used'];
   const resultEvent = d.event && RESOLVED_EVENT_TYPES.includes(d.event.type) ? d.event : null;
 
-  if (resultEvent) {
+  if (!round && !resultEvent && d.startsAt && d.startsAt > Date.now()) {
+    roundPanel.appendChild(draftStartCountdown(d));
+  } else if (resultEvent) {
     roundPanel.appendChild(renderRoundResultPanel(resultEvent, state));
   } else if (!round) {
     roundPanel.appendChild(waitingLine('Sıradaki tur hazırlanıyor'));
@@ -3481,15 +3589,30 @@ export function renderLineup({ state, actions }) {
           : 'Formasyon, tarz ve taktik birlikte kaydedilir.'),
       ]),
       draftHistoryPanel(state),
-      room.status === 'match'
-        ? el('button', {
-            type: 'button',
-            class: `btn block ${matchIAmReady ? 'secondary' : ''}`,
-            onclick: () => actions.toggleMatchReady(),
-          }, matchIAmReady
-            ? `⏳ Hazırsın — diğerleri bekleniyor (${matchVotes.length}/${room.players.length})`
-            : '✅ Hazırım — Maçı Başlat')
-        : null,
+      // [KULLANICI İSTEĞİ] "Kadroları onayladıktan sonra hazırım başlat butonunu güzelleştir" —
+      // düz `btn block` yerine maç öncesi "tünel" CTA'sı: iki dizilim kaydedilince nabız atan
+      // amber buton, altında her oyuncu için bir hazır pip'i; bekleme hâlinde yeşil onay +
+      // kayan şerit, tekrar tıklayınca geri çekilebildiği yazıyor.
+      room.status === 'match' ? (() => {
+        const bothSaved = submitted.home && submitted.away;
+        const pips = el('div', { class: 'mr-pips' }, room.players.map((p) => el('span', {
+          class: `mr-pip ${matchVotes.includes(p.clientId) ? 'on' : ''}`, title: p.name,
+        })));
+        return el('button', {
+          type: 'button',
+          class: `mr-cta ${matchIAmReady ? 'waiting' : bothSaved ? 'armed' : 'idle'}`,
+          onclick: () => actions.toggleMatchReady(),
+        }, [
+          el('span', { class: 'mr-icon' }, matchIAmReady ? '✓' : '▶'),
+          el('span', { class: 'mr-body' }, [
+            el('span', { class: 'mr-title' }, matchIAmReady ? 'Hazırsın' : 'Hazırım — Maçı Başlat'),
+            el('span', { class: 'mr-sub' }, matchIAmReady
+              ? `Diğerleri bekleniyor · ${matchVotes.length}/${room.players.length} · geri çekmek için tıkla`
+              : bothSaved ? 'İki dizilim kaydedildi, takımın sahaya çıkmaya hazır' : 'Önce iki dizilimi de kaydet'),
+          ]),
+          pips,
+        ]);
+      })() : null,
     ]),
   ]));
 

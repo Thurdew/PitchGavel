@@ -42,6 +42,8 @@ const ROUND_RESULT_DELAY_MS = Number(process.env.DRAFT_ROUND_DELAY_MS) || 4000; 
 // 3000/3000'den 5000/5000'e çıkarıldı.
 const ANTI_SNIPE_WINDOW_MS = Number(process.env.DRAFT_ANTI_SNIPE_WINDOW_MS) || 5000; // son X sn içinde teklif gelirse süre uzatılır
 const ANTI_SNIPE_EXTENSION_MS = Number(process.env.DRAFT_ANTI_SNIPE_EXTENSION_MS) || 5000;
+// Draft başında ilk turdan önceki geri sayım (bkz. startDraft). Testlerde env ile kısaltılabilir.
+const START_COUNTDOWN_MS = process.env.DRAFT_START_COUNTDOWN_MS != null ? Number(process.env.DRAFT_START_COUNTDOWN_MS) : 5000;
 
 function slotCounts(formationKey) {
   const slots = FORMATIONS[formationKey];
@@ -429,6 +431,8 @@ class DraftEngine {
       // değişsin" — segment seti artık global bir sabit değil, bu odanın draftına özel (bkz.
       // startDraft/buildWheelSegments). İstemci çark geometrisini bundan çizer.
       wheelSegments: room.draft ? room.draft.wheelSegments || null : null,
+      // Draft başı geri sayımının bittiği an (bkz. startDraft) — istemci büyük geri sayımı buna göre çizer.
+      startsAt: room.draft ? room.draft.startsAt || null : null,
       players: room.players.map((p) => ({
         clientId: p.clientId,
         name: p.name,
@@ -496,9 +500,21 @@ class DraftEngine {
       room.draft.wheelPity = {};
     }
 
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Oyuna girince çok hızlı başlıyor, bir anda geri sayım
+    // başlıyor — 5'ten geri sayılsın, oyun başlıyor diye uyarı olsun; bütün modlar için." İlk tur
+    // (ilk açık arttırmanın süresi dahil) START_COUNTDOWN_MS sonra açılır; istemci bu arada
+    // `startsAt`'e göre büyük bir geri sayım gösterir. Canlı/kör/çark, bot, Hızlı Eşleş ve tekrar
+    // oyna hepsi startDraft'tan geçtiği için tek yer burası.
+    room.draft.startsAt = Date.now() + START_COUNTDOWN_MS;
     this.emitState(room);
-    this.io.to(room.code).emit('draft:started', { formation, bigGapSlots: [...bigGapSlots] });
-    this.nextRound(room);
+    this.io.to(room.code).emit('draft:started', { formation, bigGapSlots: [...bigGapSlots], startsAt: room.draft.startsAt });
+    this.emitDraft(room);
+    const draft = room.draft;
+    setTimeout(() => {
+      // Bu arada oda sıfırlandıysa (tekrar oyna) ya da draft değiştiyse eski zamanlayıcı bir şey yapmaz.
+      if (room.status !== STATUS.DRAFT || room.draft !== draft) return;
+      this.nextRound(room);
+    }, START_COUNTDOWN_MS);
     return { ok: true };
   }
 
