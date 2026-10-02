@@ -98,6 +98,11 @@ async function e2eTest() {
     assert(botPub && botPub.connected, 'botta isBot + connected olmalı');
     const room = roomManager.getRoom(code);
     const bot = room.players.find((p) => p.isBot);
+    // Draft başı geri sayımı: ilk tur ~5 sn boyunca açılmaz.
+    assert.strictEqual(room.draft.round, null, 'geri sayım bitmeden tur açılmamalı');
+    assert(room.draft.startsAt - Date.now() > 3500, 'geri sayım ~5 sn olmalı');
+    await sleep(2000);
+    assert.strictEqual(room.draft.round, null, 'geri sayım sürerken hâlâ tur yok');
 
     // İnsan: canlıda bazen az teklif verir, körde rastgele yazar, çarkta çevirip bilgisayara seçtirir.
     let lastKey = null;
