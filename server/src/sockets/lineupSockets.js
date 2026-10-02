@@ -114,4 +114,4 @@ function maybeStartMatchPhase(io, roomManager, room) {
   }
 }
 
-module.exports = { registerLineupSockets, bothFullyReady, summarizeSubmissions };
+module.exports = { registerLineupSockets, bothFullyReady, summarizeSubmissions, maybeStartMatchPhase, normalizeTactic };

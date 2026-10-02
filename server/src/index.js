@@ -22,6 +22,7 @@ const { hardenSocket } = require('./sockets/safeHandlers');
 const { DraftEngine } = require('./draft/DraftEngine');
 const { TradeEngine } = require('./trade/TradeEngine');
 const { Matchmaker } = require('./matchmaking/Matchmaker');
+const { BotController } = require('./bot/BotController');
 const { loadPlayerData } = require('./playerData');
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 1] bkz. claude.md.
 const { db, ready: dbReady, usingTurso } = require('./db/db');
@@ -473,7 +474,9 @@ draftEngine.setRewardsService(rewardsService);
 // Eşleşme"] Yeni bir draft/oda motoru YOK — roomManager/draftEngine'in mevcut metodlarını
 // (createRoom/joinRoom/bindSocket/startDraft) birebir reuse ediyor.
 const matchmaker = new Matchmaker(io, roomManager, draftEngine);
-const ctx = { roomManager, draftEngine, tradeEngine, matchmaker, authService, coinService, roomTickets };
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Bot odalarını süren denetleyici.
+const botController = new BotController(io, roomManager, draftEngine);
+const ctx = { roomManager, draftEngine, tradeEngine, matchmaker, authService, coinService, roomTickets, botController };
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] Socket EVENT'İ DEĞİL, HTTP —
 // bkz. claude.md "kimlik doğrulama tasarımı" notu: bir socket'in handshake cookie'si bağlantı

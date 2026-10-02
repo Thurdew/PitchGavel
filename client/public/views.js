@@ -185,6 +185,8 @@ export function renderLobby({ state, actions }) {
       actions.createRoom(nameInput.value.trim(), ui.draftMode, ui.playerPool, picked, ui.prepWheelEnabled, ui.tradeRoundEnabled, ui.bankedPerksEnabled);
     } else if (ui.mode === 'quick') {
       actions.quickMatch(nameInput.value.trim(), ui.draftMode, ui.playerPool);
+    } else if (ui.mode === 'bot') {
+      actions.playVsBot(nameInput.value.trim(), ui.draftMode, ui.playerPool);
     } else {
       if (!codeInput.value.trim()) return toast('Oda kodunu gir.');
       actions.joinRoom(nameInput.value.trim(), codeInput.value.trim());
@@ -246,6 +248,8 @@ export function renderLobby({ state, actions }) {
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4, "Yabancılarla Online
     // Eşleşme"] Oda kur/katıl akışına dokunmuyor — üçüncü, bağımsız bir yol.
     lobbyModeCard('⚡', 'Hızlı Eşleş', 'Rastgele bir rakiple anında eşleş, draft otomatik başlar', () => selectMode('quick'), true),
+    // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Rakip beklemeden bota karşı.
+    lobbyModeCard('🤖', 'Bilgisayara Karşı', 'Rakip beklemeden bota karşı oyna, draft hemen başlar (coin vermez)', () => selectMode('bot'), true),
   ]);
 
   // Kompakt hap-düğme grubu — bkz. yukarıdaki not. Dizilim ekranındaki `.formation-pick`/
@@ -273,16 +277,16 @@ export function renderLobby({ state, actions }) {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4] Hızlı Eşleş'te de aynı
   // bileşen reuse ediliyor — SADECE Çark Modu seçeneği YOK (Matchmaker'da desteklenmiyor, bkz.
   // claude.md — bütçesiz/kendi mekaniğine sahip bir mod, MVP kapsamı dışı).
-  const draftModePicker = (ui.mode === 'create' || ui.mode === 'quick') ? pillToggle('Draft Modu', [
+  const draftModePicker = (ui.mode === 'create' || ui.mode === 'quick' || ui.mode === 'bot') ? pillToggle('Draft Modu', [
     ['live', '⏱️ Canlı Açık Arttırma', 'Teklifler anlık görünür, süre bitene kadar yükselir'],
     ['blind', '🙈 Kör Draft', 'Tek seferlik gizli teklif — rakibinkini göremezsin'],
-    ...(ui.mode === 'create' ? [['wheel', '🎡 Çark Modu', 'Bütçe yok — sırayla çark çevirip çıkan reyting bandından ücretsiz seç']] : []),
-  ], ui.draftMode === 'wheel' && ui.mode === 'quick' ? 'live' : ui.draftMode, ui.mode === 'quick' ? selectDraftModeQuick : selectDraftMode) : null;
+    ...(ui.mode === 'create' || ui.mode === 'bot' ? [['wheel', '🎡 Çark Modu', 'Bütçe yok — sırayla çark çevirip çıkan reyting bandından ücretsiz seç']] : []),
+  ], ui.draftMode === 'wheel' && ui.mode === 'quick' ? 'live' : ui.draftMode, ui.mode === 'create' ? selectDraftMode : selectDraftModeQuick) : null;
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Tek Lig Modu — draftMode'dan bağımsız ikinci bir
   // anahtar: havuzu Süper Lig + Türk icon'lara daraltır (bkz. claude.md "Ek Mod Fikirleri" /
   // RoomManager.createRoom / draft/pool.js).
-  const playerPoolPicker = (ui.mode === 'create' || ui.mode === 'quick') ? pillToggle('Oyuncu Havuzu', [
+  const playerPoolPicker = (ui.mode === 'create' || ui.mode === 'quick' || ui.mode === 'bot') ? pillToggle('Oyuncu Havuzu', [
     ['all', '🌍 Tüm Ligler', 'Süper Lig + büyük 5 Avrupa ligi + tüm icon\'lar'],
     ['super-lig', '🇹🇷 Süper Lig', 'Sadece Süper Lig kadroları + Türk icon\'lar'],
   ], ui.playerPool, selectPlayerPool) : null;
@@ -385,7 +389,7 @@ export function renderLobby({ state, actions }) {
     bankedPerksToggle,
     tradeRoundToggle,
     el('button', { class: 'btn block', onclick: submit },
-      ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Eşleş' : 'Katıl'),
+      ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Eşleş' : ui.mode === 'bot' ? '🤖 Başla' : 'Katıl'),
     el('button', { class: 'lobby-back', onclick: () => actions.selectLobbyMode(null) }, '← Geri'),
   ]) : null;
 
@@ -395,7 +399,7 @@ export function renderLobby({ state, actions }) {
   if (ui.mode) {
     const hero = el('div', { class: 'lobby-hero' }, [
       el('h1', { class: 'lobby-title compact' },
-        ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Hızlı Eşleş' : 'Odaya Katıl'),
+        ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Hızlı Eşleş' : ui.mode === 'bot' ? '🤖 Bilgisayara Karşı' : 'Odaya Katıl'),
     ]);
     return el('div', { class: 'lobby-shell' }, [
       hero,
@@ -1456,6 +1460,18 @@ function coinNoteText(note, rules) {
   }
 }
 function coinAwardPanel(state, actions, result) {
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Bota karşı maç coin vermez.
+  if (state.room && state.room.players.some((p) => p.isBot)) {
+    return el('div', { class: 'panel coin-award none' }, [
+      el('div', { class: 'coin-award-head' }, [
+        el('span', { class: 'coin-award-amt' }, [coinIco(26)]),
+        el('div', { class: 'coin-award-text' }, [
+          el('b', {}, 'Bilgisayara karşı oynanan maçlar coin vermez'),
+          el('span', {}, 'Coin kazanmak için giriş yapmış bir arkadaşınla ya da Hızlı Eşleş ile oyna.'),
+        ]),
+      ]),
+    ]);
+  }
   const a = state.coinAward;
   if (a && a.resultId === result.resultId) {
     const notes = (a.notes || []).map((n) => coinNoteText(n, a.rules)).filter(Boolean);
