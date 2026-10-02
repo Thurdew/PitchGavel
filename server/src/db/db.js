@@ -130,6 +130,9 @@ const SCHEMA_SQL = `
     acquired_at INTEGER NOT NULL,
     PRIMARY KEY (user_id, item_id)
   );
+
+  -- [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAYLAŞILAN SONUÇ] /sonuc/:id anlık görüntüsü (bkz. sockets/matchSockets.js).
+  CREATE TABLE IF NOT EXISTS shared_results (id TEXT PRIMARY KEY, payload TEXT NOT NULL, created_at INTEGER NOT NULL);
 `;
 
 // Şema + guard'lı ALTER'lar. Asenkron — index.js sunucuyu dinlemeye açmadan önce `ready`'i bekler.

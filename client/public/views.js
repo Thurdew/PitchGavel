@@ -3865,6 +3865,18 @@ function spawnConfetti(container, count = 24) {
 const PITCH_LANE_X = { GK: 6, DF: 20, MF: 38, FW: 49 };
 const PITCH_SLOT_RANK = { GK: 50, LB: 10, CB: 50, RB: 90, DM: 50, CM: 50, AM: 50, LM: 14, RM: 86, LW: 14, ST: 50, RW: 86 };
 
+// [KULLANICI İSTEĞİ] "Simülasyonda forma görünsün" — takım seçmemiş / misafir menajer de sahada
+// mevki renkleri yerine tek renk bir forma giyer. Rakip forması açıksa lacivert, koyuysa beyaz.
+const NEUTRAL_KITS = [
+  { id: 'neutral-light', pattern: 'solid', colors: ['#eef2f7', '#1b2a3a'], accent: '#eef2f7', ink: '#0b1220', name: 'Beyaz Forma' },
+  { id: 'neutral-dark', pattern: 'solid', colors: ['#1e3a8a', '#dbe6ff'], accent: '#7c9bff', ink: '#ffffff', name: 'Lacivert Forma' },
+];
+function kitLuma(hex) {
+  const n = parseInt(String(hex || '#000000').slice(1), 16);
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+}
+const neutralKitAgainst = (other) => (other && kitLuma(other.colors[0]) > 150 ? NEUTRAL_KITS[1] : NEUTRAL_KITS[0]);
+
 function pitchDotPositions(slots) {
   const lanes = {};
   (slots || []).forEach((slot, idx) => {
@@ -4128,8 +4140,9 @@ export function renderMatchPlayback({ state, actions }) {
   const roomPlayer = (id) => state.room.players.find((p) => p.clientId === id) || {};
   const hp = roomPlayer(m.homeClientId);
   const ap = roomPlayer(m.awayClientId);
-  const homeKit = kitFor(teamById(hp.teamId), hp.kitId);
-  const awayKitT = resolveClash(homeKit, kitFor(teamById(ap.teamId), ap.kitId), teamById(ap.teamId));
+  const homeKit = kitFor(teamById(hp.teamId), hp.kitId) || neutralKitAgainst(null);
+  const awayKitRaw = kitFor(teamById(ap.teamId), ap.kitId);
+  const awayKitT = awayKitRaw ? resolveClash(homeKit, awayKitRaw, teamById(ap.teamId)) : neutralKitAgainst(homeKit);
   const kitSwatch = (k) => (k ? el('span', { class: 'kit-swatch', style: `background:${kitBackground(k, 3)}`, title: k.name }) : null);
   const fixtureTag = r.fixtures.length > 1 ? `Eşleşme ${step.fixtureIndex + 1}/${r.fixtures.length} — ` : '';
   const progressTag = pb.order.length > 2 ? ` (Maç ${pb.pos + 1}/${pb.order.length})` : '';
@@ -4239,6 +4252,20 @@ export function renderMatchPlayback({ state, actions }) {
   layoutEl.appendChild(liveSide);
   layoutEl.appendChild(logSide);
   root.appendChild(layoutEl);
+  // [KULLANICI İSTEĞİ] Maç anlatımının altında ana sayfaya dönüş — odadan ayrıldığı için önce onay ister.
+  root.appendChild(el('div', { class: 'playback-home' }, [
+    el('button', {
+      class: 'btn secondary', type: 'button',
+      onclick: async () => {
+        const ok = await confirmDialog({
+          title: 'Ana sayfaya dönülsün mü?',
+          body: 'Maç anlatımından çıkıp odadan ayrılırsın. Sonuç ve coin ödülün etkilenmez.',
+          confirmLabel: 'Ana Sayfaya Dön', cancelLabel: 'İzlemeye Devam Et',
+        });
+        if (ok) actions.leaveRoom();
+      },
+    }, [el('span', { class: 'btn-ico', html: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>' }), 'Ana Sayfaya Dön']),
+  ]));
 
   // [KULLANICI İSTEĞİ] Gol/şans event'lerinde önce sonucu açık etmeyen bir "vuruyor!" satırı,
   // kısa bir gerilim penceresinden sonra gerçek sonuç (gol/kurtarış/aut) — bkz. yukarıdaki
@@ -4533,14 +4560,15 @@ export function renderMatch({ state, actions }) {
   const myRank = r.standings.findIndex((s) => s.clientId === state.clientId) + 1;
   const iWon = r.winnerClientId === state.clientId;
   const shareText = iWon
-    ? `🏆 PitchGavel'de şampiyon oldum${myStanding ? ` (${myStanding.points} puan)` : ''}! Sen de dene:`
-    : `⚽ PitchGavel'de bir maç oynadım — ${winnerName} şampiyon oldu${myStanding ? `, ben ${myRank}. sıradayım (${myStanding.points} puan)` : ''}. Sen de dene:`;
+    ? `🏆 PitchGavel'de şampiyon oldum${myStanding ? ` (${myStanding.points} puan)` : ''}! Maçların detayı:`
+    : `⚽ PitchGavel'de bir maç oynadım — ${winnerName} şampiyon oldu${myStanding ? `, ben ${myRank}. sıradayım (${myStanding.points} puan)` : ''}. Maçların detayı:`;
+  const shareUrl = r.shareId ? `${location.origin}/sonuc/${r.shareId}` : location.origin;
   async function shareResult() {
     if (navigator.share) {
-      try { await navigator.share({ title: 'PitchGavel', text: shareText, url: location.origin }); return; }
+      try { await navigator.share({ title: 'PitchGavel', text: shareText, url: shareUrl }); return; }
       catch (e) { /* kullanıcı paylaşım penceresini iptal etti — panoya kopyalamaya düş */ }
     }
-    try { await navigator.clipboard.writeText(`${shareText} ${location.origin}`); toast('Kopyalandı — istediğin yere yapıştırabilirsin!'); }
+    try { await navigator.clipboard.writeText(`${shareText} ${shareUrl}`); toast('Kopyalandı — istediğin yere yapıştırabilirsin!'); }
     catch (e) { toast('Kopyalanamadı — elle seçip kopyalayabilirsin'); }
   }
 
@@ -4659,6 +4687,68 @@ const STORY_TEMPLATES = {
 function matchStoryLine(fact, homeName, awayName) {
   const fn = STORY_TEMPLATES[fact.key];
   return fn ? fn(fact.team, homeName, awayName) : null;
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAYLAŞILAN SONUÇ] /sonuc/:id — "Sonucu Paylaş" linkinin açtığı herkese
+// açık sayfa. renderMatch'in şampiyon bandı / puan tablosu / maç kartları aynı bileşenlerle;
+// oda, coin, tekrar oyna yok. Veri sunucudaki anlık görüntüden (clientId'ler takma adlı).
+export function renderSharedResult({ state, actions }) {
+  const sr = state.sharedResult;
+  const root = el('div', { class: 'view shared-result' });
+  const homeBtn = (label) => el('button', { class: 'btn', type: 'button', onclick: () => actions.navigateToPage(null) }, label);
+  if (!sr || sr.loading) { root.appendChild(loadingPanel('Maç sonucu yükleniyor')); return root; }
+  if (sr.error || !sr.data) {
+    root.appendChild(el('div', { class: 'panel', style: 'text-align:center' }, [
+      el('h3', {}, 'Sonuç bulunamadı'),
+      el('p', { class: 'muted' }, sr.error === 'NETWORK' ? 'Bağlantı kurulamadı, sayfayı yenileyip tekrar dene.' : 'Bu link geçersiz ya da sonuç artık saklı değil.'),
+      el('div', { style: 'display:flex;justify-content:center;margin-top:12px' }, homeBtn('Ana Sayfaya Dön')),
+    ]));
+    return root;
+  }
+  const r = sr.data;
+  const nameOf = (id) => (r.players.find((p) => p.clientId === id) || {}).name || '?';
+  const champ = r.standings.find((s) => s.clientId === r.winnerClientId) || r.standings[0];
+  const when = r.createdAt ? new Date(r.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+
+  root.appendChild(el('p', { class: 'muted shared-result-kicker' },
+    ['Paylaşılan maç sonucu', when ? ` · ${when}` : '', ` · ${r.players.length} menajer`].join('')));
+  root.appendChild(el('div', { class: 'winner-banner v3' }, [
+    el('span', { class: 'wb-trophy', html: '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3"/><path d="M7 5H4v2a3 3 0 0 0 3 3"/></svg>' }),
+    el('span', { class: 'wb-kicker' }, 'Şampiyon'),
+    el('span', { class: 'wb-name' }, nameOf(r.winnerClientId)),
+    champ ? el('span', { class: 'wb-stats' }, [
+      el('span', {}, [el('b', {}, String(champ.points)), ' puan']),
+      el('span', {}, `${champ.wins}G · ${champ.draws}B · ${champ.losses}M`),
+      el('span', {}, `Averaj ${champ.goalDiff > 0 ? '+' : ''}${champ.goalDiff}`),
+    ]) : null,
+  ]));
+  root.appendChild(el('div', { class: 'panel' }, [
+    el('h3', {}, 'Puan Tablosu'),
+    el('div', { style: 'overflow-x:auto' }, standingsTable(r.standings, { clientId: null })),
+  ]));
+
+  if (!state.sharedResultUi || state.sharedResultUi.id !== sr.id || state.sharedResultUi.fixtureIndex >= r.fixtures.length) {
+    state.sharedResultUi = { id: sr.id, fixtureIndex: 0 };
+  }
+  const ui = state.sharedResultUi;
+  if (r.fixtures.length > 1) {
+    root.appendChild(el('div', { class: 'fixture-tabs' }, r.fixtures.map((fx, i) => el('button', {
+      class: `tab ${ui.fixtureIndex === i ? 'active' : ''}`,
+      onclick: () => { ui.fixtureIndex = i; actions.route(); },
+    }, `${nameOf(fx.aClientId)} vs ${nameOf(fx.bClientId)}`))));
+  }
+  const fx = r.fixtures[ui.fixtureIndex];
+  root.appendChild(renderMatchResultCard('1. Maç', nameOf(fx.match1.homeClientId), nameOf(fx.match1.awayClientId), fx.match1));
+  root.appendChild(renderMatchResultCard('2. Maç', nameOf(fx.match2.homeClientId), nameOf(fx.match2.awayClientId), fx.match2));
+
+  root.appendChild(el('div', { class: 'panel shared-result-cta' }, [
+    el('div', {}, [
+      el('h3', {}, 'Sen de kadronu kur'),
+      el('p', { class: 'muted' }, 'Arkadaşınla açık arttırmada 11 kişilik kadro topla, ev sahibi + deplasman iki maçta karşılaş.'),
+    ]),
+    homeBtn('Oynamaya Başla'),
+  ]));
+  return root;
 }
 
 function renderMatchResultCard(title, homeName, awayName, m) {

@@ -1,6 +1,30 @@
 const { STATUS } = require('../rooms/RoomManager');
 const { roomCode } = require('./safeHandlers');
 const { playRoundRobin } = require('../match/orchestrate');
+const crypto = require('crypto');
+const { db } = require('../db/db');
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAYLAŞILAN SONUÇ] "Paylaş deyince atılan linkte turun
+// detayları görünsün." — maç sonucu kalıcı bir anlık görüntü olarak kaydedilir, /sonuc/:id herkese
+// açık. clientId'ler oturum kimliği olduğu için (bkz. app.js LS_CLIENT_ID) dışarı verilmez —
+// sırayla p0, p1… takma adlarına çevrilir. Kayıt hatası maç akışını bozmaz.
+function saveSharedResult(room, result) {
+  const id = crypto.randomBytes(8).toString('base64url');
+  const players = room.players.map((p, i) => ({ alias: `p${i}`, clientId: p.clientId, name: p.name, teamId: p.teamId || null, kitId: p.kitId || null }));
+  let json = JSON.stringify({
+    createdAt: Date.now(),
+    draftMode: room.draftMode || null,
+    players: players.map((p) => ({ clientId: p.clientId, name: p.name, teamId: p.teamId, kitId: p.kitId })),
+    standings: result.standings,
+    fixtures: result.fixtures,
+    winnerClientId: result.winnerClientId,
+  });
+  for (const p of players) if (p.clientId) json = json.split(p.clientId).join(p.alias);
+  if (json.length > 600000) return null;
+  db.run('INSERT INTO shared_results (id, payload, created_at) VALUES (?, ?, ?)', id, json, Date.now())
+    .catch((e) => console.error('[share] sonuç kaydedilemedi:', e.message));
+  return id;
+}
 
 // [DÜZELTİLDİ — KULLANICI GERİ BİLDİRİMİ] "3 arkadaş oynuyoruz, herkesin ekranında o sırada
 // FARKLI maç oynanıyor, spoiler yiyoruz — herkesin ekranında aynı anda aynı maç olması lazım."
@@ -75,6 +99,7 @@ function registerMatchSockets(io, socket, ctx) {
     result.matchOrder = buildMatchOrder((result.fixtures || []).length);
     // Coin ödülü (aşağıda) bu kimlikle eşleşir — rövanşta eski ödül yeni sonuca karışmasın.
     result.resultId = `${room.code}-${Date.now()}`;
+    try { result.shareId = saveSharedResult(room, result); } catch (e) { result.shareId = null; }
 
     room.matchState = result;
     room.status = STATUS.FINISHED;

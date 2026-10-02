@@ -2,7 +2,7 @@ import { el, toast, confirmDialog } from './helpers.js';
 // [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
 import { sfx } from './sfx.js';
 import { applyTeamTheme } from './teams.js';
-import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
+import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderSharedResult, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
 import { cosmeticOf, playStampSound } from './cosmetics.js';
 // [YASAL — KVKK / ÇEREZ ONAYI] bkz. legal.js
 import { renderPrivacy, renderNotFound, mountConsentBanner, resetConsent } from './legal.js';
@@ -249,11 +249,23 @@ const PATH_TO_PAGE = Object.fromEntries(Object.entries(PAGE_PATHS).map(([page, p
 const DRAFT_MODE_BY_PAGE = { 'mode-live': 'live', 'mode-blind': 'blind', 'mode-wheel': 'wheel' };
 const PAGE_BY_DRAFT_MODE = { live: 'mode-live', blind: 'mode-blind', wheel: 'mode-wheel' };
 
-function pathForPage(page) { return PAGE_PATHS[page] || '/'; }
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAYLAŞILAN SONUÇ] /sonuc/:id dinamik yol — PAGE_PATHS'te sabit
+// bir karşılığı yok, id state.sharedResultId'de tutulur.
+const SHARED_RESULT_RE = /^\/sonuc\/([A-Za-z0-9_-]{6,32})$/;
+function pathForPage(page) {
+  if (page === 'sharedResult' && state.sharedResultId) return `/sonuc/${state.sharedResultId}`;
+  return PAGE_PATHS[page] || '/';
+}
 // [SEO] Tanınmayan bir yol artık sessizce lobiyi göstermiyor — "Sayfa bulunamadı" görünümü
 // (sunucu da bu yollar için 404 durum kodu döner, bkz. server index.js SPA_ROUTES).
 function pageForPath(rawPathname) {
   const pathname = (rawPathname || '/').replace(/\/+$/, '') || '/';
+  const shared = SHARED_RESULT_RE.exec(pathname);
+  if (shared) {
+    if (state.sharedResultId !== shared[1]) state.sharedResult = null;
+    state.sharedResultId = shared[1];
+    return 'sharedResult';
+  }
   if (PATH_TO_PAGE[pathname]) return PATH_TO_PAGE[pathname];
   return !pathname || pathname === '/' ? null : 'notFound';
 }
@@ -298,6 +310,10 @@ const PAGE_META = {
   dailyReward: {
     title: 'Günlük Ödül — PitchGavel',
     description: 'Reklam izleyip günlük çarkı çevir, ileride odada kullanabileceğin perk\'ler biriktir.',
+  },
+  sharedResult: {
+    title: 'Maç Sonucu — PitchGavel',
+    description: 'PitchGavel maç sonucu: puan tablosu, skorlar, goller ve maç hikâyesi.',
   },
   store: {
     title: 'Mağaza — PitchGavel',
@@ -423,6 +439,18 @@ window.addEventListener('popstate', () => {
 // aynı yolu kullanır (devam eden bir oyundaysa önce onay ister — bkz. leaveRoom).
 const homeNavBtn = document.getElementById('homeNavBtn');
 homeNavBtn.addEventListener('click', () => { actions.leaveRoom(); });
+// [KULLANICI İSTEĞİ] "Header'daki logoya tıklayınca ana sayfaya atsın" — odadaysa leaveRoom
+// (aktif oyunda onay ister), değilse sadece lobiye döner.
+const brandEl = document.querySelector('.topbar .brand');
+if (brandEl) {
+  brandEl.style.cursor = 'pointer';
+  brandEl.setAttribute('role', 'link');
+  brandEl.setAttribute('tabindex', '0');
+  brandEl.setAttribute('title', 'Ana sayfa');
+  const goHome = () => { if (state.room) actions.leaveRoom(); else navigateToPage(null); };
+  brandEl.addEventListener('click', goHome);
+  brandEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
+}
 
 function setCode(code) {
   state.code = code;
@@ -799,6 +827,13 @@ function route() {
     finish();
     return;
   }
+  // [PAYLAŞILAN SONUÇ] Herkese açık — doğrulama duvarının da önünde.
+  if (state.page === 'sharedResult') {
+    if (!state.sharedResult) actions.fetchSharedResult(state.sharedResultId);
+    appRoot.appendChild(renderSharedResult({ state, actions }));
+    finish();
+    return;
+  }
 
   if (state.user && !state.user.emailVerified && !state.room) {
     appRoot.appendChild(renderVerifyGate({ state, actions }));
@@ -1105,6 +1140,19 @@ const actions = {
   // [KULLANICI İSTEĞİ] "Bir sayfaya oyundaki bütün oyuncuların ratingleri yazabilir" —
   // draft/oda durumundan bağımsız, plain REST çağrısı (socket ack gerekmiyor). Sonuç
   // state.playerDb'de tutulup bir daha çekilmiyor (bkz. views.js renderPlayerDatabase).
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAYLAŞILAN SONUÇ] Tek seferlik; hata durumunda tekrar denemez.
+  async fetchSharedResult(id) {
+    if (!id || (state.sharedResult && state.sharedResult.id === id)) return;
+    state.sharedResult = { id, loading: true };
+    try {
+      const r = await fetch(`/api/results/${encodeURIComponent(id)}`);
+      const body = await r.json();
+      state.sharedResult = r.ok && body.result ? { id, data: body.result } : { id, error: body.error || 'NOT_FOUND' };
+    } catch (e) {
+      state.sharedResult = { id, error: 'NETWORK' };
+    }
+    if (state.page === 'sharedResult') route();
+  },
   async fetchPlayerDb() {
     if (state.playerDb && state.playerDb.status === 'ready') return state.playerDb;
     state.playerDb = { status: 'loading', all: [] };

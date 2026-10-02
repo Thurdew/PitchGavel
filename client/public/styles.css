@@ -4073,3 +4073,33 @@ button:disabled, .btn:disabled {
 .legal-section p, .legal-list { color: var(--text-muted); line-height: 1.6; font-size: 14px; }
 .legal-list { padding-left: 20px; margin: 8px 0; }
 .legal-list li + li { margin-top: 6px; }
+
+/* [KULLANICI İSTEĞİ] Zaman çizelgesi v2 — eskiden tek sütunlu grid'di; ebeveyn ortaladığı için
+   çizgi ~50px'e büzülüp takım adları üst üste biniyordu. Artık tam genişlik, tek satır:
+   ev sahibi adı | çizgi | deplasman adı, dakika ölçeği çizginin altında. */
+.match-timeline {
+  display: grid; width: 100%; align-self: stretch; box-sizing: border-box;
+  grid-template-columns: minmax(0, 96px) minmax(0, 1fr) minmax(0, 96px);
+  grid-template-areas: "home track away" ". scale .";
+  align-items: center; column-gap: 12px; row-gap: 0;
+  margin: 8px 0 10px; padding: 8px 14px 6px;
+  background: rgba(255, 255, 255, .025); border: 1px solid rgba(255, 255, 255, .06); border-radius: 10px;
+}
+.match-timeline .mt-team { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+.match-timeline .mt-team.home { grid-area: home; text-align: right; }
+.match-timeline .mt-team.away { grid-area: away; text-align: left; }
+.match-timeline .mt-track { grid-area: track; }
+.match-timeline .mt-scale { grid-area: scale; }
+@media (max-width: 560px) {
+  .match-timeline { grid-template-columns: minmax(0, 64px) minmax(0, 1fr) minmax(0, 64px); column-gap: 8px; padding: 6px 10px 4px; }
+}
+
+/* [KULLANICI İSTEĞİ] Maç anlatımının altındaki "Ana Sayfaya Dön". */
+.playback-home { display: flex; justify-content: center; margin-top: 18px; }
+.playback-home .btn { display: inline-flex; align-items: center; gap: 8px; }
+
+/* [PAYLAŞILAN SONUÇ] /sonuc/:id */
+.shared-result-kicker { text-align: center; margin: 0 0 10px; font-family: var(--font-mono); font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; }
+.shared-result-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.shared-result-cta h3 { margin: 0 0 4px; }
+.shared-result-cta p { margin: 0; text-wrap: pretty; }
