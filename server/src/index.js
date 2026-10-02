@@ -403,6 +403,51 @@ app.post('/api/rewards/spin', async (req, res) => {
   res.json(result);
 });
 
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAYLAŞILAN SONUÇ] Paylaşılan maç sonucu (bkz.
+// sockets/matchSockets.js saveSharedResult). Herkese açık, salt okunur.
+const SHARE_ID_RE = /^[A-Za-z0-9_-]{6,32}$/;
+async function loadSharedResult(id) {
+  if (!SHARE_ID_RE.test(id)) return null;
+  const row = await db.get('SELECT payload FROM shared_results WHERE id = ?', id);
+  return row ? JSON.parse(row.payload) : null;
+}
+app.get('/api/results/:id', async (req, res) => {
+  try {
+    const result = await loadSharedResult(String(req.params.id || ''));
+    if (!result) return res.status(404).json({ error: 'NOT_FOUND' });
+    res.json({ result });
+  } catch (e) {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+// Link önizlemesi (WhatsApp/Discord/X JS çalıştırmaz) için başlık + açıklama sunucuda yazılır.
+const escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+app.get('/sonuc/:id', async (req, res, next) => {
+  let result = null;
+  try { result = await loadSharedResult(String(req.params.id || '')); } catch (e) { /* düz index.html'e düş */ }
+  if (!result) return next();
+  const nameOf = (id) => (result.players.find((p) => p.clientId === id) || {}).name || '?';
+  const champ = result.standings.find((s) => s.clientId === result.winnerClientId) || result.standings[0];
+  const title = `${nameOf(result.winnerClientId)} şampiyon — PitchGavel Maç Sonucu`;
+  const desc = result.fixtures.length === 1
+    ? `${nameOf(result.fixtures[0].match1.homeClientId)} ${result.fixtures[0].match1.goalsHome}-${result.fixtures[0].match1.goalsAway} ${nameOf(result.fixtures[0].match1.awayClientId)} · ${nameOf(result.fixtures[0].match2.homeClientId)} ${result.fixtures[0].match2.goalsHome}-${result.fixtures[0].match2.goalsAway} ${nameOf(result.fixtures[0].match2.awayClientId)}. Puan tablosu, goller ve maç hikâyesi.`
+    : `${result.players.length} menajerlik lig${champ ? ` — şampiyon ${champ.points} puanla ${nameOf(champ.clientId)}` : ''}. Puan tablosu, goller ve maç hikâyesi.`;
+  const url = `https://pitchgavel.com/sonuc/${req.params.id}`;
+  const fs = require('fs');
+  let html = fs.readFileSync(path.join(CLIENT_PUBLIC, 'index.html'), 'utf8');
+  html = html
+    .replace(/<title>[^<]*<\/title>/, `<title>${escAttr(title)}</title>`)
+    .replace(/(<meta name="description" content=")[^"]*/, `$1${escAttr(desc)}`)
+    .replace(/(<meta name="robots" content=")[^"]*/, '$1noindex, follow')
+    .replace(/(id="canonicalLink" href=")[^"]*/, `$1${url}`)
+    .replace(/(id="ogTitle" content=")[^"]*/, `$1${escAttr(title)}`)
+    .replace(/(id="ogDescription" content=")[^"]*/, `$1${escAttr(desc)}`)
+    .replace(/(id="ogUrl" content=")[^"]*/, `$1${url}`)
+    .replace(/(id="twitterTitle" content=")[^"]*/, `$1${escAttr(title)}`)
+    .replace(/(id="twitterDescription" content=")[^"]*/, `$1${escAttr(desc)}`);
+  res.type('html').send(html);
+});
+
 // [SEO] İstemcinin tanıdığı sayfa yolları (bkz. client app.js PAGE_PATHS). Bunların dışındaki
 // yollar da SPA'yı yükler (istemci "Sayfa bulunamadı" gösterir) ama 404 durum koduyla — aksi
 // halde Google her uydurma URL'i lobinin kopyası ("soft 404") sayıyordu.
