@@ -159,7 +159,16 @@ async function e2eTest() {
   });
   const cookie = extractCookie(regRes);
   const spinRes = await fetch(`${BASE}/api/rewards/spin`, { method: 'POST', headers: { cookie } }).then((r) => r.json());
-  const wonKind = spinRes.perk.kind;
+  assert(spinRes.perk, 'spin başarılı olmalı: ' + JSON.stringify(spinRes));
+  // Günlük çarkta coin dilimleri de var — perk çıkmadıysa harcanacak bir perk'i doğrudan ver.
+  let wonKind = spinRes.perk.kind;
+  if (spinRes.perk.coins) {
+    const { db } = require('../src/index');
+    const u = await db.get('SELECT id FROM users WHERE email = ?', email);
+    await db.run('INSERT INTO perk_grants (user_id, kind, label, description, granted_at) VALUES (?, ?, ?, ?, ?)',
+      u.id, 'joker', '🃏 Joker Turu', 'test', Date.now());
+    wonKind = 'joker';
+  }
   console.log(`[test11] e2e: test kullanıcısı bir perk kazandı (${wonKind})`);
 
   // --- gerçek bir oda kur: prepWheelEnabled + bankedPerksEnabled açık, 2 kişi ---

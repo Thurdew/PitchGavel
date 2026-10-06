@@ -2,7 +2,7 @@ import { el, toast, confirmDialog } from './helpers.js';
 // [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
 import { sfx } from './sfx.js';
 import { applyTeamTheme } from './teams.js';
-import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderSharedResult, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
+import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderFriends, renderSharedResult, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
 import { cosmeticOf, playStampSound } from './cosmetics.js';
 // [YASAL — KVKK / ÇEREZ ONAYI] bkz. legal.js
 import { renderPrivacy, renderNotFound, mountConsentBanner, resetConsent } from './legal.js';
@@ -231,6 +231,9 @@ const PAGE_PATHS = {
   store: '/magaza',
   // [YASAL — KVKK] Gizlilik ve çerez politikası (aydınlatma metni).
   privacy: '/gizlilik',
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Arkadaş listesi/istekler/kod. `?ekle=KOD` ile
+  // paylaşılan davet linki de buraya düşer (bkz. dosya sonu).
+  friends: '/arkadaslar',
 };
 // [GÜVENLİK/YASAL] Oda/eşleşme hata kodlarının Türkçe karşılıkları.
 const ROOM_ERRORS = {
@@ -318,6 +321,10 @@ const PAGE_META = {
   store: {
     title: 'Mağaza — PitchGavel',
     description: 'Maç kazanarak topladığın coinlerle takımının renklerinde premium formalar al.',
+  },
+  friends: {
+    title: 'Arkadaşlar — PitchGavel',
+    description: 'Arkadaş kodunla arkadaş ekle, hangi arkadaşının odada olduğunu gör ve tek tıkla katıl.',
   },
 };
 function metaFor(page) { return PAGE_META[page] || PAGE_META.default; }
@@ -515,6 +522,7 @@ const TB_ICONS = {
   mute: '<path d="m22 9-6 6"/><path d="m16 9 6 6"/>',
   coin: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.2A3 3 0 0 0 12 8c-1.7 0-3 .9-3 2s1.3 1.6 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-2.5-1.2"/><path d="M12 6.5V8"/><path d="M12 16v1.5"/>',
   shop: '<path d="M3 9h18l-1.5 11a1 1 0 0 1-1 .9H5.5a1 1 0 0 1-1-.9L3 9z"/><path d="M8 9V7a4 4 0 0 1 8 0v2"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M18 14.2a6.5 6.5 0 0 1 3.5 5.8"/>',
 };
 const tbSvg = (paths, size = 16) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 function tbIco(name, size = 16) {
@@ -623,6 +631,7 @@ function updateAuthNav() {
   authNavBtn.replaceChildren();
   authNavBtn.classList.toggle('tb-cta', !state.user);
   authNavBtn.classList.toggle('tb-acct', !!state.user);
+  authNavBtn.classList.toggle('has-dot', !!state.user && friendRequestCount() > 0);
   if (!state.user) {
     if (acctMenu) { acctMenu.remove(); acctMenu = null; }
     authNavBtn.removeAttribute('aria-haspopup');
@@ -656,6 +665,7 @@ function updateAuthNav() {
     item('user', 'Hesabım', () => navigateToPage('login')),
     item('gift', 'Günlük Ödül', () => navigateToPage('dailyReward')),
     item('shop', 'Mağaza', () => navigateToPage('store')),
+    item('users', friendRequestCount() ? `Arkadaşlar (${friendRequestCount()} istek)` : 'Arkadaşlar', () => navigateToPage('friends')),
     el('div', { class: 'tb-menu-sep' }),
     item('logout', 'Çıkış Yap', () => actions.logout(), 'danger'),
   );
@@ -708,12 +718,12 @@ function updateTopbar() {
     if (me) chips.push(el('span', { class: 'tb-chip money', title: 'Kalan bütçe' }, [el('span', { class: 'tb-chip-k' }, 'Bütçe'), el('b', {}, `${me.budget}₺`)]));
   }
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] Draft sırasında sürekli aktif kalan
-  // perk'ler (anti_snipe_shield/ceiling_reduction/free_backup henüz kullanılmadıysa) unutulmasın
+  // perk'ler (anti_snipe_shield/ceiling_reduction, joker/spy henüz kullanılmadıysa) unutulmasın
   // diye üst barda hep görünür — anlık etkiler (bütçe +/-, kumarbaz) zaten bütçeye yansıdığı ve
   // bir daha bir şey "beklemediği" için burada AYRICA gösterilmiyor.
   if (state.room && state.room.status === 'draft') {
     const mePerk = state.room.players.find((p) => p.clientId === state.clientId)?.prepPerk;
-    if (mePerk && mePerk.active) chips.push(el('span', { class: 'tb-chip perk', title: 'Aktif perk' }, `${mePerk.label}${mePerk.kind === 'free_backup' ? ' (kullanılmadı)' : ''}`));
+    if (mePerk && mePerk.active) chips.push(el('span', { class: 'tb-chip perk', title: 'Aktif perk' }, mePerk.label));
   }
   topbarStatus.replaceChildren(...chips);
 }
@@ -789,6 +799,7 @@ function route() {
   appRoot.innerHTML = '';
   revealCoinAwardIfReady();
   syncRoomAccount();
+  syncPresence();
   updateTopbar();
   updateHead();
   storeNavBtn.classList.toggle('active', state.page === 'store');
@@ -867,6 +878,12 @@ function route() {
 
   if (state.page === 'store') {
     appRoot.appendChild(renderStore({ state, actions }));
+    finish();
+    return;
+  }
+
+  if (state.page === 'friends') {
+    appRoot.appendChild(renderFriends({ state, actions }));
     finish();
     return;
   }
@@ -1302,7 +1319,81 @@ const actions = {
     await fetch('/api/auth/logout', { method: 'POST' });
     state.user = null;
     state.store = null; state.storeError = null; // hesap değişti — önceki kullanıcının mağaza verisi kalmasın
+    state.friends = null; state.friendsUi = null;
+    syncPresence._done = null;
+    socket.emit('presence:bye', {}, () => {});
     route();
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Plain REST (bkz. server index.js /api/friends*).
+  // `silent`: periyodik yoklama — veri değişmediyse route() çağırmaz (DOM'u boş yere yeniden
+  // kurup yazılan kodu/odak durumunu bozmasın).
+  async fetchFriends(silent = false) {
+    if (!state.user || !state.user.emailVerified) return;
+    if (friendsFetchBusy) return;
+    friendsFetchBusy = true;
+    try {
+      const r = await fetch('/api/friends');
+      const body = await r.json();
+      if (!r.ok) {
+        if (!silent) state.friends = { error: body.error || 'SERVER_ERROR' };
+      } else {
+        const prevIncoming = state.friends && state.friends.data ? state.friends.data.incoming.map((x) => x.id) : null;
+        const changed = !state.friends || JSON.stringify(state.friends.data) !== JSON.stringify(body);
+        state.friends = { data: body };
+        if (prevIncoming) {
+          const fresh = body.incoming.filter((x) => !prevIncoming.includes(x.id));
+          if (fresh.length) toast(`👥 ${fresh[0].displayName} sana arkadaşlık isteği gönderdi.`);
+        }
+        if (silent && !changed) return;
+      }
+    } catch (e) {
+      if (!silent) state.friends = { error: 'NETWORK' };
+    } finally {
+      friendsFetchBusy = false;
+    }
+    route();
+  },
+  async friendRequest(code) {
+    const res = await friendPost('/api/friends/request', { code });
+    if (res.error) return toast(FRIEND_ERRORS[res.error] || res.error);
+    if (state.friendsUi) state.friendsUi.code = '';
+    toast(res.status === 'accepted' ? `✅ ${res.user.displayName} ile artık arkadaşsınız.` : `📨 ${res.user.displayName} adlı oyuncuya istek gönderildi.`);
+    await actions.fetchFriends();
+  },
+  async friendRespond(userId, accept) {
+    const res = await friendPost('/api/friends/respond', { userId, accept });
+    if (res.error) toast(FRIEND_ERRORS[res.error] || res.error);
+    await actions.fetchFriends();
+  },
+  async friendRemove(userId, displayName, kind) {
+    if (kind === 'friend') {
+      const ok = await confirmDialog({ title: 'Arkadaşlıktan çıkar', body: `${displayName} arkadaş listenden çıkarılsın mı?`, confirmLabel: 'Çıkar', danger: true });
+      if (!ok) return;
+    }
+    const res = await friendPost('/api/friends/remove', { userId });
+    if (res.error) toast(FRIEND_ERRORS[res.error] || res.error);
+    await actions.fetchFriends();
+  },
+  async friendBlock(userId, displayName) {
+    const ok = await confirmDialog({ title: 'Engelle', body: `${displayName} engellensin mi? Arkadaşlığınız silinir, sana istek gönderemez ve durumunu göremez.`, confirmLabel: 'Engelle', danger: true });
+    if (!ok) return;
+    const res = await friendPost('/api/friends/block', { userId });
+    if (res.error) toast(FRIEND_ERRORS[res.error] || res.error);
+    await actions.fetchFriends();
+  },
+  async friendUnblock(userId) {
+    await friendPost('/api/friends/unblock', { userId });
+    await actions.fetchFriends();
+  },
+  async setPresenceHidden(presenceHidden) {
+    const res = await friendPost('/api/friends/settings', { presenceHidden });
+    if (res.error) return toast(FRIEND_ERRORS[res.error] || res.error);
+    await actions.fetchFriends();
+  },
+  // Arkadaşın lobisine katıl — hesaplı kullanıcı adını sormaya gerek yok (bkz. renderLobby).
+  async joinFriendRoom(code) {
+    if (state.room) return toast('Önce bulunduğun odadan çık.');
+    await actions.joinRoom(state.user.displayName, code);
   },
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 2] `fetchPlayerDb` ile AYNI "plain
   // REST" deseni. `spinDailyReward` sonucu geldiğinde animasyonu (spin süresi boyunca) yönetmek
@@ -1466,6 +1557,62 @@ function syncRoomAccount() {
     }
   })();
 }
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Bu socket'i hesaba bağla ki arkadaşlar bizi
+// çevrimiçi görsün ve `friends:changed` sinyali gelsin. syncRoomAccount ile AYNI bilet deseni;
+// anahtar socket.id içerdiği için yeniden bağlanınca (yeni socket) kendiliğinden tekrarlanır.
+let friendsFetchBusy = false;
+const FRIEND_ERRORS = {
+  INVALID_CODE: 'Arkadaş kodu 8 karakter olmalı (ör. ABCD-1234).',
+  NOT_FOUND: 'Bu koda sahip bir oyuncu bulunamadı.',
+  SELF: 'Bu senin kendi kodun.',
+  ALREADY_FRIENDS: 'Zaten arkadaşsınız.',
+  ALREADY_REQUESTED: 'Bu oyuncuya zaten istek gönderdin.',
+  YOU_BLOCKED: 'Bu oyuncuyu engellemişsin — önce engeli kaldır.',
+  FRIEND_LIMIT: 'Arkadaş sınırına ulaştın.',
+  TARGET_FRIEND_LIMIT: 'Bu oyuncu arkadaş sınırına ulaşmış.',
+  PENDING_LIMIT: 'Çok fazla bekleyen isteğin var — bazılarını geri çek.',
+  TARGET_PENDING_LIMIT: 'Bu oyuncunun bekleyen isteği çok fazla, sonra tekrar dene.',
+  NO_REQUEST: 'Bu istek artık geçerli değil.',
+  RATE_LIMITED: 'Çok fazla istek gönderdin, biraz sonra tekrar dene.',
+  EMAIL_NOT_VERIFIED: 'Önce e-postanı doğrulamalısın.',
+  NOT_LOGGED_IN: 'Önce giriş yapmalısın.',
+};
+async function friendPost(url, body) {
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return await r.json();
+  } catch (e) {
+    return { error: 'SERVER_ERROR' };
+  }
+}
+function friendRequestCount() {
+  return (state.friends && state.friends.data && state.friends.data.incoming.length) || 0;
+}
+function syncPresence() {
+  if (!state.user || !state.user.emailVerified || !state.connected || !socket.id) return;
+  const key = `${socket.id}:${state.user.id}`;
+  const s = syncPresence;
+  if (s._done === key || s._pending === key) return;
+  s._pending = key;
+  (async () => {
+    try {
+      const t = await fetch('/api/rooms/ticket', { method: 'POST' }).then((r) => r.json());
+      if (t.ticket && !(await emitAck('presence:hello', { ticket: t.ticket })).error) s._done = key;
+    } catch (e) { /* bir sonraki route()'ta tekrar dener */ } finally {
+      s._pending = null;
+    }
+  })();
+  // İlk bağlanışta istek rozetinin dolması için listeyi de bir kez çek.
+  if (!state.friends) actions.fetchFriends(true);
+}
+socket.on('friends:changed', () => { actions.fetchFriends(true); });
+// Arkadaşların oda durumları için yoklama: sadece ana sayfa/arkadaşlar sayfasındayken ve sekme
+// görünürken (presence anlık push etmiyor — oda durumu çok sık değişiyor, yoklama yeterli).
+setInterval(() => {
+  if (document.visibilityState !== 'visible' || !state.user || !state.user.emailVerified) return;
+  if (state.page === 'friends' || (!state.room && !state.page)) actions.fetchFriends(true);
+}, 15000);
 
 socket.on('room:state', (room) => { state.room = room; route(); });
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — MAĞAZA v2] Tepkiler — route() çağırmadan, üst katmanda.
@@ -1724,6 +1871,16 @@ if (joinParam) {
   if (!state.lobbyUi) state.lobbyUi = { mode: null, name: '', code: '', draftMode: 'live', playerPool: 'all', wheelSegments: [], prepWheelEnabled: false, tradeRoundEnabled: false, bankedPerksEnabled: false };
   state.lobbyUi.mode = 'join';
   state.lobbyUi.code = joinParam.toUpperCase();
+  history.replaceState({}, '', location.pathname);
+  route();
+}
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Paylaşılan davet linki `/arkadaslar?ekle=KOD`:
+// kod alanı önceden dolu açılır, isteği kullanıcı kendisi gönderir (linke tıklamak tek başına
+// istek atmasın). Giriş yapılmamışsa sayfa giriş çağrısı gösterir, kod state'te bekler.
+const addFriendParam = new URLSearchParams(location.search).get('ekle');
+if (addFriendParam) {
+  state.friendsUi = { code: addFriendParam.slice(0, 12).toUpperCase(), fromLink: true };
   history.replaceState({}, '', location.pathname);
   route();
 }

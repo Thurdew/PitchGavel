@@ -19,20 +19,25 @@ async function unitTests() {
   const { DatabaseSync } = require('node:sqlite');
   const { wrapSqlite } = require('../src/db/adapter');
   const { RewardsService, REWARD_SEGMENTS } = require('../src/rewards/RewardsService');
-  const { PREP_WHEEL_SEGMENTS, DAILY_REWARD_FREE_SPINS_PER_DAY } = require('../src/shared/gameConfig');
+  const { PREP_WHEEL_SEGMENTS, DAILY_REWARD_FREE_SPINS_PER_DAY, DAILY_REWARD_COIN_SEGMENTS } = require('../src/shared/gameConfig');
 
   // --- ödül havuzu SADECE 'iyi' segmentler ---
   assert(REWARD_SEGMENTS.length > 0, 'ödül havuzu boş olmamalı');
   assert(REWARD_SEGMENTS.every((s) => s.pool === 'iyi'), 'ödül havuzunda kötü/nötr segment OLMAMALI');
   const goodCount = PREP_WHEEL_SEGMENTS.filter((s) => s.pool === 'iyi').length;
-  assert.strictEqual(REWARD_SEGMENTS.length, goodCount, 'PREP_WHEEL_SEGMENTS ile aynı sayıda iyi segment olmalı');
+  assert(DAILY_REWARD_COIN_SEGMENTS.length > 0 && DAILY_REWARD_COIN_SEGMENTS.every((s) => s.coins > 0), 'coin dilimleri pozitif coin taşımalı');
+  assert.strictEqual(REWARD_SEGMENTS.length, goodCount + DAILY_REWARD_COIN_SEGMENTS.length, 'çark = iyi perkler + coin dilimleri');
   console.log(`[test10] ödül havuzu sadece 'iyi' segmentlerden oluşuyor (${REWARD_SEGMENTS.length} adet) ✅`);
 
   // db.js'teki DDL'in aynısı (sadece bu test için gereken tablolar) — izole :memory: DB.
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(`
-    CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE);
+    CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, coins INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE coin_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      amount INTEGER NOT NULL, reason TEXT NOT NULL, meta TEXT, created_at INTEGER NOT NULL
+    );
     CREATE TABLE daily_reward_state (
       user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       day TEXT NOT NULL, ads_progress INTEGER NOT NULL DEFAULT 0,
@@ -61,7 +66,12 @@ async function unitTests() {
   assert.strictEqual(spin1.perk.pool, 'iyi');
   assert.strictEqual(spin1.status.spinsUsedToday, 1);
   assert.strictEqual(spin1.status.spinAvailable, false, 'günlük hak tükenmiş olmalı');
-  assert.strictEqual(spin1.status.inventory[spin1.perk.kind], 1, 'envanterde kazanılan perk görünmeli');
+  if (spin1.perk.coins) {
+    assert.strictEqual(spin1.perk.balance, spin1.perk.coins, 'coin dilimi bakiyeye eklenmeli');
+    assert.deepStrictEqual(spin1.status.inventory, {}, 'coin dilimi envantere girmemeli');
+  } else {
+    assert.strictEqual(spin1.status.inventory[spin1.perk.kind], 1, 'envanterde kazanılan perk görünmeli');
+  }
   console.log(`[test10] ücretsiz spin başarılı (${spin1.perk.kind}), günlük hak tüketildi ✅`);
 
   // --- aynı gün ikinci spin -> NO_SPIN_LEFT ---
@@ -74,7 +84,7 @@ async function unitTests() {
   const statusNewDay = await rewards.getStatus(1);
   assert.strictEqual(statusNewDay.spinsUsedToday, 0, 'yeni günde spinsUsedToday sıfırlanmalı');
   assert.strictEqual(statusNewDay.spinAvailable, true, 'yeni günde hak yeniden müsait olmalı');
-  assert.strictEqual(statusNewDay.inventory[spin1.perk.kind], 1, 'envanter (perk_grants ledger) gün değişse de KORUNMALI — sadece günlük hak sıfırlanır');
+  if (!spin1.perk.coins) assert.strictEqual(statusNewDay.inventory[spin1.perk.kind], 1, 'envanter (perk_grants ledger) gün değişse de KORUNMALI — sadece günlük hak sıfırlanır');
   console.log('[test10] gün değişince günlük hak sıfırlanıyor, envanter (kalıcı) korunuyor ✅');
 
   // --- [TURSO] Yarış: aynı anda iki spin isteği (çift tıklama) günlük sınırı aşamamalı ---
@@ -83,6 +93,24 @@ async function unitTests() {
   assert.strictEqual([raceA, raceB].filter((r) => r.error === 'NO_SPIN_LEFT').length, 1);
   assert.strictEqual((await rewards.getStatus(1)).spinsUsedToday, 1, 'spins_used 1\'i aşmamalı');
   console.log('[test10] eşzamanlı iki spin: sadece biri başarılı, günlük sınır korunuyor ✅');
+
+  // --- Coin dilimleri: birçok günde çevir, hem perk hem coin çıkmalı; bakiye = ledger toplamı ---
+  const seen = { coin: 0, perk: 0 };
+  for (let i = 0; i < 80 && (!seen.coin || !seen.perk); i++) {
+    db.prepare("UPDATE daily_reward_state SET day = '2000-01-01' WHERE user_id = 1").run();
+    const r = await rewards.spin(1);
+    assert(r.perk, 'yeni günde spin başarılı olmalı: ' + JSON.stringify(r));
+    if (r.perk.coins) {
+      seen.coin++;
+      assert(DAILY_REWARD_COIN_SEGMENTS.some((s) => s.kind === r.perk.kind && s.coins === r.perk.coins));
+      assert(!(r.perk.kind in r.status.inventory), 'coin dilimi envantere girmemeli');
+    } else seen.perk++;
+  }
+  assert(seen.coin > 0 && seen.perk > 0, 'çarkta hem coin hem perk çıkabilmeli: ' + JSON.stringify(seen));
+  const bal = db.prepare('SELECT coins FROM users WHERE id = 1').get().coins;
+  const led = db.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM coin_ledger WHERE user_id = 1 AND reason = 'daily_wheel'").get().s;
+  assert(bal > 0 && bal === led, `bakiye (${bal}) daily_wheel ledger toplamına (${led}) eşit olmalı`);
+  console.log(`[test10] coin dilimleri bakiyeye ekleniyor, envantere girmiyor, ledger tutarlı (${JSON.stringify(seen)}, bakiye ${bal}) ✅`);
 
   console.log('[test10] (A) BİRİM TESTLERİ TÜM GEÇTİ ✅');
 }

@@ -292,7 +292,6 @@ module.exports = {
   PREP_WHEEL_SEGMENTS: [
     { kind: 'budget_bonus', label: '💰 Bütçe Takviyesi', description: 'Bütçene anında +150₺ eklenir.', pool: 'iyi', weight: 10 },
     { kind: 'anti_snipe_shield', label: '🛡️ Anti-Snipe Kalkanı', description: 'Draft boyunca sürekli aktif: senin tekliflerin, süre bitimine yakın verilse bile anti-snipe uzatmasını TETİKLEMEZ.', pool: 'iyi', weight: 8 },
-    { kind: 'free_backup', label: '🎁 Bedava Yedek', description: 'Draftta rakipsiz kaldığın İLK yedek atamasında (normalde küçük bir ücret ödenir) hiç ücret ödemezsin — bir kereye mahsus.', pool: 'iyi', weight: 8 },
     { kind: 'joker', label: '🃏 Joker Turu', description: 'Katıldığın İLK pozisyon-turunda hiç rekabet etmeden, o pozisyonun en iyi adayını TAMAMEN ÜCRETSİZ kazanırsın — bir kereye mahsus.', pool: 'iyi', weight: 4 },
     { kind: 'spy', label: '👁️ Gözcü', description: 'Sadece Kör Draft\'ta anlamlı: katıldığın bir turda, süre dolmadan rakiplerinin o ana kadar kilitlediği teklifleri bir kez görebilirsin.', pool: 'iyi', weight: 6 },
     { kind: 'gambler', label: '🎰 Kumarbaz', description: 'Yazı-tura: %50 ihtimalle +100₺, %50 ihtimalle -100₺.', pool: 'orta', weight: 10 },
@@ -315,4 +314,15 @@ module.exports = {
   // entegre edilemediği için (bkz. claude.md) "reklam izle → çevirme hakkı kazan" merdiveni
   // tamamen kaldırıldı — artık her kullanıcı günde sabit sayıda ücretsiz çevirme hakkına sahip.
   DAILY_REWARD_FREE_SPINS_PER_DAY: 1,
+
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÜNLÜK ÇARKTA COIN] Günlük ödül çarkında perk'lerin
+  // yanında coin dilimleri. Kazanılan coin anında bakiyeye eklenir (coin_ledger reason
+  // 'daily_wheel'); maç ödüllerinin günlük tavanına (COIN_REWARDS.dailyCap) SAYILMAZ.
+  // Ağırlıklar perk'lerle aynı ölçekte (perk'lerin toplamı 28) — coin çıkma şansı ~%39,
+  // beklenen değer çevirme başına ~35 coin.
+  DAILY_REWARD_COIN_SEGMENTS: [
+    { kind: 'coins_50', label: '🪙 50 Coin', description: 'Hesabına anında 50 coin eklenir — mağazada harcayabilirsin.', pool: 'iyi', weight: 10, coins: 50 },
+    { kind: 'coins_100', label: '🪙 100 Coin', description: 'Hesabına anında 100 coin eklenir — mağazada harcayabilirsin.', pool: 'iyi', weight: 6, coins: 100 },
+    { kind: 'coins_250', label: '💎 250 Coin', description: 'Büyük ikramiye: hesabına anında 250 coin eklenir.', pool: 'iyi', weight: 2, coins: 250 },
+  ],
 };

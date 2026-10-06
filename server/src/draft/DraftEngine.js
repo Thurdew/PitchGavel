@@ -287,8 +287,8 @@ class DraftEngine {
 
   // Bir segmentin (perk) etkisini oyuncuya uygular. Anlık etkiler (bütçe +/-, kumarbaz) hemen
   // uygulanıp `active:false` işaretlenir; draft boyunca süren etkiler (anti_snipe_shield/
-  // ceiling_reduction/free_backup/blind_first_round/joker/spy) `active:true` kalır — ilgili
-  // yerlerde (submitBid, personalMaxBid, cascade uncontested ataması, nextRound, peekBids,
+  // ceiling_reduction/blind_first_round/joker/spy) `active:true` kalır — ilgili
+  // yerlerde (submitBid, personalMaxBid, nextRound, peekBids,
   // client) kontrol edilip tüketilir.
   applyPrepPerk(player, seg) {
     const perk = { kind: seg.kind, label: seg.label, description: seg.description, active: true };
@@ -308,8 +308,8 @@ class DraftEngine {
       perk.gambleResult = win ? 'win' : 'lose';
       perk.active = false;
     }
-    // anti_snipe_shield / free_backup / ceiling_reduction / blind_first_round / joker / spy:
-    // perk.active=true kalır — sırasıyla submitBid, cascade uncontested ataması, personalMaxBid,
+    // anti_snipe_shield / ceiling_reduction / blind_first_round / joker / spy:
+    // perk.active=true kalır — sırasıyla submitBid, personalMaxBid,
     // nextRound, client, peekBids'te kontrol edilip tüketilir.
     player.prepPerk = perk;
     return perk;
@@ -672,24 +672,14 @@ class DraftEngine {
       // felsefesiyle aynı: BACKUP_PLAYER_PRICE, kaybettiği için değil rakibi kalmadığı için).
       const clientId = c.remaining[0];
       const player = findPlayer(room, clientId);
-      // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] "🎁 Bedava Yedek" perk'i — draftta
-      // BACKUP_PLAYER_PRICE ödenen İLK rakipsiz atamada bu ücret 0'a düşer, bir kereye mahsus
-      // (kullanılınca `active:false` olur, perk kaydı yine de görünür kalır — "kullanıldı" bilgisi
-      // için).
-      let backupPrice = BACKUP_PLAYER_PRICE;
-      let freeBackupUsed = false;
-      if (player.prepPerk && player.prepPerk.kind === 'free_backup' && player.prepPerk.active) {
-        backupPrice = 0;
-        player.prepPerk.active = false;
-        freeBackupUsed = true;
-      }
+      const backupPrice = BACKUP_PLAYER_PRICE;
       this.assignPlayer(room, player, candidate, type, backupPrice, 'cascade_uncontested');
       room.draft.round = { slotType: type, kind: 'one_sided', main: candidate, resolvedAt: Date.now() };
       room.draft.cascade = null;
       this.emitDraft(room, {
         event: {
           type: 'one_sided_assigned', slotType: type, clientId, player: candidate,
-          price: backupPrice, cascadeFinal: true, freeBackupUsed: freeBackupUsed || undefined,
+          price: backupPrice, cascadeFinal: true,
         },
       });
       setTimeout(() => {

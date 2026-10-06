@@ -6,12 +6,14 @@
 // edilemediği (bkz. claude.md "AppLixir" notu) için "reklam izle → çevirme hakkı kazan" üçgen
 // merdiveni tamamen kaldırıldı — artık her kullanıcı günde `DAILY_REWARD_FREE_SPINS_PER_DAY`
 // (varsayılan 1) kadar ücretsiz çevirme hakkına sahip, reklam adımı yok.
-const { PREP_WHEEL_SEGMENTS, DAILY_REWARD_FREE_SPINS_PER_DAY } = require('../shared/gameConfig');
+const { PREP_WHEEL_SEGMENTS, DAILY_REWARD_FREE_SPINS_PER_DAY, DAILY_REWARD_COIN_SEGMENTS } = require('../shared/gameConfig');
 const { spinWheelSegment } = require('../draft/pool');
 
 // Kötü/nötr segmentleri (gambler/budget_penalty/ceiling_reduction/blind_first_round) bir "ödül"
 // olarak vermek anlamsız olurdu — Hazırlık Çarkı'nın kendi kataloğunun sadece 'iyi' alt kümesi.
-const REWARD_SEGMENTS = PREP_WHEEL_SEGMENTS.filter((s) => s.pool === 'iyi');
+const PERK_REWARD_SEGMENTS = PREP_WHEEL_SEGMENTS.filter((s) => s.pool === 'iyi');
+// Çarkın tamamı: perk'ler + coin dilimleri (`coins` alanı olanlar envantere değil bakiyeye gider).
+const REWARD_SEGMENTS = [...PERK_REWARD_SEGMENTS, ...DAILY_REWARD_COIN_SEGMENTS];
 
 function todayUTC() { return new Date().toISOString().slice(0, 10); }
 
@@ -44,7 +46,11 @@ class RewardsService {
       userId
     );
     const inventory = {};
-    for (const r of rows) inventory[r.kind] = Number(r.n);
+    // Katalogdan kaldırılmış perk türleri (ör. '🎁 Bedava Yedek' — free_backup) harcanamaz,
+    // envanterde gösterilmez.
+    for (const r of rows) {
+      if (PREP_WHEEL_SEGMENTS.some((s) => s.kind === r.kind)) inventory[r.kind] = Number(r.n);
+    }
     return inventory;
   }
 
@@ -92,13 +98,26 @@ class RewardsService {
     if (claimed.changes !== 1) return { error: 'NO_SPIN_LEFT' };
 
     const seg = spinWheelSegment(REWARD_SEGMENTS);
-    await this.db.run(
-      'INSERT INTO perk_grants (user_id, kind, label, description, granted_at) VALUES (?, ?, ?, ?, ?)',
-      userId, seg.kind, seg.label, seg.description, Date.now()
-    );
+    const perk = { kind: seg.kind, label: seg.label, description: seg.description, pool: seg.pool };
+    if (seg.coins) {
+      // Coin dilimi: envantere değil doğrudan bakiyeye (CoinService._credit ile aynı iki yazım).
+      await this.db.run('UPDATE users SET coins = coins + ? WHERE id = ?', seg.coins, userId);
+      await this.db.run(
+        'INSERT INTO coin_ledger (user_id, amount, reason, meta, created_at) VALUES (?, ?, ?, ?, ?)',
+        userId, seg.coins, 'daily_wheel', JSON.stringify({ kind: seg.kind }), Date.now()
+      );
+      const row = await this.db.get('SELECT coins FROM users WHERE id = ?', userId);
+      perk.coins = seg.coins;
+      perk.balance = row ? Number(row.coins || 0) : null;
+    } else {
+      await this.db.run(
+        'INSERT INTO perk_grants (user_id, kind, label, description, granted_at) VALUES (?, ?, ?, ?, ?)',
+        userId, seg.kind, seg.label, seg.description, Date.now()
+      );
+    }
 
-    return { perk: { kind: seg.kind, label: seg.label, description: seg.description, pool: seg.pool }, status: await this.getStatus(userId) };
+    return { perk, status: await this.getStatus(userId) };
   }
 }
 
-module.exports = { RewardsService, REWARD_SEGMENTS };
+module.exports = { RewardsService, REWARD_SEGMENTS, PERK_REWARD_SEGMENTS };

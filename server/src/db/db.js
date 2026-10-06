@@ -133,6 +133,28 @@ const SCHEMA_SQL = `
 
   -- [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — PAYLAŞILAN SONUÇ] /sonuc/:id anlık görüntüsü (bkz. sockets/matchSockets.js).
   CREATE TABLE IF NOT EXISTS shared_results (id TEXT PRIMARY KEY, payload TEXT NOT NULL, created_at INTEGER NOT NULL);
+
+  -- [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Çift başına tek satır, user_a < user_b
+  -- normalize. status: 'pending' (requested_by'ın isteği onay bekliyor) | 'accepted'.
+  -- Bkz. friends/FriendService.js.
+  CREATE TABLE IF NOT EXISTS friendships (
+    user_a       INTEGER NOT NULL,
+    user_b       INTEGER NOT NULL,
+    status       TEXT NOT NULL,
+    requested_by INTEGER NOT NULL,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    PRIMARY KEY (user_a, user_b)
+  );
+  CREATE INDEX IF NOT EXISTS idx_friendships_b ON friendships(user_b);
+
+  -- Tek yönlü engel: blocker, blocked'dan istek almaz ve ona görünmez.
+  CREATE TABLE IF NOT EXISTS user_blocks (
+    blocker_id INTEGER NOT NULL,
+    blocked_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (blocker_id, blocked_id)
+  );
 `;
 
 // Şema + guard'lı ALTER'lar. Asenkron — index.js sunucuyu dinlemeye açmadan önce `ready`'i bekler.
@@ -170,6 +192,16 @@ async function initSchema(database) {
   if (!usersCols.includes('cosmetics')) {
     await database.exec('ALTER TABLE users ADD COLUMN cosmetics TEXT');
   }
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Paylaşılabilir arkadaş kodu (ilk ihtiyaçta
+  // üretilir, bkz. FriendService.ensureCode) ve "durumumu arkadaşlarıma gösterme" ayarı. ALTER
+  // UNIQUE kolon ekleyemediği için benzersizlik ayrı bir index'le (NULL'lar çakışmaz).
+  if (!usersCols.includes('friend_code')) {
+    await database.exec('ALTER TABLE users ADD COLUMN friend_code TEXT');
+  }
+  if (!usersCols.includes('presence_hidden')) {
+    await database.exec('ALTER TABLE users ADD COLUMN presence_hidden INTEGER NOT NULL DEFAULT 0');
+  }
+  await database.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_friend_code ON users(friend_code)');
   // [GÜVENLİK] Token'ları hash'le saklama geçişi — bkz. migrateTokenHashing.
   await migrateTokenHashing(database, 'sessions');
   await migrateTokenHashing(database, 'email_verifications');

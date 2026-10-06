@@ -41,6 +41,10 @@ const { RewardsService } = require('./rewards/RewardsService');
 const { CoinService } = require('./coins/CoinService');
 const { isValidCosmetic } = require('./shared/economy');
 const { RoomTickets } = require('./auth/RoomTickets');
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR]
+const { FriendService } = require('./friends/FriendService');
+const { Presence } = require('./friends/Presence');
+const { registerFriendSockets } = require('./sockets/friendSockets');
 
 const PORT = process.env.PORT || 3000;
 
@@ -103,6 +107,8 @@ app.get('/api/config', (req, res) => {
     // oda kurma formunda "hangi perkler olabilir" ipucu için gerekiyor) — WHEEL_SEGMENT_CATALOG
     // ile aynı mantık.
     PREP_WHEEL_SEGMENTS: cfg.PREP_WHEEL_SEGMENTS,
+    // Günlük ödül çarkının dilimleri (iyi perk'ler + coin) — istemci çarkı bununla çizer.
+    DAILY_REWARD_SEGMENTS: require('./rewards/RewardsService').REWARD_SEGMENTS,
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] İstemci geri sayımı ve "x/2 takas"
     // limitini bu sabitlerden okur.
     TRADE_ROUND_DURATION_SECONDS: cfg.TRADE_ROUND_DURATION_SECONDS,
@@ -454,7 +460,7 @@ app.get('/sonuc/:id', async (req, res, next) => {
 // halde Google her uydurma URL'i lobinin kopyası ("soft 404") sayıyordu.
 const SPA_ROUTES = new Set([
   '/', '/players', '/canli-arttirma', '/kor-draft', '/cark', '/nasil-oynanir',
-  '/giris', '/gunluk-odul', '/magaza', '/gizlilik',
+  '/giris', '/gunluk-odul', '/magaza', '/gizlilik', '/arkadaslar',
 ]);
 app.get(/^\/(?!api|socket\.io).*/, (req, res) => {
   const known = SPA_ROUTES.has(req.path.replace(/\/+$/, '') || '/');
@@ -476,7 +482,103 @@ draftEngine.setRewardsService(rewardsService);
 const matchmaker = new Matchmaker(io, roomManager, draftEngine);
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Bot odalarını süren denetleyici.
 const botController = new BotController(io, roomManager, draftEngine);
-const ctx = { roomManager, draftEngine, tradeEngine, matchmaker, authService, coinService, roomTickets, botController };
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] bkz. friends/Presence.js, friends/FriendService.js.
+const presence = new Presence(roomManager);
+const friendService = new FriendService(db);
+const ctx = { roomManager, draftEngine, tradeEngine, matchmaker, authService, coinService, roomTickets, botController, presence };
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Hepsi HTTP (güncel cookie); presence'ı
+// (kim hangi odada) sadece kabul edilmiş arkadaşlar görür, "durumumu gizle" diyen kimseye
+// görünmez. Doğrulanmamış hesaplar kullanamaz (zaten site duvarın arkasında). İstek atma
+// kullanıcı başına saatte 30 — kod taramayı da yavaşlatsın diye geçersiz denemeler de sayılır.
+const friendRequestLimiter = new PasswordResetRateLimiter({
+  maxAttempts: Number(process.env.FRIEND_REQUEST_MAX_ATTEMPTS) || 30, windowMs: 60 * 60 * 1000,
+});
+async function requireVerifiedUser(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return null;
+  if (!user.emailVerified) { res.status(403).json({ error: 'EMAIL_NOT_VERIFIED' }); return null; }
+  return user;
+}
+function friendIdParam(req, res) {
+  const id = Number((req.body || {}).userId);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: 'INVALID_INPUT' }); return null; }
+  return id;
+}
+// Karşı tarafın açık sekmelerine "listeni yenile" sinyali — içerik taşımaz, istemci GET'i tekrar çeker.
+function notifyFriendsChanged(userId) {
+  for (const sid of presence.socketsOf(userId)) io.to(sid).emit('friends:changed');
+}
+
+app.get('/api/friends', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  const data = await friendService.overview(user.id);
+  const status = presence.statusFor(data.friends.filter((f) => !f.presenceHidden).map((f) => f.id));
+  data.friends = data.friends.map(({ presenceHidden, ...f }) => ({ ...f, presence: status.get(f.id) || null }));
+  res.json(data);
+});
+
+app.post('/api/friends/request', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  if (friendRequestLimiter.isBlocked(user.id)) return res.status(429).json({ error: 'RATE_LIMITED' });
+  friendRequestLimiter.recordAttempt(user.id);
+  const result = await friendService.request(user.id, (req.body || {}).code);
+  if (result.error) return res.status(result.error === 'NOT_FOUND' ? 404 : 400).json({ error: result.error });
+  notifyFriendsChanged(result.user.id);
+  res.json(result);
+});
+
+app.post('/api/friends/respond', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  const otherId = friendIdParam(req, res);
+  if (otherId == null) return;
+  const result = await friendService.respond(user.id, otherId, !!(req.body || {}).accept);
+  if (result.error) return res.status(400).json({ error: result.error });
+  notifyFriendsChanged(otherId);
+  res.json(result);
+});
+
+app.post('/api/friends/remove', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  const otherId = friendIdParam(req, res);
+  if (otherId == null) return;
+  const result = await friendService.remove(user.id, otherId);
+  if (result.error) return res.status(404).json({ error: result.error });
+  notifyFriendsChanged(otherId);
+  res.json(result);
+});
+
+app.post('/api/friends/block', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  const otherId = friendIdParam(req, res);
+  if (otherId == null) return;
+  const result = await friendService.block(user.id, otherId);
+  if (result.error) return res.status(400).json({ error: result.error });
+  notifyFriendsChanged(otherId);
+  res.json(result);
+});
+
+app.post('/api/friends/unblock', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  const otherId = friendIdParam(req, res);
+  if (otherId == null) return;
+  res.json(await friendService.unblock(user.id, otherId));
+});
+
+app.post('/api/friends/settings', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  const { presenceHidden } = req.body || {};
+  if (typeof presenceHidden !== 'boolean') return res.status(400).json({ error: 'INVALID_INPUT' });
+  await friendService.setPresenceHidden(user.id, presenceHidden);
+  res.json({ ok: true, presenceHidden });
+});
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] Socket EVENT'İ DEĞİL, HTTP —
 // bkz. claude.md "kimlik doğrulama tasarımı" notu: bir socket'in handshake cookie'si bağlantı
@@ -511,6 +613,7 @@ io.on('connection', (socket) => {
   registerMatchSockets(io, socket, ctx);
   registerMatchmakingSockets(io, socket, ctx);
   registerTradeSockets(io, socket, ctx);
+  registerFriendSockets(io, socket, ctx);
 });
 
 // [GÜVENLİK SERTLEŞTİRME] Yakalanmamış bir async hata (Node 15+ varsayılanı) süreci kapatır ve
