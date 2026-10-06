@@ -448,13 +448,20 @@ const homeNavBtn = document.getElementById('homeNavBtn');
 homeNavBtn.addEventListener('click', () => { actions.leaveRoom(); });
 // [KULLANICI İSTEĞİ] "Header'daki logoya tıklayınca ana sayfaya atsın" — odadaysa leaveRoom
 // (aktif oyunda onay ister), değilse sadece lobiye döner.
+// [KULLANICI İSTEĞİ] "Logoya tıklayınca direkt ana sayfaya at, oda oluştura değil" — sadece
+// sayfayı null'lamak yetmiyordu: lobide son seçilen mod (Oda Kur/Katıl/Hızlı Eşleş/Bot) kalıyor,
+// renderLobby o formu açıyordu. Ana sayfa = mod seçilmemiş lobi (dört büyük kart).
+function goToHomePage() {
+  if (state.lobbyUi) state.lobbyUi.mode = null;
+  navigateToPage(null);
+}
 const brandEl = document.querySelector('.topbar .brand');
 if (brandEl) {
   brandEl.style.cursor = 'pointer';
   brandEl.setAttribute('role', 'link');
   brandEl.setAttribute('tabindex', '0');
   brandEl.setAttribute('title', 'Ana sayfa');
-  const goHome = () => { if (state.room) actions.leaveRoom(); else navigateToPage(null); };
+  const goHome = () => { if (state.room) actions.leaveRoom(); else goToHomePage(); };
   brandEl.addEventListener('click', goHome);
   brandEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goHome(); } });
 }
@@ -1001,7 +1008,7 @@ const actions = {
     state.matchResultUi = null;
     state.blindFirstRoundConsumed = false;
     state.blindFirstRoundKey = null;
-    navigateToPage(null);
+    goToHomePage();
     return true;
   },
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] "Kaç kişi gelirse gelsin, herkes hazır verdikten

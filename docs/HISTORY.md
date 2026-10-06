@@ -840,3 +840,11 @@ Canlıya alırken `npm ci` 3 açık bildirdi, kullanıcı bakılmasını istedi.
 Doğrulama: `npm audit` 0 açık; 22 test dosyası tek tek yeşil.
 
 Etkilenen dosyalar: `server/package-lock.json`.
+
+### 2026-10-06 — Logo her zaman ana sayfaya götürüyor — [KULLANICI İSTEĞİ]
+
+"PitchGavel logosuna tıklayınca direkt ana sayfaya at, oda oluştura değil." Kök neden: logo `navigateToPage(null)` çağırıyordu ama `state.lobbyUi.mode` (son seçilen Oda Kur/Katıl/Hızlı Eşleş/Bot) kalıyordu, `renderLobby` o formu açıyordu. `app.js goToHomePage()` modu sıfırlayıp `/`'e gider; logo ve `leaveRoom` (Odadan Çık) bunu kullanıyor. Sayfalardaki "← Geri dön" düğmeleri bilerek değişmedi (son ekrana dönmeleri doğal).
+
+Doğrulama: headless Chrome'da `/canli-arttirma` (Oda Kur), Odaya Katıl ve Bilgisayara Karşı formlarındayken logoya tıklanınca dört kartlı ana sayfa geliyor, konsolda hata yok.
+
+Etkilenen dosyalar: `client/public/app.js`.
