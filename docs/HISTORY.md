@@ -848,3 +848,13 @@ Etkilenen dosyalar: `server/package-lock.json`.
 Doğrulama: headless Chrome'da `/canli-arttirma` (Oda Kur), Odaya Katıl ve Bilgisayara Karşı formlarındayken logoya tıklanınca dört kartlı ana sayfa geliyor, konsolda hata yok.
 
 Etkilenen dosyalar: `client/public/app.js`.
+
+### 2026-10-06 — Üst barda "Arkadaşlar" düğmesi — [KULLANICI İSTEĞİ]
+
+"Arkadaşlar headerda da olsun." `index.html #friendsNavBtn` (Mağaza'nın yanında), Günlük Ödül gibi sadece giriş yapılmışken görünür, `/arkadaslar`'a gider (tekrar tıklanınca ana sayfa). Bekleyen istek varsa düğmede amber nokta; aynı bilgi iki yerde olmasın diye avatardaki nokta (`.tb-auth-btn.has-dot`) kaldırıldı. Hesap menüsündeki "Arkadaşlar (N istek)" kaldı.
+
+Bulunan sorun: odadayken üst bara "Odadan Çık" + oda kodu + isim çipi eklendiği için 1180–1440 px arasında etiketli düğmeler sağdaki çiplerle çakışıyordu (yeni düğmeden önce de "Mağaza" "Canlı" çipinin altına giriyordu). `route()` `body.in-room` sınıfını açıp kapatıyor; odadayken 1500 px'e kadar düğmeler sadece ikon.
+
+Doğrulama: headless Chrome — giriş yapmışken görünür, misafirde gizli, tıklayınca `/arkadaslar` + aktif, gelen istekte nokta var, kabul edince kayboluyor; odada 1280/1440 px ve 390 px mobilde çakışma yok; konsolda hata yok.
+
+Etkilenen dosyalar: `client/public/index.html`, `client/public/app.js`, `client/public/styles.css`.

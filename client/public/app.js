@@ -195,6 +195,8 @@ const howToPlayNavBtn = document.getElementById('howToPlayNavBtn');
 const authNavBtn = document.getElementById('authNavBtn');
 const dailyRewardNavBtn = document.getElementById('dailyRewardNavBtn');
 const storeNavBtn = document.getElementById('storeNavBtn');
+// [KULLANICI İSTEĞİ] "Arkadaşlar headerda da olsun" — Günlük Ödül gibi sadece giriş yapılmışken görünür.
+const friendsNavBtn = document.getElementById('friendsNavBtn');
 
 // [KULLANICI İSTEĞİ, "SEO uyumlu yap, URL'leri ayarla"] Bu SPA hiç URL değiştirmiyordu — oyuncu
 // veritabanı sayfası da dahil her şey "/" üzerinde sadece `state.page` ile ayrışıyordu. Bu hem
@@ -430,6 +432,9 @@ howToPlayNavBtn.addEventListener('click', () => {
 dailyRewardNavBtn.addEventListener('click', () => {
   navigateToPage(state.page === 'dailyReward' ? null : 'dailyReward');
 });
+friendsNavBtn.addEventListener('click', () => {
+  navigateToPage(state.page === 'friends' ? null : 'friends');
+});
 storeNavBtn.addEventListener('click', () => {
   navigateToPage(state.page === 'store' ? null : 'store');
 });
@@ -638,7 +643,6 @@ function updateAuthNav() {
   authNavBtn.replaceChildren();
   authNavBtn.classList.toggle('tb-cta', !state.user);
   authNavBtn.classList.toggle('tb-acct', !!state.user);
-  authNavBtn.classList.toggle('has-dot', !!state.user && friendRequestCount() > 0);
   if (!state.user) {
     if (acctMenu) { acctMenu.remove(); acctMenu = null; }
     authNavBtn.removeAttribute('aria-haspopup');
@@ -814,11 +818,16 @@ function route() {
   howToPlayNavBtn.classList.toggle('active', state.page === 'how-to-play');
   authNavBtn.classList.toggle('active', state.page === 'login');
   dailyRewardNavBtn.style.display = state.user ? '' : 'none';
+  friendsNavBtn.style.display = state.user ? '' : 'none';
+  friendsNavBtn.classList.toggle('active', state.page === 'friends');
+  // Bekleyen arkadaşlık isteği varsa amber nokta (eskiden avatardaydı).
+  friendsNavBtn.classList.toggle('has-dot', friendRequestCount() > 0);
   dailyRewardNavBtn.classList.toggle('active', state.page === 'dailyReward');
   // Bugünkü ücretsiz çevirme henüz kullanılmadıysa küçük amber nokta.
   dailyRewardNavBtn.classList.toggle('has-dot', !!(state.user && state.dailyReward && state.dailyReward.spinsUsedToday === 0));
   // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
   homeNavBtn.style.display = state.room ? '' : 'none';
+  document.body.classList.toggle('in-room', !!state.room);
 
   function finish() {
     restoreFocus(savedFocus);
