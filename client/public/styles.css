@@ -4531,3 +4531,143 @@ body.tb-compact .tb-link .tb-count { position: absolute; top: 1px; right: 0; mar
 .qp-claim { padding: 7px 12px; }
 .qp-row-desc { margin-top: -3px; font-size: 11.5px; line-height: 1.4; color: var(--text-muted); }
 .qp-row.claimed .qp-row-desc { color: var(--text-faint); }
+
+/* [v8.5] Seçilen forma sahada giyilir (draft mini saha, maç sahası, maç performansı) + skorbord isim hizası */
+.pitch-dot.kit.shirt { width: 15px; height: 15px; border: 0; border-radius: 0; clip-path: polygon(32% 10%, 42% 6%, 50% 12%, 58% 6%, 68% 10%, 90% 24%, 81% 39%, 72% 33%, 72% 92%, 28% 92%, 28% 33%, 19% 39%, 10% 24%); transform: translate(-50%, -50%) scale(1.25); }
+.pitch-field.skin-arcade .pitch-dot.kit.shirt { border-radius: 0; }
+.dm-slot.kit .dm-dot { position: relative; width: 40px; height: 40px; background: transparent !important; box-shadow: none; filter: drop-shadow(0 0 1px rgba(255,255,255,.55)) drop-shadow(0 3px 5px rgba(0,0,0,.5)); }
+.dm-slot.kit.icon .dm-dot { filter: drop-shadow(0 0 2px var(--icon)) drop-shadow(0 3px 5px rgba(0,0,0,.5)); }
+.dm-shirt, .mlp-shirt-bg { position: absolute; inset: 0; clip-path: polygon(32% 10%, 42% 6%, 50% 12%, 58% 6%, 68% 10%, 90% 24%, 81% 39%, 72% 33%, 72% 92%, 28% 92%, 28% 33%, 19% 39%, 10% 24%); }
+.dm-slot.kit .dm-dot b { position: relative; z-index: 1; font-size: 13px; color: #fff; margin-top: 3px; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000; }
+.pitch-lineup-chip.worn { min-width: 0; padding: 0; gap: 2px; background: none; border: 0; box-shadow: none; }
+.pitch-lineup-slot:hover .pitch-lineup-chip.worn { transform: translateY(-2px); }
+.mlp-shirt { position: relative; width: 38px; height: 38px; display: grid; place-items: center; filter: drop-shadow(0 0 1px rgba(255,255,255,.55)) drop-shadow(0 3px 5px rgba(0,0,0,.5)); }
+.mlp-shirt .pitch-lineup-matchrating { position: relative; z-index: 1; margin-top: 4px; font-size: 11.5px; color: #fff !important; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 1px 2px #000 !important; }
+.pitch-lineup-chip.worn .pitch-lineup-name { max-width: 64px; padding: 1px 5px; border-radius: 4px; background: rgba(7,12,20,.78); border-bottom: 2px solid var(--border-strong); }
+.pitch-lineup-chip.worn.rating-great .pitch-lineup-name { border-bottom-color: var(--accent); }
+.pitch-lineup-chip.worn.rating-good .pitch-lineup-name { border-bottom-color: var(--success); }
+.pitch-lineup-chip.worn.rating-poor .pitch-lineup-name { border-bottom-color: var(--danger); }
+.pitch-lineup-chip.worn.rating-great .mlp-shirt { filter: drop-shadow(0 0 1px rgba(255,255,255,.55)) drop-shadow(0 0 6px var(--gold-glow)); }
+.pitch-lineup-slot.icon .pitch-lineup-chip.worn { box-shadow: none; }
+.pitch-lineup-slot.icon .pitch-lineup-chip.worn .mlp-shirt { filter: drop-shadow(0 0 2px var(--icon)) drop-shadow(0 3px 5px rgba(0,0,0,.5)); }
+.lineup-pitch.small .mlp-shirt { width: 32px; height: 32px; }
+.lineup-pitch.small .pitch-lineup-chip.worn .pitch-lineup-name { max-width: 54px; font-size: 8.5px; }
+.scoreline .team { display: flex; align-items: center; gap: 8px; min-width: 0; width: auto; }
+.scoreline .team.home { justify-content: flex-end; text-align: right; }
+.scoreline .team.away { justify-content: flex-start; text-align: left; }
+.scoreline .team-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scoreline .kit-swatch { flex-shrink: 0; width: 14px; height: 14px; }
+@media (max-width: 560px) {
+  .scoreline .team { flex: 1; font-size: 15px; gap: 5px; }
+  .scoreline .team-name { white-space: normal; overflow-wrap: anywhere; }
+  .pitch-dot.kit.shirt { width: 12px; height: 12px; }
+  .lineup-pitch.small .mlp-shirt { width: 28px; height: 28px; }
+  .mlp-shirt .pitch-lineup-matchrating { font-size: 10px; }
+}
+
+/* [v8.6] Lobi özellik şeridi — dikey kutular; geniş ekranda 4'lü, altında 2×2 (3+1 yetim satır yok) */
+.lobby-features { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 22px; }
+.lobby-feature { flex-direction: column; gap: 9px; padding: 13px; min-width: 0; }
+.lobby-feature-code { margin: 0; }
+.lobby-feature-title { font-size: 13px; line-height: 1.2; }
+.lobby-feature-desc { font-size: 11.5px; margin-top: 3px; }
+@media (max-width: 900px) { .lobby-features { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
+@media (max-width: 330px) { .lobby-features { grid-template-columns: 1fr; } }
+
+/* [v8.6] Görevler paneli v2 */
+.qp-head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.qp-close { display: none; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,.04); color: var(--text-muted); font-size: 14px; cursor: pointer; }
+.qp-summary { display: flex; align-items: center; gap: 12px; margin: 12px 16px 0; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--border); }
+.qp-summary.has-ready { background: var(--coin-soft); border-color: var(--coin-line); }
+.qp-ring { --p: 0; flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--accent) calc(var(--p) * 1%), rgba(255,255,255,.09) 0); }
+.qp-ring span { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: #0e1826; font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
+.qp-summary-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.qp-summary-txt b { font-size: 14px; }
+.qp-summary-txt > span { font-size: 12px; color: var(--text-muted); }
+.qp-summary-coin { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-mono); font-weight: 700; color: var(--coin) !important; }
+.qp-claim-all { flex: 0 0 auto; padding: 9px 12px; white-space: nowrap; }
+.qp-tabs { display: flex; gap: 6px; padding: 12px 16px 0; overflow-x: auto; scrollbar-width: none; }
+.qp-tabs::-webkit-scrollbar { display: none; }
+.qp-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--text-muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color .15s var(--ease), color .15s var(--ease); }
+.qp-tab:hover { color: var(--text); border-color: var(--border-strong); }
+.qp-tab.on { color: var(--accent); border-color: var(--accent-glow); background: var(--accent-soft); }
+.qp-tab-dot { min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; display: inline-grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-family: var(--font-mono); font-size: 10px; font-style: normal; font-weight: 700; }
+.qp-sec { border-bottom: 0; padding: 12px 16px 14px; }
+.qp-sec-head { margin-bottom: 8px; }
+.qp-list { display: flex; flex-direction: column; gap: 8px; }
+.qp-card { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px; background: rgba(255,255,255,.025); border: 1px solid var(--border); transition: border-color .15s var(--ease); }
+.qp-card.ready { border-color: var(--accent-glow); background: var(--accent-soft); box-shadow: 0 10px 24px -18px var(--accent-glow); }
+.qp-card.claimed { opacity: .55; }
+.qp-medal { flex: 0 0 auto; width: 46px; height: 46px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: var(--coin-soft); border: 1px solid var(--coin-line); color: var(--coin); }
+.qp-medal b { font-family: var(--font-mono); font-size: 11px; line-height: 1; }
+.qp-card.claimed .qp-medal { filter: grayscale(1); }
+.qp-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.qp-card .qp-row-title { white-space: normal; line-height: 1.25; font-size: 13.5px; font-weight: 700; }
+.qp-card .qp-row-desc { margin: 0; }
+.qp-prog { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
+.qp-prog .qp-bar { flex: 1; height: 6px; }
+.qp-card.ready .qp-bar i { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.qp-card.claimed .qp-bar i { background: var(--success); }
+.qp-prog .qp-count { flex: 0 0 auto; font-size: 11px; }
+.qp-card .qp-claim { flex: 0 0 auto; padding: 9px 14px; }
+.qp-card .qp-done { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgba(34,197,94,.14); font-size: 13px; }
+@media (max-width: 560px) {
+  .quests-pop { left: 0 !important; right: 0; width: auto !important; top: auto !important; bottom: 0; max-height: 84vh; border-radius: 18px 18px 0 0; border-width: 1px 0 0; border-top: 3px solid var(--accent); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -20px 60px rgba(0,0,0,.6); }
+  .quests-pop.open { animation: qp-sheet .24s var(--ease); }
+  .quests-pop::before { content: ''; display: block; width: 40px; height: 4px; margin: 8px auto 0; border-radius: 2px; background: rgba(255,255,255,.18); }
+  .qp-head { padding-top: 8px; }
+  .qp-close { display: grid; place-items: center; }
+  .qp-tab { padding: 9px 14px; }
+  .qp-card .qp-claim { padding: 11px 14px; }
+}
+@keyframes qp-sheet { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .quests-pop.open { animation: none; } }
+
+/* [v8.6] Oda Kur formu v2 */
+.lobby-card .lobby-form.lf-v2 { margin-top: 0; padding-top: 0; border-top: 0; display: flex; flex-direction: column; gap: 18px; }
+.lf-v2 .field { margin: 0; }
+.lf-field > label { display: block; margin-bottom: 8px; }
+.lf-host { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--border); }
+.lf-avatar { flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-family: var(--font-display); font-weight: 900; font-size: 20px; }
+.lf-host-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.lf-host-txt b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-host-txt span { font-size: 12px; color: var(--text-faint); }
+.lf-host-tag { flex: 0 0 auto; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--accent-glow); color: var(--accent); font-family: var(--font-mono); font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; }
+
+.lf-cards { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+.lf-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; padding: 12px; text-align: left; border-radius: 12px; border: 1px solid var(--border); background: rgba(255,255,255,.025); color: var(--text); font: inherit; cursor: pointer; transition: border-color .15s var(--ease), background .15s var(--ease), transform .15s var(--ease); }
+.lf-card:hover { border-color: var(--border-strong); }
+.lf-card.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 10px 26px -18px var(--accent-glow); }
+.lf-card-ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: rgba(255,255,255,.06); font-size: 18px; line-height: 1; }
+.lf-card.on .lf-card-ico { background: rgba(255,149,0,.16); }
+.lf-card-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-right: 18px; }
+.lf-card-txt b { font-size: 14px; line-height: 1.2; }
+.lf-card-txt span { font-size: 11.5px; line-height: 1.4; color: var(--text-muted); text-wrap: pretty; }
+.lf-card-check { position: absolute; top: 12px; right: 12px; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border-strong); }
+.lf-card.on .lf-card-check { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px #0e1826; }
+
+.lf-switches { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.lf-switch { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; text-align: left; border: 0; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.02); color: var(--text); font: inherit; cursor: pointer; }
+.lf-switch:last-child { border-bottom: 0; }
+.lf-switch:hover { background: rgba(255,255,255,.04); }
+.lf-switch-ico { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: rgba(255,255,255,.05); font-size: 16px; filter: grayscale(1); opacity: .6; transition: filter .15s, opacity .15s; }
+.lf-switch.on .lf-switch-ico { filter: none; opacity: 1; background: var(--accent-soft); }
+.lf-switch-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lf-switch-txt b { font-size: 13.5px; }
+.lf-switch-txt span { font-size: 11.5px; line-height: 1.4; color: var(--text-muted); text-wrap: pretty; }
+.lf-toggle { flex: 0 0 auto; position: relative; width: 40px; height: 24px; border-radius: 12px; background: rgba(255,255,255,.12); transition: background .18s var(--ease); }
+.lf-toggle i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.4); transition: transform .18s var(--ease); }
+.lf-switch.on .lf-toggle { background: var(--accent); }
+.lf-switch.on .lf-toggle i { transform: translateX(16px); }
+
+.lf-foot { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.lf-summary { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.lf-summary span { padding: 4px 9px; border-radius: 999px; background: rgba(255,255,255,.05); border: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); }
+.lf-cta { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-size: 16px; padding: 15px; box-shadow: 0 14px 30px -12px var(--accent-glow); }
+.lf-v2 + .lobby-back, .lf-v2 .lobby-back { margin-top: -6px; }
+@media (max-width: 560px) {
+  .lf-cards.n3 { grid-template-columns: 1fr; }
+  .lf-cards.n3 .lf-card { flex-direction: row; align-items: center; }
+}
+@media (prefers-reduced-motion: reduce) { .lf-toggle, .lf-toggle i { transition: none; } }

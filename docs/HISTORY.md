@@ -891,3 +891,15 @@ Kullanıcı açıkladı: "10 TL altı derken — ben 140 verdim, adam 145'le ald
 Test: phase20'ye kullanıcının örneği (145/140), 9₺, eşit teklif, 10₺ (sayılmaz) ve 3 kişilik tur; phase3b yeşil.
 
 Etkilenen dosyalar: `server/src/draft/DraftEngine.js`, `server/src/shared/quests.js`, `server/test/phase20-quests.test.js`.
+
+### 2026-10-06 — Yama v8.6 ("Lobi ekranı tasarım alternatifleri5.zip") — [KULLANICI İSTEĞİ]
+
+Kullanıcı masaüstündeki zip'i ekletti. İçinde `patch-v8.6/client/public/{views.js,styles.css}` (tam dosyalar). Kural gereği körü körüne kopyalanmadı, önce `diff --strip-trailing-cr` ile karşılaştırıldı: yama güncel koddan (arkadaşlar, görevler, fitTopbar dahil) üretilmiş, hiçbir özelliği silmiyor; `styles.css` sadece 140 satır ekleme (yorum dengesi 228/228), `views.js` şu parçalar:
+- **Oda Kur formu v2** (`lf-v2`): draft modu/oyuncu havuzu ikonlu seçenek kartları (`optionCards`), Hazırlık Çarkı/Takas/Envanter aç-kapa anahtarları (`switchRow`), hesap kartı + "Host" etiketi, altta seçim özeti + büyük CTA.
+- **Görevler paneli v2**: özet halkası + bekleyen coin toplamı + "Hepsini Topla", grup sekmeleri (toplanabilir olan grup açık başlar), madalyalı kartlar, toplanabilirler üstte; ≤560px'te alttan açılan sayfa + kapat düğmesi (Escape gönderir — `app.js` kapatma yolu aynı).
+- **Formalar sahada**: draft mini sahası (`draftMiniPitch` `kit`), maç sahası noktaları forma silueti (`pitch-dot.kit.shirt`, kaleci `GK_KIT`), maç performansı sahasında oyuncu kartı yerine forma + maç puanı (`pitch-lineup-chip.worn`). **Not:** claude.md saha formatlarına (`.pitch-*`, `.pitch-lineup-*`) dokunulmamasını söylüyor; bu görünüm değişikliği kullanıcının getirdiği yamadan geldiği için bilinçli kabul edildi.
+- Skorbord takım adı hizası (uzun adlar kırpılıyor), lobi özellik şeridi 4'lü/2×2.
+
+Doğrulama: `node --check`; headless Chrome'da misafir ve hesaplı Oda Kur formu (anahtarlar, özet), Katıl/Hızlı Eşleş/Bot formları, mobil 390px; görev paneli v2 (sekme, Hepsini Topla 3 ödül = 310 coin, mobil sayfa + kapat); hızlandırılmış sunucuda bota karşı tam oyun: draft mini sahasında formalar, dizilim → Hazırım → maç (22 forma noktası, skorbord) → Sonuca Geç → sonuç (44 formalı kart). Konsolda hata yok. Sunucu kodu değişmedi.
+
+Etkilenen dosyalar: `client/public/views.js`, `client/public/styles.css`.
