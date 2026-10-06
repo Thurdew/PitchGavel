@@ -272,12 +272,56 @@ export function renderLobby({ state, actions }) {
     ]);
   }
 
+  // [KULLANICI İSTEĞİ] "Oda kur daha güzel olabilir" — form v2: mod/havuz seçimleri ikonlu seçenek
+  // kartları (açıklama kartın içinde), açık/kapalı eklentiler anahtar (switch) satırı.
+  const splitIco = (text) => {
+    const m = String(text).match(/^(\S+)\s+(.+)$/);
+    return m && !/^[\p{L}\p{N}]/u.test(m[1]) ? [m[1], m[2]] : [null, text];
+  };
+  function optionCards(label, options, current, onSelect) {
+    return el('div', { class: 'field lf-field' }, [
+      el('label', {}, label),
+      el('div', { class: `lf-cards n${options.length}`, role: 'radiogroup', 'aria-label': label }, options.map(([value, text, desc]) => {
+        const [ico, name] = splitIco(text);
+        const on = current === value;
+        return el('button', {
+          type: 'button', role: 'radio', 'aria-checked': String(on),
+          class: `lf-card ${on ? 'on' : ''}`, onclick: () => onSelect(value),
+        }, [
+          ico ? el('span', { class: 'lf-card-ico', 'aria-hidden': 'true' }, ico) : null,
+          el('span', { class: 'lf-card-txt' }, [
+            el('b', {}, name),
+            el('span', {}, desc),
+          ]),
+          el('span', { class: 'lf-card-check', 'aria-hidden': 'true' }),
+        ]);
+      })),
+    ]);
+  }
+  function switchRow(label, options, current, onSelect) {
+    const on = !!current;
+    const offOpt = options.find((o) => o[0] === false) || options[0];
+    const onOpt = options.find((o) => o[0] === true) || options[1];
+    const [ico] = splitIco(onOpt[1]);
+    return el('button', {
+      type: 'button', role: 'switch', 'aria-checked': String(on),
+      class: `lf-switch ${on ? 'on' : ''}`, onclick: () => onSelect(!on),
+    }, [
+      el('span', { class: 'lf-switch-ico', 'aria-hidden': 'true' }, ico || '•'),
+      el('span', { class: 'lf-switch-txt' }, [
+        el('b', {}, label),
+        el('span', {}, (on ? onOpt : offOpt)[2]),
+      ]),
+      el('span', { class: 'lf-toggle', 'aria-hidden': 'true' }, el('i')),
+    ]);
+  }
+
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Kör Draft / Çark Modu — sadece host, oda kurarken seçer;
   // oda ömrü boyunca sabit kalır (bkz. claude.md "Ek Mod Fikirleri" / RoomManager.createRoom).
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4] Hızlı Eşleş'te de aynı
   // bileşen reuse ediliyor — SADECE Çark Modu seçeneği YOK (Matchmaker'da desteklenmiyor, bkz.
   // claude.md — bütçesiz/kendi mekaniğine sahip bir mod, MVP kapsamı dışı).
-  const draftModePicker = (ui.mode === 'create' || ui.mode === 'quick' || ui.mode === 'bot') ? pillToggle('Draft Modu', [
+  const draftModePicker = (ui.mode === 'create' || ui.mode === 'quick' || ui.mode === 'bot') ? optionCards('Draft Modu', [
     ['live', '⏱️ Canlı Açık Arttırma', 'Teklifler anlık görünür, süre bitene kadar yükselir'],
     ['blind', '🙈 Kör Draft', 'Tek seferlik gizli teklif — rakibinkini göremezsin'],
     ...(ui.mode === 'create' || ui.mode === 'bot' ? [['wheel', '🎡 Çark Modu', 'Bütçe yok — sırayla çark çevirip çıkan reyting bandından ücretsiz seç']] : []),
@@ -286,7 +330,7 @@ export function renderLobby({ state, actions }) {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI] Tek Lig Modu — draftMode'dan bağımsız ikinci bir
   // anahtar: havuzu Süper Lig + Türk icon'lara daraltır (bkz. claude.md "Ek Mod Fikirleri" /
   // RoomManager.createRoom / draft/pool.js).
-  const playerPoolPicker = (ui.mode === 'create' || ui.mode === 'quick' || ui.mode === 'bot') ? pillToggle('Oyuncu Havuzu', [
+  const playerPoolPicker = (ui.mode === 'create' || ui.mode === 'quick' || ui.mode === 'bot') ? optionCards('Oyuncu Havuzu', [
     ['all', '🌍 Tüm Ligler', 'Süper Lig + büyük 5 Avrupa ligi + tüm icon\'lar'],
     ['super-lig', '🇹🇷 Süper Lig', 'Sadece Süper Lig kadroları + Türk icon\'lar'],
   ], ui.playerPool, selectPlayerPool) : null;
@@ -346,7 +390,7 @@ export function renderLobby({ state, actions }) {
   // Çark Modu'nda hiç anlamlı olmadığı için (o modun zaten kendi çarkı var) sadece live/blind'te
   // gösteriliyor. Her oyuncunun kendi çevirip çevirmeyeceği (risk) DRAFT SIRASINDA ayrı bir
   // karar — bu toggle sadece "bu odada bu eklenti var mı yok mu"yu belirliyor.
-  const prepWheelToggle = (ui.mode === 'create' && ui.draftMode !== 'wheel') ? pillToggle('Hazırlık Çarkı', [
+  const prepWheelToggle = (ui.mode === 'create' && ui.draftMode !== 'wheel') ? switchRow('Hazırlık Çarkı', [
     [false, 'Kapalı', 'Draft doğrudan formasyon kurasıyla başlar — ekstra bir şey yok'],
     [true, '🎡 Açık', 'Formasyon kurasından önce herkes SIRAYLA (bir bir) İSTEĞE BAĞLI bir perk çarkı çevirir — çıkan bütçe/kalkan/joker gibi iyi/kötü etkiler herkese açık gösterilir. Çevirmek zorunlu değil, risksiz başlamak da her zaman mümkün'],
   ], !!ui.prepWheelEnabled, (v) => { ui.prepWheelEnabled = v; actions.route(); }) : null;
@@ -354,7 +398,7 @@ export function renderLobby({ state, actions }) {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKAS TURU] "Çark gibi isteğe bağlı özellik olarak
   // gelsin, 3 modda da geçerli olsun." — Hazırlık Çarkı'nın aksine mod kısıtı YOK; çark modunda
   // da draft sonunda kadrolar hazır olduğu için takas aynen anlamlı.
-  const tradeRoundToggle = ui.mode === 'create' ? pillToggle('Takas Turu', [
+  const tradeRoundToggle = ui.mode === 'create' ? switchRow('Takas Turu', [
     [false, 'Kapalı', 'Draft bitince doğrudan dizilim seçimine geçilir'],
     [true, '⇄ Açık', 'Draft bitince 5 dakikalık bir takas turu açılır: kadrondan bir oyuncu verip rakipten bir oyuncu alırsın (1↔1, para yok, kaleci hariç). Mevki serbest — orta saha verip forvet alıp formasyonunu değiştirebilirsin. Herkes "bitti" derse tur erken kapanır'],
   ], !!ui.tradeRoundEnabled, (v) => { ui.tradeRoundEnabled = v; actions.route(); }) : null;
@@ -362,7 +406,7 @@ export function renderLobby({ state, actions }) {
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ, FAZ 3] Hazırlık Çarkı KAPALIYKEN
   // anlamsız (redeem noktası o turun içi) — sadece prepWheelEnabled açıkken gösteriliyor,
   // sunucu da aynı kısıtı zorluyor (bkz. RoomManager.createRoom).
-  const bankedPerksToggle = (ui.mode === 'create' && ui.prepWheelEnabled) ? pillToggle('Envanter Kullanımı', [
+  const bankedPerksToggle = (ui.mode === 'create' && ui.prepWheelEnabled) ? switchRow('Envanter Kullanımı', [
     [false, 'Kapalı', 'Hazırlık Çarkı sırasında sadece Çevir/Atla seçenekleri olur'],
     [true, '🎒 Açık', 'Kayıtlı oyuncular, Hazırlık Çarkı sıraları geldiğinde günlük ödül çarkından (bkz. Günlük Ödül sayfası) biriktirdikleri bir perk\'i şansa bırakmadan doğrudan kullanabilir'],
   ], !!ui.bankedPerksEnabled, (v) => { ui.bankedPerksEnabled = v; actions.route(); }) : null;
@@ -371,25 +415,32 @@ export function renderLobby({ state, actions }) {
   // kurulurken bir hedef oyuncu sayısı SORULMUYOR; oda kaç kişi gelirse gelsin (2-8) katılım
   // kabul eder, host odadaki herkes hazır olunca kendisi başlatır (bkz. renderWaitingRoom).
 
-  const formSection = ui.mode ? el('div', { class: 'lobby-form' }, [
-    state.user && state.user.displayName
-      ? el('div', { class: 'field' }, [
-        el('label', {}, 'Adın'),
-        el('div', { class: 'muted', style: 'padding:8px 0' }, [
-          el('strong', { style: 'color:var(--text)' }, state.user.displayName),
-          ' · hesap adın kullanılacak',
-        ]),
+  const addons = [prepWheelToggle, bankedPerksToggle, tradeRoundToggle].filter(Boolean);
+  const summaryBits = ui.mode === 'join' ? [] : [
+    { live: 'Canlı', blind: 'Kör Draft', wheel: 'Çark Modu' }[ui.mode === 'quick' && ui.draftMode === 'wheel' ? 'live' : ui.draftMode] || 'Canlı',
+    ui.playerPool === 'super-lig' ? 'Süper Lig' : 'Tüm Ligler',
+    ...(ui.mode === 'create' && ui.draftMode !== 'wheel' && ui.prepWheelEnabled ? ['Hazırlık Çarkı'] : []),
+    ...(ui.mode === 'create' && ui.tradeRoundEnabled ? ['Takas'] : []),
+  ];
+  const meName = state.user && state.user.displayName;
+  const formSection = ui.mode ? el('div', { class: `lobby-form lf-v2 mode-${ui.mode}` }, [
+    meName
+      ? el('div', { class: 'lf-host' }, [
+        el('span', { class: 'lf-avatar', 'aria-hidden': 'true' }, String(meName).trim().charAt(0).toLocaleUpperCase('tr')),
+        el('span', { class: 'lf-host-txt' }, [el('b', {}, meName), el('span', {}, 'hesap adın kullanılacak')]),
+        ui.mode === 'create' ? el('span', { class: 'lf-host-tag' }, 'Host') : null,
       ])
       : el('div', { class: 'field' }, [el('label', {}, 'Adın'), nameInput]),
     ui.mode === 'join' ? el('div', { class: 'field' }, [el('label', {}, 'Oda Kodu'), codeInput]) : null,
     draftModePicker,
     playerPoolPicker,
     wheelSegmentPickerEl,
-    prepWheelToggle,
-    bankedPerksToggle,
-    tradeRoundToggle,
-    el('button', { class: 'btn block', onclick: submit },
-      ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Eşleş' : ui.mode === 'bot' ? '🤖 Başla' : 'Katıl'),
+    addons.length ? el('div', { class: 'field lf-field' }, [el('label', {}, 'Eklentiler'), el('div', { class: 'lf-switches' }, addons)]) : null,
+    el('div', { class: 'lf-foot' }, [
+      summaryBits.length ? el('div', { class: 'lf-summary' }, summaryBits.map((s) => el('span', {}, s))) : null,
+      el('button', { class: 'btn block lf-cta', onclick: submit },
+        ui.mode === 'create' ? 'Oda Kur' : ui.mode === 'quick' ? '⚡ Eşleş' : ui.mode === 'bot' ? '🤖 Başla' : 'Katıl'),
+    ]),
     el('button', { class: 'lobby-back', onclick: () => actions.selectLobbyMode(null) }, '← Geri'),
   ]) : null;
 
@@ -1439,10 +1490,18 @@ function questResetText(ts) {
   return h >= 1 ? `${h} sa ${m} dk sonra yenilenir` : `${Math.max(1, m)} dk sonra yenilenir`;
 }
 
+// [KULLANICI İSTEĞİ] Görevler paneli v2: özet halkası + "Hepsini Topla", grup sekmeleri (mobilde
+// uzun liste yerine), kart tipi satırlar (ödül madalyası solda), toplanabilir olanlar üstte.
+// Mobilde (≤560px) panel alttan açılan sayfa (bottom sheet) olur — bkz. CSS.
+let questTab = null;
 export function renderQuestsPanel(state, actions) {
   const q = state.quests;
+  const closeBtn = el('button', {
+    type: 'button', class: 'qp-close', 'aria-label': 'Kapat',
+    onclick: () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })),
+  }, '✕');
   const head = el('div', { class: 'qp-head' }, [
-    el('div', { class: 'qp-title' }, 'Görevler'),
+    el('div', { class: 'qp-head-row' }, [el('div', { class: 'qp-title' }, 'Görevler'), closeBtn]),
     el('div', { class: 'qp-sub' }, 'Hesaplı rakiplerle oynanan maçlar sayılır — bot ve misafir maçları sayılmaz.'),
   ]);
   if (!q || q.loading) return el('div', { class: 'qp-body' }, [head, el('div', { class: 'qp-empty' }, 'Yükleniyor…')]);
@@ -1454,39 +1513,84 @@ export function renderQuestsPanel(state, actions) {
     ])]);
   }
   const list = q.data.quests;
-  const sections = QUEST_GROUPS.map(([group, label, hint]) => {
-    const items = list.filter((x) => (x.group || x.scope) === group);
-    if (!items.length) return null;
-    const resetsAt = items[0].resetsAt;
-    return el('section', { class: 'qp-sec' }, [
-      el('div', { class: 'qp-sec-head' }, [
-        el('span', { class: 'qp-sec-label' }, label),
-        el('span', { class: 'qp-sec-hint' }, resetsAt ? questResetText(resetsAt) : hint),
-      ]),
-      ...items.map((x) => {
-        const pct = Math.round((x.progress / x.target) * 100);
-        const action = x.claimed
-          ? el('span', { class: 'qp-done' }, '✓ Toplandı')
-          : x.claimable
-            ? el('button', { class: 'btn small qp-claim', disabled: q.claiming === x.id ? '' : undefined, onclick: () => actions.claimQuest(x.id) }, 'Topla')
-            : el('span', { class: 'qp-count' }, `${x.progress}/${x.target}`);
-        return el('div', { class: `qp-row ${x.claimable ? 'ready' : ''} ${x.claimed ? 'claimed' : ''}` }, [
-          el('div', { class: 'qp-row-main' }, [
-            el('div', { class: 'qp-row-top' }, [
-              el('span', { class: 'qp-row-title' }, x.title),
-              el('span', { class: 'qp-reward' }, [coinIco(12), fmtCoins(x.reward)]),
-            ]),
-            x.desc ? el('div', { class: 'qp-row-desc' }, x.desc) : null,
-            el('div', { class: 'qp-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(x.target), 'aria-valuenow': String(x.progress) }, [
-              el('i', { style: `width:${pct}%` }),
-            ]),
+  const groups = QUEST_GROUPS
+    .map(([g, label, hint]) => ({ g, label, hint, items: list.filter((x) => (x.group || x.scope) === g) }))
+    .filter((gr) => gr.items.length);
+  if (!groups.length) return el('div', { class: 'qp-body' }, [head, el('div', { class: 'qp-empty' }, 'Şu an aktif görev yok.')]);
+  if (!questTab || !groups.some((gr) => gr.g === questTab)) {
+    questTab = (groups.find((gr) => gr.items.some((x) => x.claimable && !x.claimed)) || groups[0]).g;
+  }
+  const cur = groups.find((gr) => gr.g === questTab);
+  const ready = list.filter((x) => x.claimable && !x.claimed);
+  const done = list.filter((x) => x.claimed || x.claimable).length;
+  const readyTotal = ready.reduce((sum, x) => sum + (x.reward || 0), 0);
+  let root;
+  const rerender = () => { if (root && root.isConnected) root.replaceWith(renderQuestsPanel(state, actions)); };
+
+  const summary = el('div', { class: `qp-summary ${ready.length ? 'has-ready' : ''}` }, [
+    el('div', { class: 'qp-ring', style: `--p:${Math.round((done / list.length) * 100)}`, 'aria-label': `${done} / ${list.length} görev tamamlandı` }, [
+      el('span', {}, `${done}/${list.length}`),
+    ]),
+    el('div', { class: 'qp-summary-txt' }, [
+      el('b', {}, ready.length ? `${ready.length} ödül seni bekliyor` : 'Bekleyen ödül yok'),
+      ready.length
+        ? el('span', { class: 'qp-summary-coin' }, [coinIco(12), fmtCoins(readyTotal)])
+        : el('span', {}, 'Maç oyna, görevleri ilerlet'),
+    ]),
+    ready.length > 1 ? el('button', {
+      type: 'button', class: 'btn small qp-claim-all', disabled: q.claiming ? '' : undefined,
+      onclick: async () => { for (const x of ready) await actions.claimQuest(x.id); },
+    }, 'Hepsini Topla') : null,
+  ]);
+
+  const tabs = el('div', { class: 'qp-tabs', role: 'tablist' }, groups.map((gr) => {
+    const n = gr.items.filter((x) => x.claimable && !x.claimed).length;
+    const on = gr.g === questTab;
+    return el('button', {
+      type: 'button', role: 'tab', class: `qp-tab ${on ? 'on' : ''}`, 'aria-selected': String(on),
+      onclick: () => { if (!on) { questTab = gr.g; rerender(); } },
+    }, [el('span', {}, gr.label), n ? el('i', { class: 'qp-tab-dot' }, String(n)) : null]);
+  }));
+
+  const rank = (x) => (x.claimable && !x.claimed ? 0 : x.claimed ? 2 : 1);
+  const items = [...cur.items].sort((a, b) => rank(a) - rank(b) || (b.progress / b.target) - (a.progress / a.target));
+  const resetsAt = cur.items[0].resetsAt;
+  const cards = items.map((x) => {
+    const prog = Math.min(x.progress, x.target);
+    const pct = Math.round((prog / x.target) * 100);
+    const isReady = x.claimable && !x.claimed;
+    const action = x.claimed
+      ? el('span', { class: 'qp-done', 'aria-label': 'Toplandı' }, '✓')
+      : isReady
+        ? el('button', { type: 'button', class: 'btn small qp-claim', disabled: q.claiming === x.id ? '' : undefined, onclick: () => actions.claimQuest(x.id) }, q.claiming === x.id ? '…' : 'Topla')
+        : null;
+    return el('div', { class: `qp-card ${isReady ? 'ready' : ''} ${x.claimed ? 'claimed' : ''}` }, [
+      el('div', { class: 'qp-medal' }, [coinIco(14), el('b', {}, fmtCoins(x.reward))]),
+      el('div', { class: 'qp-card-main' }, [
+        el('div', { class: 'qp-row-title' }, x.title),
+        x.desc ? el('div', { class: 'qp-row-desc' }, x.desc) : null,
+        el('div', { class: 'qp-prog' }, [
+          el('div', { class: 'qp-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(x.target), 'aria-valuenow': String(prog) }, [
+            el('i', { style: `width:${pct}%` }),
           ]),
-          el('div', { class: 'qp-row-act' }, action),
-        ]);
-      }),
+          el('span', { class: 'qp-count' }, `${prog}/${x.target}`),
+        ]),
+      ]),
+      action,
     ]);
   });
-  return el('div', { class: 'qp-body' }, [head, ...sections]);
+
+  root = el('div', { class: 'qp-body' }, [
+    head, summary, tabs,
+    el('section', { class: 'qp-sec' }, [
+      el('div', { class: 'qp-sec-head' }, [
+        el('span', { class: 'qp-sec-label' }, cur.label),
+        el('span', { class: 'qp-sec-hint' }, resetsAt ? questResetText(resetsAt) : cur.hint),
+      ]),
+      el('div', { class: 'qp-list' }, cards),
+    ]),
+  ]);
+  return root;
 }
 
 // ============================== ARKADAŞLAR ==============================
@@ -2883,7 +2987,9 @@ export function renderDraft({ state, actions }) {
   // dolu/boş mevkiler; bu turun mevkisi hâlâ boşsa amber nabızla işaretli.
   const meDraft = d.players.find((p) => p.clientId === state.clientId);
   if (meDraft && d.formation && state.config?.FORMATIONS?.[d.formation]) {
-    root.appendChild(draftMiniPitch({ state, formation: d.formation, squad: meDraft.squad, focusSlot: round && !resultEvent ? round.slotType : null }));
+    const meRp = (state.room?.players || []).find((p) => p.clientId === state.clientId) || {};
+    const myKit = kitFor(teamById(meRp.teamId), meRp.kitId);
+    root.appendChild(draftMiniPitch({ state, formation: d.formation, squad: meDraft.squad, focusSlot: round && !resultEvent ? round.slotType : null, kit: myKit }));
   }
 
   if (!state.draftUi) state.draftUi = { squadsOpen: false };
@@ -3010,7 +3116,7 @@ function wheelFrameEl(stage, { landed = false, pool = 'orta' } = {}) {
 // [KULLANICI İSTEĞİ] "Başka ne değiştirilebilir" — çark ekranlarının durum bandı artık iki
 // katmanlı: küçük mono etiket (Sıra sende / Canlı / Sonuç) + büyük başlık; sonuç anında bandın
 // rengi çıkan dilimin havuzunu takip ediyor (çark çerçevesiyle aynı tonlar).
-function draftMiniPitch({ state, formation, squad, focusSlot }) {
+function draftMiniPitch({ state, formation, squad, focusSlot, kit }) {
   const slots = state.config.FORMATIONS[formation];
   const used = new Set();
   const filled = slots.map((slot) => {
@@ -3026,8 +3132,12 @@ function draftMiniPitch({ state, formation, squad, focusSlot }) {
     const isFocus = !e && slot === focusSlot && !focusMarked;
     if (isFocus) focusMarked = true;
     const last = e ? String(e.player.name).split(' ').slice(-1)[0] : '';
-    return el('div', { class: `dm-slot ${e ? 'filled' : 'empty'} ${isFocus ? 'focus' : ''} ${e && e.player.isIcon ? 'icon' : ''}`, style: `left:${pos[i].x}%;top:${pos[i].y}%` }, [
-      el('span', { class: `dm-dot pos-${slotGroup(slot)}` }, e ? String(e.player.rating) : slot),
+    // [KULLANICI İSTEĞİ] Seçilen forma mini sahada giyilir; kaleci kendi formasıyla.
+    const wk = e && kit ? (slotGroup(slot) === 'GK' ? GK_KIT : kit) : null;
+    return el('div', { class: `dm-slot ${e ? 'filled' : 'empty'} ${isFocus ? 'focus' : ''} ${e && e.player.isIcon ? 'icon' : ''} ${wk ? 'kit' : ''}`, style: `left:${pos[i].x}%;top:${pos[i].y}%` }, [
+      el('span', { class: `dm-dot pos-${slotGroup(slot)}` }, wk
+        ? [el('span', { class: 'dm-shirt', style: `background:${kitBackground(wk, 4)}` }), el('b', {}, String(e.player.rating))]
+        : (e ? String(e.player.rating) : slot)),
       e ? el('span', { class: 'dm-name' }, last) : null,
     ]);
   });
@@ -4423,9 +4533,10 @@ function createMiniPitch(onGoalImpact, opts = {}) {
         // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — TAKIM TEMASI] Menajerin tuttuğu takımın forması;
         // kaleci kendi (ayrı) rengini korur, takımsız menajerde eski renkler aynen kalır.
         const kit = side === 'home' ? opts.homeKit : opts.awayKit;
-        const kitStyle = kit && p.group !== 'GK' ? ` background:${kitBackground(kit, 2)}; border-color:${kit.colors[1]};` : '';
+        const wk = kit ? (p.group === 'GK' ? GK_KIT : kit) : null;
+        const kitStyle = wk ? ` background:${kitBackground(wk, 2)};` : '';
         const node = el('span', {
-          class: `pitch-dot ${side} group-${p.group} ${kit ? 'kit' : ''}`,
+          class: `pitch-dot ${side} group-${p.group} ${wk ? 'kit shirt' : ''}`,
           title: p.slot,
           style: `left:${x}%; top:${p.y}%;${kitStyle}`,
         });
@@ -4701,9 +4812,9 @@ export function renderMatchPlayback({ state, actions }) {
   const clockLabel = el('div', { class: 'match-clock' }, `${pb.clock}'`);
   const scoreNum = el('span', {}, `${pb.score.home} - ${pb.score.away}`);
   const scoreEl = el('div', { class: 'scoreline' }, [
-    el('div', { class: 'team' }, [kitSwatch(homeKit), homeName]),
+    el('div', { class: 'team home' }, [el('span', { class: 'team-name', title: homeName }, homeName), kitSwatch(homeKit)]),
     el('div', { class: 'score' }, scoreNum),
-    el('div', { class: 'team' }, [awayName, kitSwatch(awayKitT)]),
+    el('div', { class: 'team away' }, [kitSwatch(awayKitT), el('span', { class: 'team-name', title: awayName }, awayName)]),
   ]);
   const logEl = el('div', { class: 'event-log commentary-log' });
 
@@ -5145,8 +5256,14 @@ function renderMatchLineupPitch(lineup, title, kit) {
     const tier = ratingTier(entry.matchRating);
     return el('div', { class: 'pitch-lineup-slot', style: `left:${pos.x}%; top:${pos.y}%` }, [
       el('div', { class: `pitch-lineup-badge pos-${slotGroup(entry.slot)}` }, entry.slot),
-      el('div', { class: `pitch-lineup-chip rating-${tier}` }, [
-        chipKitEl(kit, entry.slot),
+      el('div', { class: `pitch-lineup-chip rating-${tier} ${kit ? 'worn' : ''}` }, kit ? [
+        // [KULLANICI İSTEĞİ] Draft mini sahası gibi: oyuncu formayı giyer, maç puanı formanın üstünde.
+        el('span', { class: 'mlp-shirt' }, [
+          el('span', { class: 'mlp-shirt-bg', style: `background:${kitBackground(slotGroup(entry.slot) === 'GK' ? GK_KIT : kit, 3)}` }),
+          el('b', { class: 'pitch-lineup-matchrating' }, entry.matchRating.toFixed(1)),
+        ]),
+        el('div', { class: 'pitch-lineup-name' }, String(entry.player.name).split(' ').slice(-1)[0]),
+      ] : [
         el('div', { class: 'pitch-lineup-matchrating' }, entry.matchRating.toFixed(1)),
         el('div', { class: 'pitch-lineup-name' }, entry.player.name),
       ]),
