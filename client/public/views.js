@@ -1419,6 +1419,74 @@ export function showReaction(state, { clientId, reactionId }) {
 const KIT_SERIES = [['classic', 'Klasik Seri'], ['pattern', 'Desenli Seri'], ['retro', 'Retro Seri'], ['special', 'Özel Seri']];
 const kitSeriesOf = (kitId) => (KIT_VARIANTS.find((v) => v.id === kitId) || {}).series || 'classic';
 
+// ============================== GÖREVLER ==============================
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] Üst bardaki "Görevler" düğmesinin açılır paneli
+// (app.js toggleQuestsPop bunu #questsPop içine kurar). Veri: GET /api/quests (state.quests).
+const QUEST_SCOPES = [
+  ['daily', 'Günlük', 'Küçük görevler'],
+  ['weekly', 'Haftalık', 'Orta görevler'],
+  ['once', 'Büyük Görevler', 'Tek seferlik'],
+];
+
+function questResetText(ts) {
+  const ms = ts - Date.now();
+  if (ms <= 0) return 'yenileniyor';
+  const h = Math.floor(ms / 3600000);
+  const d = Math.floor(h / 24);
+  if (d >= 1) return `${d} gün ${h % 24} sa sonra yenilenir`;
+  const m = Math.floor((ms % 3600000) / 60000);
+  return h >= 1 ? `${h} sa ${m} dk sonra yenilenir` : `${Math.max(1, m)} dk sonra yenilenir`;
+}
+
+export function renderQuestsPanel(state, actions) {
+  const q = state.quests;
+  const head = el('div', { class: 'qp-head' }, [
+    el('div', { class: 'qp-title' }, 'Görevler'),
+    el('div', { class: 'qp-sub' }, 'Hesaplı rakiplerle oynanan maçlar sayılır — bot ve misafir maçları sayılmaz.'),
+  ]);
+  if (!q || q.loading) return el('div', { class: 'qp-body' }, [head, el('div', { class: 'qp-empty' }, 'Yükleniyor…')]);
+  if (q.error) {
+    return el('div', { class: 'qp-body' }, [head, el('div', { class: 'qp-empty' }, [
+      q.error === 'EMAIL_NOT_VERIFIED' ? 'Görevler için önce e-postanı doğrula.' : 'Görevler yüklenemedi.',
+      ' ',
+      q.error === 'EMAIL_NOT_VERIFIED' ? null : el('button', { class: 'linklike', onclick: () => actions.fetchQuests() }, 'Tekrar dene'),
+    ])]);
+  }
+  const list = q.data.quests;
+  const sections = QUEST_SCOPES.map(([scope, label, hint]) => {
+    const items = list.filter((x) => x.scope === scope);
+    if (!items.length) return null;
+    const resetsAt = items[0].resetsAt;
+    return el('section', { class: 'qp-sec' }, [
+      el('div', { class: 'qp-sec-head' }, [
+        el('span', { class: 'qp-sec-label' }, label),
+        el('span', { class: 'qp-sec-hint' }, resetsAt ? questResetText(resetsAt) : hint),
+      ]),
+      ...items.map((x) => {
+        const pct = Math.round((x.progress / x.target) * 100);
+        const action = x.claimed
+          ? el('span', { class: 'qp-done' }, '✓ Toplandı')
+          : x.claimable
+            ? el('button', { class: 'btn small qp-claim', disabled: q.claiming === x.id ? '' : undefined, onclick: () => actions.claimQuest(x.id) }, 'Topla')
+            : el('span', { class: 'qp-count' }, `${x.progress}/${x.target}`);
+        return el('div', { class: `qp-row ${x.claimable ? 'ready' : ''} ${x.claimed ? 'claimed' : ''}` }, [
+          el('div', { class: 'qp-row-main' }, [
+            el('div', { class: 'qp-row-top' }, [
+              el('span', { class: 'qp-row-title' }, x.title),
+              el('span', { class: 'qp-reward' }, [coinIco(12), fmtCoins(x.reward)]),
+            ]),
+            el('div', { class: 'qp-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(x.target), 'aria-valuenow': String(x.progress) }, [
+              el('i', { style: `width:${pct}%` }),
+            ]),
+          ]),
+          el('div', { class: 'qp-row-act' }, action),
+        ]);
+      }),
+    ]);
+  });
+  return el('div', { class: 'qp-body' }, [head, ...sections]);
+}
+
 // ============================== ARKADAŞLAR ==============================
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Kayıtlı kullanıcılar arası arkadaşlık: kendi
 // kodun + davet linki, kodla istek, gelen/giden istekler, arkadaşların anlık durumu (lobideyse

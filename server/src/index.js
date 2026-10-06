@@ -45,6 +45,8 @@ const { RoomTickets } = require('./auth/RoomTickets');
 const { FriendService } = require('./friends/FriendService');
 const { Presence } = require('./friends/Presence');
 const { registerFriendSockets } = require('./sockets/friendSockets');
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER]
+const { QuestService } = require('./quests/QuestService');
 
 const PORT = process.env.PORT || 3000;
 
@@ -485,7 +487,28 @@ const botController = new BotController(io, roomManager, draftEngine);
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] bkz. friends/Presence.js, friends/FriendService.js.
 const presence = new Presence(roomManager);
 const friendService = new FriendService(db);
-const ctx = { roomManager, draftEngine, tradeEngine, matchmaker, authService, coinService, roomTickets, botController, presence };
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] bkz. quests/QuestService.js, shared/quests.js.
+const questService = new QuestService(db, coinService);
+const questSweepTimer = setInterval(() => { questService.sweep().catch((e) => console.error('[quests] temizlik hatası:', e.message)); }, 6 * 60 * 60 * 1000);
+questSweepTimer.unref?.();
+const ctx = { roomManager, draftEngine, tradeEngine, matchmaker, authService, coinService, roomTickets, botController, presence, questService };
+
+// Görevler — sadece doğrulanmış hesaplar (coin zaten öyle). "Topla" tek kullanımlık (bkz. claim).
+app.get('/api/quests', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  res.json(await questService.list(user.id));
+});
+
+app.post('/api/quests/claim', async (req, res) => {
+  const user = await requireVerifiedUser(req, res);
+  if (!user) return;
+  const { questId } = req.body || {};
+  if (typeof questId !== 'string') return res.status(400).json({ error: 'INVALID_INPUT' });
+  const result = await questService.claim(user.id, questId);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({ ...result, ...(await questService.list(user.id)) });
+});
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Hepsi HTTP (güncel cookie); presence'ı
 // (kim hangi odada) sadece kabul edilmiş arkadaşlar görür, "durumumu gizle" diyen kimseye

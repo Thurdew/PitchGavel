@@ -34,7 +34,8 @@
     "test:security": "node test/phase17-security.test.js",
     "test:bot": "node test/phase18-bot.test.js",
     "test:friends": "node test/phase19-friends.test.js",
-    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:draft:wheel && npm run test:draft:wheel:pity && npm run test:lineup && npm run test:match && npm run test:match:playbacksync && npm run test:multiplayer && npm run test:prepwheel && npm run test:auth && npm run test:rewards && npm run test:bankedperks && npm run test:matchmaking && npm run test:emailverify && npm run test:passwordreset && npm run test:coins && npm run test:cosmetics && npm run test:security && npm run test:bot && npm run test:friends"
+    "test:quests": "node test/phase20-quests.test.js",
+    "test": "npm run test:room && npm run test:draft && npm run test:draft:blind && npm run test:draft:superlig && npm run test:draft:wheel && npm run test:draft:wheel:pity && npm run test:lineup && npm run test:match && npm run test:match:playbacksync && npm run test:multiplayer && npm run test:prepwheel && npm run test:auth && npm run test:rewards && npm run test:bankedperks && npm run test:matchmaking && npm run test:emailverify && npm run test:passwordreset && npm run test:coins && npm run test:cosmetics && npm run test:security && npm run test:bot && npm run test:friends && npm run test:quests"
   },
   "license": "UNLICENSED",
   "dependencies": {

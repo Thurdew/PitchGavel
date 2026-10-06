@@ -148,6 +148,18 @@ const SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_friendships_b ON friendships(user_b);
 
+  -- [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] Görev ilerlemesi; period günlükte 'D<tarih>',
+  -- haftalıkta 'W<pazartesi>', tek seferlikte 'O'. Bkz. quests/QuestService.js.
+  CREATE TABLE IF NOT EXISTS quest_progress (
+    user_id    INTEGER NOT NULL,
+    quest_id   TEXT NOT NULL,
+    period     TEXT NOT NULL,
+    progress   INTEGER NOT NULL DEFAULT 0,
+    claimed_at INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, quest_id, period)
+  );
+
   -- Tek yönlü engel: blocker, blocked'dan istek almaz ve ona görünmez.
   CREATE TABLE IF NOT EXISTS user_blocks (
     blocker_id INTEGER NOT NULL,
