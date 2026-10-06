@@ -103,7 +103,9 @@ class CoinService {
   async awardRoomResult(fixtures, accounts, allClientIds) {
     const day = todayUTC();
     const out = {};
-    for (const id of allClientIds) out[id] = { earned: 0, notes: new Set(), lines: [] };
+    // [GÖREVLER] `events`: bu kurallara göre GEÇERLİ sayılan maçlar ({ gf, ga }) — görev ilerlemesi
+    // bunlardan yazılır (bkz. quests/QuestService.js). Günlük tavan görevleri durdurmaz.
+    for (const id of allClientIds) out[id] = { earned: 0, notes: new Set(), lines: [], events: [] };
 
     for (const fx of fixtures || []) {
       for (const m of [fx.match1, fx.match2]) {
@@ -139,6 +141,7 @@ class CoinService {
           if (!o) continue;
           const outcome = s.gf > s.ga ? 'win' : s.gf < s.ga ? 'loss' : 'draw';
           if (sameNetwork && outcome !== 'win') { o.notes.add(NOTE.SAME_NETWORK); continue; }
+          o.events.push({ gf: s.gf, ga: s.ga });
 
           let amount = COIN_REWARDS[outcome];
           let bonus = 0;

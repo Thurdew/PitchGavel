@@ -2991,13 +2991,11 @@ button:disabled, .btn:disabled {
   .tb-link { padding: 0 10px; }
   .tb-link.has-dot::after { left: auto; right: 5px; }
 }
-/* Odadayken üst bara "Odadan Çık" + oda kodu + isim çipi eklenir — etiketler daha geniş ekranda
-   da gizlenmezse sağdaki çiplerle çakışıyordu (bkz. app.js route() `in-room`). */
-@media (max-width: 1500px) {
-  body.in-room .tb-link .tb-label { display: none; }
-  body.in-room .tb-link { padding: 0 10px; }
-  body.in-room .tb-link.has-dot::after { left: auto; right: 5px; }
-}
+/* Üst bar sığmıyorsa (oda kodu/isim çipleri, uzun hesap adı, yeni düğmeler) sadece ikon — genişlik
+   eşiği yerine gerçek taşma ölçülür (bkz. app.js fitTopbar, body.tb-compact). */
+body.tb-compact .tb-link .tb-label { display: none; }
+body.tb-compact .tb-link { padding: 0 10px; }
+body.tb-compact .tb-link.has-dot::after { left: auto; right: 5px; }
 @media (max-width: 900px) {
   .tb-chip.who, .tb-acct-name { display: none; }
 }
@@ -4486,3 +4484,50 @@ button:disabled, .btn:disabled {
   .fr-row.incoming .fr-row-actions { width: 100%; padding-left: 48px; }
   .fr-strip-name { max-width: 45%; }
 }
+
+/* ============================== GÖREVLER ============================== */
+/* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] Üst bar düğmesi + açılır panel (app.js toggleQuestsPop,
+   views.js renderQuestsPanel). */
+.tb-link .tb-count {
+  display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; margin-left: -2px;
+  border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+}
+.tb-link .tb-count[hidden] { display: none; }
+.tb-link.has-claim { color: var(--text); }
+.tb-link.has-claim .tb-ico, .tb-link.has-claim svg { color: var(--accent); }
+@media (max-width: 1180px) {
+  .tb-link .tb-count { position: absolute; top: 1px; right: 0; margin: 0; min-width: 15px; height: 15px; font-size: 9.5px; box-shadow: 0 0 0 2px #0c1522; }
+}
+body.tb-compact .tb-link .tb-count { position: absolute; top: 1px; right: 0; margin: 0; min-width: 15px; height: 15px; font-size: 9.5px; box-shadow: 0 0 0 2px #0c1522; }
+
+.quests-pop {
+  display: none; position: fixed; z-index: 70; max-height: min(620px, calc(100vh - 90px)); overflow-y: auto;
+  background: #0e1826; border: 1px solid rgba(255, 255, 255, .12); border-top: 3px solid var(--accent); border-radius: 12px; box-shadow: var(--shadow-lg);
+}
+.quests-pop.open { display: block; animation: pop-in .18s var(--ease); }
+.qp-body { display: flex; flex-direction: column; }
+.qp-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--border); }
+.qp-title { font-family: var(--font-display); font-weight: 900; font-size: 24px; line-height: 1; text-transform: uppercase; letter-spacing: .3px; }
+.qp-sub { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--text-muted); }
+.qp-empty { padding: 18px 16px; font-size: 13px; color: var(--text-muted); }
+.qp-sec { padding: 10px 16px 6px; border-bottom: 1px solid var(--border); }
+.qp-sec:last-child { border-bottom: 0; padding-bottom: 12px; }
+.qp-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.qp-sec-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-faint); }
+.qp-sec-hint { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.qp-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.qp-row-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.qp-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.qp-row-title { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qp-reward { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--coin); }
+.qp-bar { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+.qp-bar i { display: block; height: 100%; background: var(--text-faint); border-radius: 3px; transition: width .3s var(--ease); }
+.qp-row.ready .qp-bar i { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+.qp-row.claimed .qp-bar i { background: var(--success); }
+.qp-row.claimed .qp-row-title, .qp-row.claimed .qp-reward { color: var(--text-faint); }
+.qp-row-act { flex: 0 0 74px; display: flex; justify-content: flex-end; }
+.qp-count { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.qp-done { font-size: 11.5px; font-weight: 600; color: var(--success); white-space: nowrap; }
+.qp-claim { padding: 7px 12px; }
+.qp-row-desc { margin-top: -3px; font-size: 11.5px; line-height: 1.4; color: var(--text-muted); }
+.qp-row.claimed .qp-row-desc { color: var(--text-faint); }

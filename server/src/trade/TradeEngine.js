@@ -22,6 +22,7 @@
 const { STATUS } = require('../rooms/RoomManager');
 const { buildableFormations } = require('../lineup/lineup');
 const { TRADE_ROUND_DURATION_SECONDS, TRADE_MAX_PER_PAIR } = require('../shared/gameConfig');
+const { bumpQuest } = require('../quests/questLog');
 
 let offerSeq = 0;
 
@@ -271,6 +272,9 @@ class TradeEngine {
       pairCount: room.trade.pairCounts[key],
     };
     room.trade.completed.unshift(record);
+    // [GÖREVLER, NİŞ] İki taraf da "takas yap" görevine sayılır (maç sonunda, geçerliyse).
+    bumpQuest(room, from.clientId, 'trade');
+    bumpQuest(room, to.clientId, 'trade');
 
     // İlk onay kazanır: bu iki oyuncuyu içeren TÜM diğer teklifler iptal.
     const affected = new Set([offer.give.playerId, offer.get.playerId]);

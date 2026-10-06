@@ -268,6 +268,26 @@ async function e2e() {
   assert.strictEqual(me.json.user.coins, aH.balance, 'bakiye DB\'de de güncel olmalı');
   console.log('[test15] maç sonu coins:awarded + bakiye ✅ host:', aH.earned, 'guest:', aG.earned, 'notlar:', aH.notes);
 
+  // [GÖREVLER] Aynı geçerlilik kuralları: aynı ağda sadece galibiyetler göreve sayılır.
+  assert(!('events' in aH), 'iç olay listesi istemciye gitmemeli');
+  for (const [acc, id, award] of [[H, hostId, aH], [G, guestId, aG]]) {
+    const w = winsOf(id);
+    assert.strictEqual(award.questProgress, w > 0);
+    const q = (await http('GET', '/api/quests', acc.cookie)).json.quests;
+    const byId = Object.fromEntries(q.map((x) => [x.id, x]));
+    assert.strictEqual(byId.w_win5.progress, Math.min(w, 5), JSON.stringify(byId.w_win5));
+    assert.strictEqual(byId.w_play10.progress, Math.min(w, 10), 'aynı ağda kaybedilen maç oynanan sayılmaz');
+    assert.strictEqual(byId.d_win1.claimable, w > 0);
+    if (w > 0) {
+      const before = (await http('GET', '/api/auth/me', acc.cookie)).json.user.coins;
+      const c = await http('POST', '/api/quests/claim', acc.cookie, { questId: 'd_win1' });
+      assert.strictEqual(c.json.reward, 60);
+      assert.strictEqual(c.json.balance, before + 60);
+      assert.strictEqual((await http('POST', '/api/quests/claim', acc.cookie, { questId: 'd_win1' })).json.error, 'ALREADY_CLAIMED');
+    }
+  }
+  console.log('[test15] görev ilerlemesi maç sonundan yazılıyor + topla ✅');
+
   host.close(); guest.close();
   server.close();
   console.log('[test15] (B) uçtan uca testi tamam');

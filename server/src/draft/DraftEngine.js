@@ -26,6 +26,12 @@ const {
   pickWheelRatingCandidates, pickWheelIconCandidates, pickWheelFieldCandidates, spinWheelSegment,
 } = require('./pool');
 const { STATUS } = require('../rooms/RoomManager');
+// [GÖREVLER, NİŞ] bkz. quests/questLog.js.
+const { resetQuestLog, bumpQuest } = require('../quests/questLog');
+// Kör draftta "kıl payı" galibiyet: ikinci teklifi bundan AZ farkla geçmek (140'a karşı 145 gibi).
+const QUEST_NARROW_MARGIN = 10;
+// Draftı bu kadar ya da daha fazla bütçeyle bitirmek ("Kumbaracı", canlı/kör).
+const QUEST_SAVER_BUDGET = 300;
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ÇARK MODU v2] Bu segmentler "seçim gerektirmiyor" —
 // sonuç spin sonrası otomatik uygulanır (bkz. DraftEngine.resolveAutoWheelOutcome).
@@ -455,6 +461,7 @@ class DraftEngine {
     const formation = formationKeys[Math.floor(Math.random() * formationKeys.length)];
     room.formation = formation;
     room.status = STATUS.DRAFT;
+    resetQuestLog(room);
 
     for (const p of room.players) {
       p.slotsNeeded = slotCounts(formation);
@@ -1188,7 +1195,8 @@ class DraftEngine {
     const cap = personalMaxBid(bidder);
     if (amount > cap) return { error: 'EXCEEDS_PERSONAL_CAP', cap };
 
-    round.bids.set(clientId, { amount, at: Date.now() });
+    // [GÖREVLER, NİŞ] `late`: anti-snipe penceresinde verilen teklif ("son saniyede kap" görevi).
+    round.bids.set(clientId, { amount, at: Date.now(), late: round.deadline - Date.now() < ANTI_SNIPE_WINDOW_MS });
     round.highestBid = amount;
     round.highestBidderClientId = clientId;
 
@@ -1261,6 +1269,14 @@ class DraftEngine {
     const winnerBid = round.bids.get(winnerId);
     const price = winnerBid ? winnerBid.amount : MIN_PLAYER_PRICE;
 
+    // [GÖREVLER, NİŞ] Rakipli turda (en az 2 katılımcı) en düşük fiyata kapmak; ve rakibin
+    // teklifini QUEST_NARROW_MARGIN'dan az farkla geçmek.
+    if (winnerBid && round.participantIds.length >= 2) {
+      if (winnerBid.amount <= MIN_PLAYER_PRICE) bumpQuest(room, winnerId, 'blindMin');
+      const secondBid = ranking[1] ? round.bids.get(ranking[1]) : null;
+      if (secondBid && winnerBid.amount - secondBid.amount < QUEST_NARROW_MARGIN) bumpQuest(room, winnerId, 'blindNarrow');
+    }
+
     this.assignPlayer(room, winner, round.main, type, price, 'blind_auction_won');
 
     this.emitDraft(room, {
@@ -1307,6 +1323,9 @@ class DraftEngine {
     const winnerBid = round.bids.get(winnerId);
     const price = winnerBid ? winnerBid.amount : MIN_PLAYER_PRICE;
 
+    // [GÖREVLER, NİŞ] Rakipli turda (en az 2 teklif) son saniyelerde verilen teklifle kazanmak.
+    if (winnerBid && winnerBid.late && round.bids.size >= 2) bumpQuest(room, winnerId, 'liveSnipe');
+
     this.assignPlayer(room, winner, round.main, type, price, 'auction_won');
 
     this.emitDraft(room, {
@@ -1345,11 +1364,17 @@ class DraftEngine {
     roomPlayer.squad.push({ slot: slotType, price, reason, player });
     roomPlayer.slotsNeeded[slotType] = Math.max(0, (roomPlayer.slotsNeeded[slotType] || 0) - 1);
     room.draft.history.push({ clientId: roomPlayer.clientId, slotType, price, reason, playerId: player.id, at: Date.now() });
+    if (reason === 'wheel_stolen') bumpQuest(room, roomPlayer.clientId, 'wheelSteal');
   }
 
   finishDraft(room) {
     room.status = STATUS.SQUAD_SELECT;
     room.draft.round = null;
+    // [GÖREVLER, NİŞ] Draft sonu kadro görevleri (takas turundan önceki kadro).
+    for (const p of room.players) {
+      if (p.squad.filter((e) => e.player && e.player.isIcon).length >= 2) bumpQuest(room, p.clientId, 'icons2');
+      if (room.draftMode !== 'wheel' && p.budget >= QUEST_SAVER_BUDGET) bumpQuest(room, p.clientId, 'saver');
+    }
     this.emitState(room);
     this.emitDraft(room, { event: { type: 'draft_complete' } });
     this.io.to(room.code).emit('draft:complete', {

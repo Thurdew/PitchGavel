@@ -2,7 +2,7 @@ import { el, toast, confirmDialog } from './helpers.js';
 // [KULLANICI İSTEĞİ] ses + haptik geri bildirim (dosyasız, WebAudio) — bkz. sfx.js
 import { sfx } from './sfx.js';
 import { applyTeamTheme } from './teams.js';
-import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderFriends, renderSharedResult, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
+import { renderLobby, renderWaitingRoom, renderPrepWheel, renderDraft, renderTradeRound, renderLineup, renderMatch, renderMatchPlayback, renderPlayerDatabase, renderHowToPlay, renderLogin, renderDailyReward, renderStore, renderFriends, renderQuestsPanel, renderSharedResult, renderVerifyGate, isPrepWheelSpinActive, reactionDock, showReaction } from './views.js';
 import { cosmeticOf, playStampSound } from './cosmetics.js';
 // [YASAL — KVKK / ÇEREZ ONAYI] bkz. legal.js
 import { renderPrivacy, renderNotFound, mountConsentBanner, resetConsent } from './legal.js';
@@ -197,6 +197,9 @@ const dailyRewardNavBtn = document.getElementById('dailyRewardNavBtn');
 const storeNavBtn = document.getElementById('storeNavBtn');
 // [KULLANICI İSTEĞİ] "Arkadaşlar headerda da olsun" — Günlük Ödül gibi sadece giriş yapılmışken görünür.
 const friendsNavBtn = document.getElementById('friendsNavBtn');
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] "Headera görevler eklensin, ordan hem gözüksün
+// hem tamamlanınca topla seçeneği gelsin." Sayfa değil, açılır panel (#questsPop).
+const questsNavBtn = document.getElementById('questsNavBtn');
 
 // [KULLANICI İSTEĞİ, "SEO uyumlu yap, URL'leri ayarla"] Bu SPA hiç URL değiştirmiyordu — oyuncu
 // veritabanı sayfası da dahil her şey "/" üzerinde sadece `state.page` ile ayrışıyordu. Bu hem
@@ -694,6 +697,22 @@ function updateAuthNav() {
   }
 }
 
+// Üst bar sığmıyorsa (nav düğmeleri sağdaki çiplere değiyorsa) düğme yazılarını gizle. Önce tam
+// hali ölçülür ki pencere genişleyince yazılar geri gelsin. Sabit bir genişlik eşiği hesap adı
+// uzunluğunu, oda çiplerini ve yeni düğmeleri bilemiyordu. 1180 px altı zaten CSS'te ikon.
+function fitTopbar() {
+  const nav = document.querySelector('.topbar .tb-nav');
+  const right = document.querySelector('.topbar .topbar-right');
+  if (!nav || !right) return;
+  document.body.classList.remove('tb-compact');
+  // Nav kutusu flex'te daralıp içeriği taşırabiliyor — kutunun değil, görünen son düğmenin kenarı.
+  let navRight = nav.getBoundingClientRect().right;
+  for (const b of nav.children) if (b.offsetParent) navRight = Math.max(navRight, b.getBoundingClientRect().right);
+  const overlap = nav.scrollWidth > nav.clientWidth + 1 || navRight + 12 > right.getBoundingClientRect().left;
+  document.body.classList.toggle('tb-compact', overlap);
+}
+window.addEventListener('resize', fitTopbar); document.fonts?.ready.then(fitTopbar);
+
 function updateTopbar() {
   bindUiClickSound();
   ensureSfxButton();
@@ -822,12 +841,13 @@ function route() {
   friendsNavBtn.classList.toggle('active', state.page === 'friends');
   // Bekleyen arkadaşlık isteği varsa amber nokta (eskiden avatardaydı).
   friendsNavBtn.classList.toggle('has-dot', friendRequestCount() > 0);
+  syncQuestsNav();
   dailyRewardNavBtn.classList.toggle('active', state.page === 'dailyReward');
   // Bugünkü ücretsiz çevirme henüz kullanılmadıysa küçük amber nokta.
   dailyRewardNavBtn.classList.toggle('has-dot', !!(state.user && state.dailyReward && state.dailyReward.spinsUsedToday === 0));
   // Zaten ana sayfadaysak (oda yoksa) ayrılacak bir şey yok — buton gizlensin.
   homeNavBtn.style.display = state.room ? '' : 'none';
-  document.body.classList.toggle('in-room', !!state.room);
+  fitTopbar();
 
   function finish() {
     restoreFocus(savedFocus);
@@ -1336,6 +1356,7 @@ const actions = {
     state.user = null;
     state.store = null; state.storeError = null; // hesap değişti — önceki kullanıcının mağaza verisi kalmasın
     state.friends = null; state.friendsUi = null;
+    state.quests = null;
     syncPresence._done = null;
     socket.emit('presence:bye', {}, () => {});
     route();
@@ -1367,6 +1388,46 @@ const actions = {
     } finally {
       friendsFetchBusy = false;
     }
+    route();
+  },
+  // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] GET /api/quests. `announce`: maç sonrası —
+  // yeni tamamlanan görev(ler) için tek bir bildirim.
+  async fetchQuests({ announce = false } = {}) {
+    if (!state.user || !state.user.emailVerified || questSpoilerHold()) return;
+    if (questsFetchBusy) return;
+    questsFetchBusy = true;
+    const before = state.quests && state.quests.data ? new Set(state.quests.data.quests.filter((q) => q.claimable).map((q) => q.id)) : null;
+    if (!state.quests) state.quests = { loading: true };
+    try {
+      const r = await fetch('/api/quests');
+      const body = await r.json();
+      state.quests = r.ok ? { data: body } : { error: body.error || 'SERVER_ERROR' };
+      if (r.ok && announce && before) {
+        const fresh = body.quests.filter((q) => q.claimable && !before.has(q.id));
+        if (fresh.length) toast(fresh.length === 1 ? `🏁 Görev tamamlandı: ${fresh[0].title} — ödülünü topla!` : `🏁 ${fresh.length} görev tamamlandı — ödüllerini topla!`, 'success');
+      }
+    } catch (e) {
+      state.quests = { error: 'NETWORK' };
+    } finally {
+      questsFetchBusy = false;
+    }
+    syncQuestsNav();
+  },
+  async claimQuest(questId) {
+    if (!state.quests || !state.quests.data || state.quests.claiming) return;
+    state.quests.claiming = questId;
+    syncQuestsNav();
+    const res = await friendPost('/api/quests/claim', { questId });
+    if (res.error) {
+      state.quests.claiming = null;
+      toast(QUEST_ERRORS[res.error] || res.error);
+      await actions.fetchQuests();
+      return;
+    }
+    state.quests = { data: { quests: res.quests, claimableCount: res.claimableCount } };
+    if (state.user && typeof res.balance === 'number') state.user.coins = res.balance;
+    sfx.play('win');
+    toast(`+${res.reward} coin toplandı!`, 'success');
     route();
   },
   async friendRequest(code) {
@@ -1578,6 +1639,7 @@ function syncRoomAccount() {
 // çevrimiçi görsün ve `friends:changed` sinyali gelsin. syncRoomAccount ile AYNI bilet deseni;
 // anahtar socket.id içerdiği için yeniden bağlanınca (yeni socket) kendiliğinden tekrarlanır.
 let friendsFetchBusy = false;
+let questsFetchBusy = false;
 const FRIEND_ERRORS = {
   INVALID_CODE: 'Arkadaş kodu 8 karakter olmalı (ör. ABCD-1234).',
   NOT_FOUND: 'Bu koda sahip bir oyuncu bulunamadı.',
@@ -1621,8 +1683,91 @@ function syncPresence() {
   })();
   // İlk bağlanışta istek rozetinin dolması için listeyi de bir kez çek.
   if (!state.friends) actions.fetchFriends(true);
+  // Görev rozeti de girişte dolsun.
+  if (!state.quests) actions.fetchQuests();
 }
 socket.on('friends:changed', () => { actions.fetchFriends(true); });
+
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] Üst bar paneli. Panel topbar'ın DIŞINDA
+// (body'de, position: fixed) — nav'ın kendi kutusu dar, açılır içerik taşmasın. route() appRoot'u
+// sıfırlar ama paneli değil; veri değişince açıksa yeniden çizilir (syncQuestsNav).
+let questsPop = null;
+let questsPopBound = false;
+const QUEST_ERRORS = {
+  NOT_COMPLETED: 'Bu görev henüz tamamlanmadı.',
+  ALREADY_CLAIMED: 'Bu ödülü zaten topladın.',
+  UNKNOWN_QUEST: 'Bu görev artık yok.',
+  EMAIL_NOT_VERIFIED: 'Önce e-postanı doğrulamalısın.',
+};
+function questsClaimable() {
+  return (state.quests && state.quests.data && state.quests.data.claimableCount) || 0;
+}
+function positionQuestsPop() {
+  if (!questsPop) return;
+  const r = questsNavBtn.getBoundingClientRect();
+  const w = Math.min(380, window.innerWidth - 16);
+  const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8));
+  questsPop.style.width = `${w}px`;
+  questsPop.style.left = `${left}px`;
+  questsPop.style.top = `${Math.round(r.bottom + 8)}px`;
+}
+function closeQuestsPop() {
+  if (!questsPop || !questsPop.classList.contains('open')) return;
+  questsPop.classList.remove('open');
+  questsNavBtn.setAttribute('aria-expanded', 'false');
+}
+function toggleQuestsPop() {
+  if (!questsPop) {
+    questsPop = el('div', { id: 'questsPop', class: 'quests-pop', role: 'dialog', 'aria-label': 'Görevler', onclick: (e) => e.stopPropagation() });
+    document.body.appendChild(questsPop);
+  }
+  if (!questsPopBound) {
+    questsPopBound = true;
+    document.addEventListener('click', closeQuestsPop);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeQuestsPop(); });
+    window.addEventListener('resize', closeQuestsPop);
+  }
+  const open = !questsPop.classList.contains('open');
+  closeAcctMenu();
+  if (sfxPop) sfxPop.classList.remove('open');
+  questsPop.classList.toggle('open', open);
+  questsNavBtn.setAttribute('aria-expanded', String(open));
+  if (open) {
+    positionQuestsPop();
+    actions.fetchQuests();
+    questsPop._key = null;
+    renderQuestsPopIfChanged();
+  }
+}
+// Panel sadece görev verisi değişince yeniden çizilir — route() draft sırasında sık çalışıyor,
+// her seferinde çizmek tıklamaları yutardı.
+function renderQuestsPopIfChanged() {
+  if (!questsPop || !questsPop.classList.contains('open')) return;
+  const key = JSON.stringify(state.quests || null);
+  if (questsPop._key === key) return;
+  questsPop._key = key;
+  questsPop.replaceChildren(renderQuestsPanel(state, actions));
+}
+// Üst bar düğmesi: görünürlük + toplanabilir sayı rozeti; panel açıksa içeriğini tazeler.
+function syncQuestsNav() {
+  const show = !!(state.user && state.user.emailVerified);
+  questsNavBtn.style.display = show ? '' : 'none';
+  const n = show ? questsClaimable() : 0;
+  const badge = questsNavBtn.querySelector('.tb-count');
+  badge.hidden = n === 0;
+  badge.textContent = n > 9 ? '9+' : String(n);
+  questsNavBtn.classList.toggle('has-claim', n > 0);
+  questsNavBtn.title = n > 0 ? `Görevler — ${n} ödül toplanmayı bekliyor` : 'Görevler — tamamla, coin topla';
+  if (!show) closeQuestsPop();
+  renderQuestsPopIfChanged();
+}
+// Maç anlatımı bitmeden (coin ödülü henüz açıklanmadan) görev ilerlemesini çekmek sonucu
+// önceden söylerdi — o sırada son bilinen veri gösterilir, ödül açıklanınca tazelenir.
+function questSpoilerHold() {
+  const a = state.coinAward;
+  return !!(a && !a.revealed && a.questProgress);
+}
+questsNavBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleQuestsPop(); });
 // Arkadaşların oda durumları için yoklama: sadece ana sayfa/arkadaşlar sayfasındayken ve sekme
 // görünürken (presence anlık push etmiyor — oda durumu çok sık değişiyor, yoklama yeterli).
 setInterval(() => {
@@ -1649,6 +1794,8 @@ function revealCoinAwardIfReady() {
     sfx.play('win');
     toast(`+${a.earned} coin kazandın!`);
   }
+  // [GÖREVLER] Anlatım bitti — ilerleme artık söylenebilir; yeni tamamlanan varsa haber ver.
+  if (a.questProgress) actions.fetchQuests({ announce: true });
 }
 
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4] Asıl oda verisi zaten

@@ -127,11 +127,25 @@ function registerMatchSockets(io, socket, ctx) {
     for (const p of room.players) if (p.account) accounts[p.clientId] = p.account;
     if (Object.keys(accounts).length === 0) return;
     ctx.coinService.awardRoomResult(result.fixtures, accounts, room.players.map((p) => p.clientId))
-      .then((awards) => {
+      .then(async (awards) => {
+        // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] Geçerli maçlar görev ilerlemesine yazılır
+        // (coin ödülüyle aynı kurallar). İstemci ilerlemeyi anlatım bitince çeker (spoiler yok).
+        // [GÖREVLER, NİŞ] Maç olaylarına oda modu/havuzu eklenir; o odadaki draft/takas olayları
+        // (room.questLog) sadece en az bir geçerli maçı olan oyuncu için yazılır.
+        for (const p of room.players) {
+          const award = awards[p.clientId];
+          if (!award || !p.account || !award.events.length || !ctx.questService) continue;
+          const events = award.events.map((e) => ({ ...e, draftMode: room.draftMode, playerPool: room.playerPool }));
+          const draftLog = room.questLog ? room.questLog[p.clientId] : null;
+          try { await ctx.questService.recordMatches(p.account.userId, events, Date.now(), draftLog); } catch (e) {
+            console.error('[quests] ilerleme yazılamadı:', e.message);
+          }
+        }
         for (const p of room.players) {
           const award = awards[p.clientId];
           if (!award || !p.socketId) continue;
-          io.to(p.socketId).emit('coins:awarded', { resultId: result.resultId, ...award });
+          const { events, ...publicAward } = award;
+          io.to(p.socketId).emit('coins:awarded', { resultId: result.resultId, ...publicAward, questProgress: events.length > 0 });
         }
       })
       .catch((e) => console.error('[coins] maç ödülü yazılamadı:', e.message));
