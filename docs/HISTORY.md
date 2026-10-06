@@ -829,3 +829,22 @@ Kullanıcı kayıtlı kullanıcılar arasında arkadaş ekleme istedi ("biri oda
 - Henüz yok (Faz C): odadan arkadaşı davet etme bildirimi, maç sonu "arkadaş ekle" düğmesi.
 
 Etkilenen dosyalar: `server/src/db/db.js`, `server/src/friends/FriendService.js` (yeni), `server/src/friends/Presence.js` (yeni), `server/src/sockets/friendSockets.js` (yeni), `server/src/index.js`, `server/test/phase19-friends.test.js` (yeni), `server/package.json`, `client/public/app.js`, `client/public/views.js`, `client/public/styles.css`, `claude.md`.
+
+### 2026-10-06 — Bağımlılık güvenlik güncellemesi — [KULLANICI İSTEĞİ]
+
+Canlıya alırken `npm ci` 3 açık bildirdi, kullanıcı bakılmasını istedi. Üçü de dolaylı bağımlılık, `npm audit fix` ile sürüm atlamadan (sadece `package-lock.json`) kapandı:
+- `engine.io` 6.6.9 → 6.6.11 (yüksek): protokol sürümü uyuşmazlığıyla DoS (GHSA-2gc4-cqfq-p2gv). Socket sunucusu herkese açık olduğu için gerçekten ilgili.
+- `proxy-addr` 2.0.7 → 2.0.8 (kritik): IPv4-mapped IPv6 trust subnet ile IP sahteciliği (GHSA-jqcg-44mw-7w3h). Biz `trust proxy 1` (hop sayısı) kullandığımız için büyük ihtimalle etkilenmiyorduk, yine de güncellendi. Rate limiter'lar `req.ip`'ye dayandığı için önemli.
+- `qs` → 6.16.0 (orta): dizi limiti aşımı ve DoS (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g).
+
+Doğrulama: `npm audit` 0 açık; 22 test dosyası tek tek yeşil.
+
+Etkilenen dosyalar: `server/package-lock.json`.
+
+### 2026-10-06 — Logo her zaman ana sayfaya götürüyor — [KULLANICI İSTEĞİ]
+
+"PitchGavel logosuna tıklayınca direkt ana sayfaya at, oda oluştura değil." Kök neden: logo `navigateToPage(null)` çağırıyordu ama `state.lobbyUi.mode` (son seçilen Oda Kur/Katıl/Hızlı Eşleş/Bot) kalıyordu, `renderLobby` o formu açıyordu. `app.js goToHomePage()` modu sıfırlayıp `/`'e gider; logo ve `leaveRoom` (Odadan Çık) bunu kullanıyor. Sayfalardaki "← Geri dön" düğmeleri bilerek değişmedi (son ekrana dönmeleri doğal).
+
+Doğrulama: headless Chrome'da `/canli-arttirma` (Oda Kur), Odaya Katıl ve Bilgisayara Karşı formlarındayken logoya tıklanınca dört kartlı ana sayfa geliyor, konsolda hata yok.
+
+Etkilenen dosyalar: `client/public/app.js`.
