@@ -516,6 +516,8 @@ export function renderLobby({ state, actions }) {
     el('h1', { class: 'lobby-title' }, ['Kendi ', el('span', {}, '11'), '\'ini kur.']),
     el('p', { class: 'lobby-sub' }, 'Rakibinle canlı açık arttırmada kadro topla, formasyonunu seç, ev sahibi + deplasman iki maçlık seride üstünlüğü kanıtla.'),
     modePicker,
+    // [ARKADAŞLAR] Çevrimiçi arkadaşlar + lobideyse tek tıkla Katıl (bkz. friendsStrip).
+    friendsStrip(state, actions),
     featureStrip,
   ]);
 
@@ -1094,9 +1096,12 @@ const dailyRewardSpinStartedAt = new Map();
 const dailyRewardSpinScheduled = new Set();
 
 function dailyRewardSegmentsFor(state) {
-  // Sunucudaki RewardsService.REWARD_SEGMENTS ile AYNI filtre (pool==='iyi').
+  // Sunucudaki RewardsService.REWARD_SEGMENTS (iyi perk'ler + coin dilimleri), /api/config'ten.
+  if (state.config?.DAILY_REWARD_SEGMENTS) return state.config.DAILY_REWARD_SEGMENTS;
   return (state.config?.PREP_WHEEL_SEGMENTS || []).filter((s) => s.pool === 'iyi');
 }
+// Kazanılan dilimin başlığı: coin ise "50 Coin", perk ise etiketin emojisiz adı.
+const dailyWinTitle = (perk) => `🎯 ${splitPerkLabel(perk.label).name} kazandın!`;
 const splitPerkLabel = (label) => {
   const m = String(label || '').match(/^(\p{Extended_Pictographic}️?)\s*(.*)$/u);
   return m ? { emoji: m[1], name: m[2] } : { emoji: '🎁', name: label };
@@ -1118,7 +1123,7 @@ function dailyRewardHeader(extra) {
   return el('div', { class: 'dr-head' }, [
     el('div', { class: 'dr-head-text' }, [
       el('h1', { class: 'dr-title' }, '🎁 Günlük Ödül'),
-      el('p', { class: 'dr-lead' }, 'Her gün ücretsiz bir kez çarkı çevir, ileride bir odada kullanabileceğin perk\'ler biriktir. Kazandığın perk her zaman olumlu bir şey — kötü bir sonuç çıkmaz.'),
+      el('p', { class: 'dr-lead' }, 'Her gün ücretsiz bir kez çarkı çevir: ya bir odada kullanabileceğin bir perk ya da mağazada harcayabileceğin coin kazanırsın. Çarkta kötü bir sonuç yok.'),
     ]),
     extra || null,
   ]);
@@ -1166,6 +1171,15 @@ export function renderDailyReward({ state, actions }) {
     state.dailyRewardLastWin = { ...spin.perk, spinKey: `daily-${spin.startedAt}` };
     state.dailyRewardSpin = null;
   }
+  // Coin kazanıldıysa yeni bakiye, çark durup sonuç açıklanınca üst bara/mağazaya yansır
+  // (dönerken gösterilirse sonucu önceden ele verirdi).
+  const revealed = spin && !spinActive ? spin.perk
+    : (spinActive && spinElapsed >= WHEEL_SPIN_DURATION_MS ? spin.perk : null);
+  if (revealed && typeof revealed.balance === 'number' && state.user && state.user.coins !== revealed.balance) {
+    state.user.coins = revealed.balance;
+    if (state.store) state.store.balance = revealed.balance;
+    setTimeout(() => actions.route(), 0);
+  }
   const lastWin = state.dailyRewardLastWin;
 
   root.appendChild(dailyRewardHeader(el('div', { class: 'dr-reset' }, [
@@ -1183,20 +1197,21 @@ export function renderDailyReward({ state, actions }) {
       setTimeout(() => actions.route(), PREP_WHEEL_SPIN_HOLD_MS - spinElapsed + 30);
       if (!revealReady) setTimeout(() => actions.route(), WHEEL_SPIN_DURATION_MS - spinElapsed + 20);
     }
-    const p = splitPerkLabel(spin.perk.label);
     side = el('div', { class: 'dr-side' }, [
       revealReady
         ? el('div', { class: 'dr-win big' }, [
           el('div', { class: 'dr-win-kicker' }, [el('span', { class: 'lic-dot' }), 'Çark durdu']),
-          el('div', { class: 'dr-win-title' }, `🎯 ${p.name} kazandın!`),
+          el('div', { class: 'dr-win-title' }, dailyWinTitle(spin.perk)),
           spin.perk.description ? el('p', { class: 'dr-win-desc' }, spin.perk.description) : null,
-          spin.perk.kind && dr.inventory && dr.inventory[spin.perk.kind]
-            ? el('span', { class: 'dr-win-badge' }, `Envanterde ×${dr.inventory[spin.perk.kind]}`) : null,
+          spin.perk.coins && typeof spin.perk.balance === 'number'
+            ? el('span', { class: 'dr-win-badge' }, `Bakiye: ${spin.perk.balance.toLocaleString('tr-TR')} coin`)
+            : spin.perk.kind && dr.inventory && dr.inventory[spin.perk.kind]
+              ? el('span', { class: 'dr-win-badge' }, `Envanterde ×${dr.inventory[spin.perk.kind]}`) : null,
         ])
         : el('div', { class: 'panel dr-spinning' }, [
           el('div', { class: 'dr-win-kicker accent' }, [el('span', { class: 'lic-dot' }), `Çevirme #${dr.spinsUsedToday}`]),
           el('div', { class: 'dr-win-title' }, 'Çark dönüyor…'),
-          el('p', { class: 'dr-win-desc' }, 'Sonuç birazdan — kazandığın perk envanterine kendiliğinden eklenir.'),
+          el('p', { class: 'dr-win-desc' }, 'Sonuç birazdan — kazandığın perk envanterine, coin bakiyene kendiliğinden eklenir.'),
           el('div', { class: 'dr-spin-bar' }, el('span', { style: `animation-duration:${Math.max(0, WHEEL_SPIN_DURATION_MS - spinElapsed)}ms` })),
         ]),
     ]);
@@ -1212,8 +1227,8 @@ export function renderDailyReward({ state, actions }) {
       lw ? el('div', { class: 'dr-win' }, [
         el('span', { class: 'dr-win-emoji' }, lw.emoji),
         el('span', { class: 'dr-win-text' }, [
-          el('span', { class: 'dr-win-title small' }, `🎯 ${lw.name} kazandın!`),
-          el('span', { class: 'muted' }, 'Envanterine eklendi.'),
+          el('span', { class: 'dr-win-title small' }, dailyWinTitle(lastWin)),
+          el('span', { class: 'muted' }, lastWin.coins ? 'Bakiyene eklendi.' : 'Envanterine eklendi.'),
         ]),
       ]) : null,
       el('div', { class: 'panel dr-progress' }, [
@@ -1237,7 +1252,8 @@ export function renderDailyReward({ state, actions }) {
 
   root.appendChild(el('div', { class: 'dr-grid' }, [wheel, side]));
 
-  const segs = dailyRewardSegmentsFor(state);
+  // Envanter sadece perk'leri listeler — coin dilimleri bakiyeye gider.
+  const segs = dailyRewardSegmentsFor(state).filter((s) => !s.coins);
   const inv = dr.inventory || {};
   const known = new Set(segs.map((s) => s.kind));
   const extras = Object.keys(inv).filter((k) => !known.has(k)).map((k) => ({ kind: k, label: k, description: '' }));
@@ -1402,6 +1418,231 @@ export function showReaction(state, { clientId, reactionId }) {
 // [MAĞAZA v3] Forma sekmesi seri başlıklarıyla gruplanır (teams.js KIT_VARIANTS.series).
 const KIT_SERIES = [['classic', 'Klasik Seri'], ['pattern', 'Desenli Seri'], ['retro', 'Retro Seri'], ['special', 'Özel Seri']];
 const kitSeriesOf = (kitId) => (KIT_VARIANTS.find((v) => v.id === kitId) || {}).series || 'classic';
+
+// ============================== ARKADAŞLAR ==============================
+// [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] Kayıtlı kullanıcılar arası arkadaşlık: kendi
+// kodun + davet linki, kodla istek, gelen/giden istekler, arkadaşların anlık durumu (lobideyse
+// "Katıl"), durumunu gizleme, engellenenler. Veri app.js `fetchFriends` (GET /api/friends).
+const FRIEND_ROOM_STATUS = {
+  lobby: 'Lobide', prep_wheel: 'Hazırlık çarkında', draft: 'Draftta', trade: 'Takas turunda',
+  squad_select: 'Dizilim seçiyor', match: 'Maçta', finished: 'Maç sonu ekranında',
+};
+const FRIEND_DRAFT_MODE = { live: 'Canlı Açık Arttırma', blind: 'Kör Draft', wheel: 'Çark Modu' };
+
+function friendInitials(name) {
+  const parts = String(name || '?').trim().split(/\s+/);
+  return ((parts[0] || '?')[0] + ((parts[1] || '')[0] || '')).toLocaleUpperCase('tr-TR');
+}
+
+// Sıralama ağırlığı: katılınabilir lobi → başka odada → çevrimiçi → çevrimdışı/gizli.
+function friendRank(f) {
+  const p = f.presence;
+  if (!p) return 4;
+  if (p.room && p.room.joinable) return 0;
+  if (p.room) return 1;
+  return p.online ? 2 : 3;
+}
+
+function friendStatus(f) {
+  const p = f.presence;
+  if (!p) return { tone: 'off', text: 'Durumunu gizliyor' };
+  if (p.room) {
+    const where = FRIEND_ROOM_STATUS[p.room.status] || 'Oyunda';
+    const mode = FRIEND_DRAFT_MODE[p.room.draftMode] || '';
+    return {
+      tone: p.room.joinable ? 'join' : 'busy',
+      text: p.room.joinable ? `${where} · ${mode} · ${p.room.players}/${p.room.maxPlayers}` : `${where} · ${mode}`,
+    };
+  }
+  return p.online ? { tone: 'on', text: 'Çevrimiçi' } : { tone: 'off', text: 'Çevrimdışı' };
+}
+
+function friendJoinButton(f, state, actions, small = true) {
+  const room = f.presence && f.presence.room;
+  if (!room || !room.joinable) return null;
+  return el('button', {
+    class: `btn ${small ? 'small' : ''}`,
+    disabled: state.room ? '' : undefined,
+    title: state.room ? 'Önce bulunduğun odadan çık' : `${room.code} odasına katıl`,
+    onclick: () => actions.joinFriendRoom(room.code),
+  }, 'Katıl');
+}
+
+// Ana sayfadaki kompakt şerit — sadece hesabı doğrulanmış ve en az bir arkadaşı/isteği olan
+// kullanıcıya; çevrimiçi arkadaşlardan en fazla 4'ü.
+export function friendsStrip(state, actions) {
+  if (!state.user || !state.user.emailVerified) return null;
+  const data = state.friends && state.friends.data;
+  if (!data) return null;
+  const go = () => actions.navigateToPage('friends');
+  if (!data.friends.length && !data.incoming.length) {
+    return el('button', { class: 'fr-strip-empty', onclick: go }, '👥 Arkadaşlarını ekle, odadayken tek tıkla yanlarına katıl →');
+  }
+  const online = data.friends.filter((f) => f.presence && (f.presence.online || f.presence.room))
+    .sort((a, b) => friendRank(a) - friendRank(b));
+  return el('section', { class: 'fr-strip', 'aria-label': 'Arkadaşlar' }, [
+    el('div', { class: 'fr-strip-head' }, [
+      el('span', { class: 'dr-kicker' }, `Arkadaşlar · ${online.length} çevrimiçi`),
+      data.incoming.length ? el('button', { class: 'fr-badge', onclick: go }, `${data.incoming.length} yeni istek`) : null,
+      el('button', { class: 'linklike fr-strip-all', onclick: go }, 'Tümü →'),
+    ]),
+    online.length
+      ? el('div', { class: 'fr-strip-list' }, online.slice(0, 4).map((f) => {
+        const st = friendStatus(f);
+        return el('div', { class: 'fr-strip-row' }, [
+          el('span', { class: `fr-dot ${st.tone}` }),
+          el('span', { class: 'fr-strip-name' }, f.displayName),
+          el('span', { class: 'fr-strip-status' }, st.text),
+          friendJoinButton(f, state, actions),
+        ]);
+      }))
+      : el('div', { class: 'fr-strip-none' }, 'Şu an çevrimiçi arkadaşın yok.'),
+  ]);
+}
+
+export function renderFriends({ state, actions }) {
+  const root = el('div', { class: 'view friends-view' });
+  root.appendChild(el('button', {
+    class: 'btn small secondary', style: 'align-self:flex-start',
+    onclick: () => actions.navigateToPage(null),
+  }, '← Geri dön'));
+  if (!state.friendsUi) state.friendsUi = { code: '' };
+  const ui = state.friendsUi;
+
+  const head = (side) => el('div', { class: 'fr-head' }, [
+    el('div', { class: 'fr-head-text' }, [
+      el('h1', { class: 'dr-title' }, 'Arkadaşlar'),
+      el('p', { class: 'dr-lead' }, 'Arkadaş kodunla birbirinizi ekleyin. Arkadaşın bir odanın lobisindeyse burada görünür, tek tıkla yanına katılırsın.'),
+    ]),
+    side,
+  ]);
+
+  if (!state.user) {
+    root.appendChild(head(null));
+    root.appendChild(el('div', { class: 'panel' }, [
+      el('h3', {}, 'Arkadaş eklemek için giriş yap'),
+      el('p', { class: 'muted' }, ui.code ? `Giriş yaptıktan sonra ${ui.code} kodlu oyuncuya istek gönderebilirsin.` : 'Arkadaşlık sadece kayıtlı hesaplar arasında.'),
+      el('button', { class: 'btn', onclick: () => actions.navigateToPage('login') }, 'Giriş Yap / Kayıt Ol'),
+    ]));
+    return root;
+  }
+
+  if (!state.friends) {
+    actions.fetchFriends();
+    root.appendChild(head(null));
+    root.appendChild(loadingPanel('Arkadaşlar yükleniyor...'));
+    return root;
+  }
+  if (state.friends.error) {
+    root.appendChild(head(null));
+    root.appendChild(el('div', { class: 'panel' }, [
+      el('h3', {}, 'Arkadaş listesi açılamadı'),
+      el('p', { class: 'muted' }, 'Sunucuya ulaşılamadı. Biraz sonra tekrar dene.'),
+      el('button', { class: 'btn small', onclick: () => { state.friends = null; actions.route(); } }, 'Tekrar dene'),
+    ]));
+    return root;
+  }
+  const data = state.friends.data;
+
+  const copy = async (text, ok) => {
+    try { await navigator.clipboard.writeText(text); toast(ok); }
+    catch (e) { toast('Kopyalanamadı — elle seçip kopyalayabilirsin'); }
+  };
+  const link = `${location.origin}/arkadaslar?ekle=${data.code}`;
+  root.appendChild(head(el('div', { class: 'fr-code-card' }, [
+    el('span', { class: 'dr-kicker' }, 'Arkadaş kodun'),
+    el('span', { class: 'fr-code' }, data.code),
+    el('div', { class: 'fr-code-actions' }, [
+      el('button', { class: 'btn small secondary', onclick: () => copy(data.code, 'Kod kopyalandı') }, 'Kodu kopyala'),
+      el('button', { class: 'btn small secondary', onclick: () => copy(`PitchGavel'de beni arkadaş ekle 👉 ${link}`, 'Davet linki kopyalandı') }, 'Davet linki'),
+    ]),
+  ])));
+
+  // Kodla istek gönder.
+  const codeInput = el('input', {
+    type: 'text', maxlength: '12', placeholder: 'ABCD-1234', autocomplete: 'off', spellcheck: 'false',
+    'data-focus-key': 'friend-code', value: ui.code || '',
+    oninput: (e) => { ui.code = e.target.value.toUpperCase(); },
+  });
+  const send = () => {
+    if (!codeInput.value.trim()) return toast('Arkadaşının kodunu yaz.');
+    actions.friendRequest(codeInput.value.trim());
+  };
+  codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+  root.appendChild(el('div', { class: 'panel fr-add' }, [
+    el('h3', {}, 'Arkadaş ekle'),
+    el('div', { class: 'fr-add-row' }, [codeInput, el('button', { class: 'btn', onclick: send }, 'İstek Gönder')]),
+    ui.fromLink ? el('p', { class: 'muted fr-hint' }, 'Davet linkinden geldin — kod hazır, istek göndermek için düğmeye bas.') : null,
+  ]));
+
+  const row = (name, statusEl, actionsEls, extraClass = '') => el('div', { class: `fr-row ${extraClass}` }, [
+    el('span', { class: 'fr-avatar' }, friendInitials(name)),
+    el('div', { class: 'fr-row-id' }, [el('div', { class: 'fr-row-name' }, name), statusEl]),
+    el('div', { class: 'fr-row-actions' }, actionsEls),
+  ]);
+
+  if (data.incoming.length) {
+    root.appendChild(el('div', { class: 'panel fr-section' }, [
+      el('h3', {}, `Gelen istekler (${data.incoming.length})`),
+      ...data.incoming.map((f) => row(f.displayName, el('div', { class: 'fr-row-status' }, 'Seni arkadaş eklemek istiyor'), [
+        el('button', { class: 'btn small', onclick: () => actions.friendRespond(f.id, true) }, 'Kabul et'),
+        el('button', { class: 'btn small secondary', onclick: () => actions.friendRespond(f.id, false) }, 'Reddet'),
+        el('button', { class: 'linklike fr-block', onclick: () => actions.friendBlock(f.id, f.displayName) }, 'Engelle'),
+      ], 'incoming')),
+    ]));
+  }
+
+  const sorted = [...data.friends].sort((a, b) => friendRank(a) - friendRank(b) || a.displayName.localeCompare(b.displayName, 'tr'));
+  root.appendChild(el('div', { class: 'panel fr-section' }, [
+    el('h3', {}, `Arkadaşların (${data.friends.length})`),
+    sorted.length
+      ? el('div', { class: 'fr-list' }, sorted.map((f) => {
+        const st = friendStatus(f);
+        return row(f.displayName, el('div', { class: `fr-row-status ${st.tone}` }, [el('span', { class: `fr-dot ${st.tone}` }), st.text]), [
+          friendJoinButton(f, state, actions),
+          el('details', { class: 'fr-more' }, [
+            el('summary', { 'aria-label': 'Diğer işlemler' }, '⋯'),
+            el('div', { class: 'fr-more-menu' }, [
+              el('button', { onclick: () => actions.friendRemove(f.id, f.displayName, 'friend') }, 'Arkadaşlıktan çıkar'),
+              el('button', { class: 'danger', onclick: () => actions.friendBlock(f.id, f.displayName) }, 'Engelle'),
+            ]),
+          ]),
+        ], st.tone === 'join' ? 'joinable' : '');
+      }))
+      : el('p', { class: 'muted' }, 'Henüz arkadaşın yok. Kodunu ya da davet linkini paylaş.'),
+  ]));
+
+  if (data.outgoing.length) {
+    root.appendChild(el('div', { class: 'panel fr-section' }, [
+      el('h3', {}, `Gönderdiğin istekler (${data.outgoing.length})`),
+      ...data.outgoing.map((f) => row(f.displayName, el('div', { class: 'fr-row-status' }, 'Yanıt bekleniyor'), [
+        el('button', { class: 'btn small secondary', onclick: () => actions.friendRemove(f.id, f.displayName, 'outgoing') }, 'Geri çek'),
+      ])),
+    ]));
+  }
+
+  const hiddenToggle = el('input', {
+    type: 'checkbox', checked: data.presenceHidden ? '' : undefined,
+    onchange: (e) => actions.setPresenceHidden(e.target.checked),
+  });
+  root.appendChild(el('div', { class: 'panel fr-section' }, [
+    el('h3', {}, 'Gizlilik'),
+    el('label', { class: 'fr-toggle' }, [
+      hiddenToggle,
+      el('span', {}, 'Durumumu arkadaşlarıma gösterme (çevrimiçi olduğumu ve hangi odada olduğumu görmesinler)'),
+    ]),
+    data.blocked.length
+      ? el('details', { class: 'fr-blocked' }, [
+        el('summary', {}, `Engellediklerin (${data.blocked.length})`),
+        ...data.blocked.map((b) => row(b.displayName, el('div', { class: 'fr-row-status' }, 'Engellendi'), [
+          el('button', { class: 'btn small secondary', onclick: () => actions.friendUnblock(b.id) }, 'Engeli kaldır'),
+        ])),
+      ])
+      : null,
+  ]));
+
+  return root;
+}
 
 export function renderStore({ state, actions }) {
   const root = el('div', { class: 'view store-view' });
@@ -3640,6 +3881,18 @@ function pitchCard({ state, actions, side, squad }) {
   const rated = sel.assignment.map((i) => (i != null && squad[i] ? squad[i].player.rating : 0));
   const avg = rated.length ? Math.round(rated.reduce((a, b) => a + b, 0) / rated.length) : 0;
 
+  // [KULLANICI İSTEĞİ] Bu maçta giyeceğin forma. 2 kişilik odada rakip belli olduğu için
+  // simülasyondaki çakışma kuralı (deplasmanda forma değişebilir) aynen uygulanır; daha kalabalık
+  // odada her maçın rakibi farklı olduğu için kendi seçtiğin forma gösterilir.
+  const me = state.room.players.find((p) => p.clientId === state.clientId) || {};
+  const others = state.room.players.filter((p) => p.clientId !== state.clientId);
+  let kit;
+  if (others.length === 1) {
+    kit = side === 'home' ? matchKits(me, others[0]).homeKit : matchKits(others[0], me).awayKit;
+  } else {
+    kit = kitFor(teamById(me.teamId), me.kitId) || NEUTRAL_KITS[0];
+  }
+
   function swap(i, j) {
     const a = sel.assignment.slice();
     const t = a[i]; a[i] = a[j]; a[j] = t;
@@ -3689,6 +3942,7 @@ function pitchCard({ state, actions, side, squad }) {
     }, [
       el('div', { class: `lu-pos pos-${slotGroup(slotType)}` }, slotType),
       el('div', { class: `lu-chip ${current && current.player.rating >= 90 ? 'hot' : ''} ${current && current.player.isIcon ? 'icon' : ''}` }, [
+        chipKitEl(kit, slotType),
         el('div', { class: 'lu-select-wrap' }, [
           el('div', { class: 'lu-rating' }, current ? String(current.player.rating) : '–'),
           el('div', { class: 'lu-name' }, current ? current.player.name : 'Seç...'),
@@ -3702,7 +3956,10 @@ function pitchCard({ state, actions, side, squad }) {
   return el('div', { class: 'lu-card lu-pitch-card' }, [
     el('div', { class: 'lu-card-head' }, [
       el('span', { class: 'lu-card-title' }, 'Saha'),
-      el('span', { class: 'lu-card-meta' }, `${sel.formation} · ort. ${avg}`),
+      el('span', { class: 'lu-card-meta' }, [
+        el('span', { class: 'kit-swatch', style: `background:${kitBackground(kit, 3)}`, title: kit.name }),
+        `${kit.name} · ${sel.formation} · ort. ${avg}`,
+      ]),
     ]),
     el('div', { class: 'lu-pitch' }, [
       el('div', { class: 'lu-pitch-half' }),
@@ -4036,6 +4293,25 @@ function kitLuma(hex) {
 }
 const neutralKitAgainst = (other) => (other && kitLuma(other.colors[0]) > 150 ? NEUTRAL_KITS[1] : NEUTRAL_KITS[0]);
 
+// Bir maçın iki formasını, sahada ayırt edilebilir olacak şekilde seçer (ev sahibi kendi
+// formasını giyer; deplasman çakışırsa resolveClash ile değişir; takımsızlar nötr forma giyer).
+// Maç anlatımı, maç sonucu sahaları ve dizilim ekranı AYNI kuralı kullanır.
+function matchKits(hp, ap) {
+  const homeKit = kitFor(teamById(hp && hp.teamId), hp && hp.kitId) || neutralKitAgainst(null);
+  const awayRaw = kitFor(teamById(ap && ap.teamId), ap && ap.kitId);
+  const awayKit = awayRaw ? resolveClash(homeKit, awayRaw, teamById(ap.teamId)) : neutralKitAgainst(homeKit);
+  return { homeKit, awayKit };
+}
+// Kaleci simülasyonda da kendi rengini korur (bkz. .pitch-dot.group-GK).
+const GK_KIT = { id: 'gk', pattern: 'solid', colors: ['#ffd166', '#7a5b00'], name: 'Kaleci forması' };
+// [KULLANICI İSTEĞİ] Dizilim ve maç sonucu sahalarında oyuncu kartının köşesinde küçük forma.
+function chipKitEl(kit, slot) {
+  const k = slotGroup(slot) === 'GK' ? GK_KIT : kit;
+  if (!k) return null;
+  return el('span', { class: 'chip-kit', title: k.name, 'aria-hidden': 'true' },
+    el('span', { class: 'chip-kit-shirt', style: `background:${kitBackground(k, 1.5)}` }));
+}
+
 function pitchDotPositions(slots) {
   const lanes = {};
   (slots || []).forEach((slot, idx) => {
@@ -4299,9 +4575,7 @@ export function renderMatchPlayback({ state, actions }) {
   const roomPlayer = (id) => state.room.players.find((p) => p.clientId === id) || {};
   const hp = roomPlayer(m.homeClientId);
   const ap = roomPlayer(m.awayClientId);
-  const homeKit = kitFor(teamById(hp.teamId), hp.kitId) || neutralKitAgainst(null);
-  const awayKitRaw = kitFor(teamById(ap.teamId), ap.kitId);
-  const awayKitT = awayKitRaw ? resolveClash(homeKit, awayKitRaw, teamById(ap.teamId)) : neutralKitAgainst(homeKit);
+  const { homeKit, awayKit: awayKitT } = matchKits(hp, ap);
   const kitSwatch = (k) => (k ? el('span', { class: 'kit-swatch', style: `background:${kitBackground(k, 3)}`, title: k.name }) : null);
   const fixtureTag = r.fixtures.length > 1 ? `Eşleşme ${step.fixtureIndex + 1}/${r.fixtures.length} — ` : '';
   const progressTag = pb.order.length > 2 ? ` (Maç ${pb.pos + 1}/${pb.order.length})` : '';
@@ -4692,8 +4966,10 @@ export function renderMatch({ state, actions }) {
   }
 
   const fx = r.fixtures[ui.fixtureIndex];
-  root.appendChild(renderMatchResultCard('1. Maç', nameOf(fx.match1.homeClientId), nameOf(fx.match1.awayClientId), fx.match1));
-  root.appendChild(renderMatchResultCard('2. Maç', nameOf(fx.match2.homeClientId), nameOf(fx.match2.awayClientId), fx.match2));
+  const roomPlayer = (id) => state.room.players.find((p) => p.clientId === id) || {};
+  const kitsOf = (m) => matchKits(roomPlayer(m.homeClientId), roomPlayer(m.awayClientId));
+  root.appendChild(renderMatchResultCard('1. Maç', nameOf(fx.match1.homeClientId), nameOf(fx.match1.awayClientId), fx.match1, kitsOf(fx.match1)));
+  root.appendChild(renderMatchResultCard('2. Maç', nameOf(fx.match2.homeClientId), nameOf(fx.match2.awayClientId), fx.match2, kitsOf(fx.match2)));
 
   // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — "LİG USÜLÜ"] "Ev ve deplasmanı kazanana 3 puan verme,
   // her maç kendi başına 3 puan." — bu ikili artık kendi başına bir "galip" üretmiyor (penaltı
@@ -4780,7 +5056,7 @@ function ratingTier(rating) {
 // [KULLANICI İSTEĞİ] "Sonra alta yine dizilişteki gibi saha formatında oyuncuların
 // performansını gösteren performans puanı gözüksün — X oyuncusu iyi oynadı, maç puanı 9 gibi."
 // lineup: [{slot, player, matchRating}] (bkz. server/src/match/ratings.js).
-function renderMatchLineupPitch(lineup, title) {
+function renderMatchLineupPitch(lineup, title, kit) {
   const slots = lineup.map((entry) => entry.slot);
   // [DÜZELTİLDİ — BUG, KULLANICI GERİ BİLDİRİMİ] "Simülasyon bittikten sonraki detay ekranı
   // açılmıyor" — kök neden: "Dizilim & Taktik ekranını v2 tasarımla yeniden kur" turunda (bkz.
@@ -4800,6 +5076,7 @@ function renderMatchLineupPitch(lineup, title) {
     return el('div', { class: 'pitch-lineup-slot', style: `left:${pos.x}%; top:${pos.y}%` }, [
       el('div', { class: `pitch-lineup-badge pos-${slotGroup(entry.slot)}` }, entry.slot),
       el('div', { class: `pitch-lineup-chip rating-${tier}` }, [
+        chipKitEl(kit, entry.slot),
         el('div', { class: 'pitch-lineup-matchrating' }, entry.matchRating.toFixed(1)),
         el('div', { class: 'pitch-lineup-name' }, entry.player.name),
       ]),
@@ -4910,7 +5187,9 @@ export function renderSharedResult({ state, actions }) {
   return root;
 }
 
-function renderMatchResultCard(title, homeName, awayName, m) {
+// `kits` ({ homeKit, awayKit }) isteğe bağlı — paylaşılan sonuç sayfasında oyuncu bilgisi
+// olmadığı için verilmez, sahalar formasız çizilir.
+function renderMatchResultCard(title, homeName, awayName, m, kits = {}) {
   // [KULLANICI İSTEĞİ] Maç hikâyesi v3: emoji + sol çizgi yerine konu etiketli (Hücum / Defans /
   // Kaleci / Şans) ve olumlu-olumsuz renkli küçük kartlar.
   const STORY_META = {
@@ -4943,8 +5222,8 @@ function renderMatchResultCard(title, homeName, awayName, m) {
       scorerColumn(m.events, 'away', awayName),
     ]),
     m.lineupHome && m.lineupAway ? el('div', { class: 'match-rating-pitches' }, [
-      renderMatchLineupPitch(m.lineupHome, `${homeName} — Maç Performansı`),
-      renderMatchLineupPitch(m.lineupAway, `${awayName} — Maç Performansı`),
+      renderMatchLineupPitch(m.lineupHome, `${homeName} — Maç Performansı`, kits.homeKit),
+      renderMatchLineupPitch(m.lineupAway, `${awayName} — Maç Performansı`, kits.awayKit),
     ]) : null,
   ]);
 }

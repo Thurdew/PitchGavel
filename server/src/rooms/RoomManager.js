@@ -140,7 +140,7 @@ class RoomManager {
       squad: [], // draft sırasında/sonrasında kazanılan oyuncular
       // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HAZIRLIK ÇARKI] Bu draftta çevirdiği (varsa) perk —
       // görünürlük "herkese açık" olarak kararlaştırıldı, bkz. toPublicState. `active` bazı
-      // perk türlerinde (anti_snipe_shield/ceiling_reduction: draft boyunca sürekli; free_backup:
+      // perk türlerinde (anti_snipe_shield/ceiling_reduction: draft boyunca sürekli; joker/spy:
       // bir kereye mahsus tüketilene kadar) DraftEngine tarafından kontrol edilir; budget_bonus/
       // budget_penalty/gambler anında uygulanıp active:false olarak işaretlenir (bkz.
       // DraftEngine.applyPrepPerk). blind_first_round SADECE client-side tüketilir (self-imposed,

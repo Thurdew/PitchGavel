@@ -1,7 +1,7 @@
 // Faz 8 doğrulama scripti: Hazırlık Çarkı (bkz. claude.md "Hazırlık Çarkı" + "Hazırlık Çarkı
 // Tam Sürüm") — kör draft/açık arttırma için isteğe bağlı, formasyon kurasından ÖNCE, SIRAYLA
 // (turn-based — Çark Modu'ndaki nextWheelTurn ile aynı desen) çevrilen bir perk çarkı.
-//  (A) Saf birim testleri (sunucu ayağa kaldırmadan) — applyPrepPerk'in 9 segment türünü de
+//  (A) Saf birim testleri (sunucu ayağa kaldırmadan) — applyPrepPerk'in 8 segment türünü de
 //      doğru uyguladığını, personalMaxBid/submitBid'in ceiling_reduction/anti_snipe_shield'ı
 //      doğru işlediğini, 🃏 Joker Turu'nun nextRound'da rekabetsiz+ücretsiz kazandırdığını,
 //      👁️ Gözcü'nün (peekBids) SADECE çağırana teklifleri açtığını ve bir kereye mahsus olduğunu.
@@ -26,8 +26,8 @@ function unitTests() {
     return { clientId: 'p1', budget, squad: [], prepPerk: null };
   }
 
-  // --- applyPrepPerk: 9 segment türünün her biri ---
-  assert.strictEqual(PREP_WHEEL_SEGMENTS.length, 9, 'katalog tam 9 segment olmalı (7 MVP + joker + spy)');
+  // --- applyPrepPerk: 8 segment türünün her biri ---
+  assert.strictEqual(PREP_WHEEL_SEGMENTS.length, 8, 'katalog tam 8 segment olmalı (7 MVP − free_backup + joker + spy)');
   for (const seg of PREP_WHEEL_SEGMENTS) {
     assert(seg.description && seg.description.length > 10, `${seg.kind} bir açıklama içermeli (kullanıcı isteği: "çarktaki şeylerin özelliklerini açıkla")`);
     const player = makePlayer(1000);
@@ -44,12 +44,12 @@ function unitTests() {
       assert(player.budget === 1000 + PREP_WHEEL_GAMBLER_AMOUNT || player.budget === 1000 - PREP_WHEEL_GAMBLER_AMOUNT);
       assert.strictEqual(perk.active, false);
     } else {
-      // anti_snipe_shield / free_backup / ceiling_reduction / blind_first_round / joker / spy
+      // anti_snipe_shield / ceiling_reduction / blind_first_round / joker / spy
       assert.strictEqual(player.budget, 1000, `${seg.kind} bütçeyi DEĞİŞTİRMEMELİ`);
       assert.strictEqual(perk.active, true, `${seg.kind} tüketilene kadar active:true kalmalı`);
     }
   }
-  console.log('[test8] applyPrepPerk 9 segment türü de doğru uygulandı (açıklamalar dahil) ✅');
+  console.log('[test8] applyPrepPerk 8 segment türü de doğru uygulandı (açıklamalar dahil) ✅');
 
   // --- personalMaxBid: ceiling_reduction ---
   const baseCap = personalMaxBid(makePlayer(1000));
@@ -298,7 +298,6 @@ async function e2eTest() {
   const roomAfter = roomManager.getRoom(code);
   let overlapFound = false;
   const allIds = new Set();
-  let freeBackupObserved = false;
   let jokerObserved = false;
   for (const p of roomAfter.players) {
     assert.strictEqual(p.squad.length, SQUAD_SIZE, `${p.name} kadrosu tam ${SQUAD_SIZE} olmalı, oldu: ${p.squad.length}`);
@@ -307,22 +306,16 @@ async function e2eTest() {
       if (allIds.has(entry.player.id)) overlapFound = true;
       allIds.add(entry.player.id);
       if (entry.price === 0) {
-        // live/blind modda price:0 SADECE free_backup ya da joker perk'iyle mümkün olabilir.
-        assert(entry.reason === 'cascade_uncontested' || entry.reason === 'joker',
-          `price:0 beklenmedik bir reason'la geldi: ${entry.reason}`);
-        if (entry.reason === 'cascade_uncontested') {
-          freeBackupObserved = true;
-          assert.strictEqual(p.prepPerk && p.prepPerk.kind, 'free_backup', `${p.name}'in perk'i free_backup olmalıydı: ${JSON.stringify(p.prepPerk)}`);
-        } else {
-          jokerObserved = true;
-          assert.strictEqual(p.prepPerk && p.prepPerk.kind, 'joker', `${p.name}'in perk'i joker olmalıydı: ${JSON.stringify(p.prepPerk)}`);
-        }
+        // live/blind modda price:0 SADECE joker perk'iyle mümkün olabilir.
+        assert.strictEqual(entry.reason, 'joker', `price:0 beklenmedik bir reason'la geldi: ${entry.reason}`);
+        jokerObserved = true;
+        assert.strictEqual(p.prepPerk && p.prepPerk.kind, 'joker', `${p.name}'in perk'i joker olmalıydı: ${JSON.stringify(p.prepPerk)}`);
         assert.strictEqual(p.prepPerk.active, false, `${entry.reason} kullanılınca active:false olmalı`);
       }
     }
   }
   assert(!overlapFound, 'münhasır sahiplik ihlali olmamalı');
-  console.log(`[test8] draft normal şekilde tamamlandı — kadrolar tam, bütçeler negatif değil, çakışma yok (free_backup: ${freeBackupObserved}, joker: ${jokerObserved}) ✅`);
+  console.log(`[test8] draft normal şekilde tamamlandı — kadrolar tam, bütçeler negatif değil, çakışma yok (joker: ${jokerObserved}) ✅`);
 
   console.log('[test8] (B) UÇTAN UCA TESTİ TÜM GEÇTİ ✅');
 
