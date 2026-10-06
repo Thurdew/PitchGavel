@@ -2991,6 +2991,13 @@ button:disabled, .btn:disabled {
   .tb-link { padding: 0 10px; }
   .tb-link.has-dot::after { left: auto; right: 5px; }
 }
+/* Odadayken üst bara "Odadan Çık" + oda kodu + isim çipi eklenir — etiketler daha geniş ekranda
+   da gizlenmezse sağdaki çiplerle çakışıyordu (bkz. app.js route() `in-room`). */
+@media (max-width: 1500px) {
+  body.in-room .tb-link .tb-label { display: none; }
+  body.in-room .tb-link { padding: 0 10px; }
+  body.in-room .tb-link.has-dot::after { left: auto; right: 5px; }
+}
 @media (max-width: 900px) {
   .tb-chip.who, .tb-acct-name { display: none; }
 }
@@ -4401,11 +4408,6 @@ button:disabled, .btn:disabled {
 
 /* ============================== ARKADAŞLAR ============================== */
 /* [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — ARKADAŞLAR] bkz. views.js renderFriends, friendsStrip. */
-.tb-auth-btn.has-dot { position: relative; }
-.tb-auth-btn.has-dot::after {
-  content: ''; position: absolute; top: -2px; left: 22px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 0 2px #0c1522, 0 0 8px var(--accent-glow);
-}
 .friends-view { gap: 18px; max-width: 880px; width: 100%; margin: 0 auto; }
 .fr-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .fr-head-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1 1 320px; }
