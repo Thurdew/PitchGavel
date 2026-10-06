@@ -145,9 +145,11 @@ const assert = require('assert');
     assert.strictEqual(blind({ a: MIN_PLAYER_PRICE }).blindMin, 1, 'rakipli turda 10₺ ile kazanmak');
     assert.strictEqual(blind({ a: MIN_PLAYER_PRICE }, ['a']).blindMin, undefined, 'tek katılımcılı tur sayılmaz');
     assert.strictEqual(blind({ a: 50 }).blindMin, undefined);
-    assert.strictEqual(blind({ a: 50, b: 46 }).blindNarrow, 1, '4₺ fark kıl payı');
-    assert.strictEqual(blind({ a: 50, b: 45 }).blindNarrow, 1, '5₺ fark sınırda');
-    assert.strictEqual(blind({ a: 50, b: 40 }).blindNarrow, undefined, '10₺ fark değil');
+    assert.strictEqual(blind({ a: 145, b: 140 }).blindNarrow, 1, "kullanıcının örneği: 140'a karşı 145");
+    assert.strictEqual(blind({ a: 50, b: 41 }).blindNarrow, 1, '9₺ fark sayılır');
+    assert.strictEqual(blind({ a: 50, b: 50 }).blindNarrow, 1, 'eşit teklif (önce gönderen kazanır) sayılır');
+    assert.strictEqual(blind({ a: 50, b: 40 }).blindNarrow, undefined, "10₺ fark sayılmaz (10'dan az olmalı)");
+    assert.strictEqual(blind({ a: 145, b: 140 }, ['a', 'b', 'c']).blindNarrow, 1, 'çok kişilik turda ikinci en yüksek teklife bakılır');
     assert.strictEqual(blind({ a: 50 }).blindNarrow, undefined, 'rakip teklif vermediyse kıl payı yok');
 
     const live = (bids) => {

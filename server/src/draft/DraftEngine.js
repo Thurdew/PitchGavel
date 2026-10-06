@@ -28,8 +28,8 @@ const {
 const { STATUS } = require('../rooms/RoomManager');
 // [GÖREVLER, NİŞ] bkz. quests/questLog.js.
 const { resetQuestLog, bumpQuest } = require('../quests/questLog');
-// Kör draftta "kıl payı" galibiyet: ikinci tekliften en fazla bu kadar fazla.
-const QUEST_NARROW_MARGIN = 5;
+// Kör draftta "kıl payı" galibiyet: ikinci teklifi bundan AZ farkla geçmek (140'a karşı 145 gibi).
+const QUEST_NARROW_MARGIN = 10;
 // Draftı bu kadar ya da daha fazla bütçeyle bitirmek ("Kumbaracı", canlı/kör).
 const QUEST_SAVER_BUDGET = 300;
 
@@ -1270,11 +1270,11 @@ class DraftEngine {
     const price = winnerBid ? winnerBid.amount : MIN_PLAYER_PRICE;
 
     // [GÖREVLER, NİŞ] Rakipli turda (en az 2 katılımcı) en düşük fiyata kapmak; ve rakibin
-    // teklifini en fazla QUEST_NARROW_MARGIN farkla geçmek.
+    // teklifini QUEST_NARROW_MARGIN'dan az farkla geçmek.
     if (winnerBid && round.participantIds.length >= 2) {
       if (winnerBid.amount <= MIN_PLAYER_PRICE) bumpQuest(room, winnerId, 'blindMin');
       const secondBid = ranking[1] ? round.bids.get(ranking[1]) : null;
-      if (secondBid && winnerBid.amount - secondBid.amount <= QUEST_NARROW_MARGIN) bumpQuest(room, winnerId, 'blindNarrow');
+      if (secondBid && winnerBid.amount - secondBid.amount < QUEST_NARROW_MARGIN) bumpQuest(room, winnerId, 'blindNarrow');
     }
 
     this.assignPlayer(room, winner, round.main, type, price, 'blind_auction_won');

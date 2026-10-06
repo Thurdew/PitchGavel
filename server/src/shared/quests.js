@@ -24,7 +24,7 @@ const QUESTS = [
 
   // Niş görevler (haftalık).
   { id: 'n_blind_min', scope: 'weekly', group: 'niche', stat: 'blindMin', target: 1, reward: 150, title: 'Kelepir', desc: 'Kör draftta rakipli bir turu en düşük teklifle (10₺) kazan' },
-  { id: 'n_blind_narrow', scope: 'weekly', group: 'niche', stat: 'blindNarrow', target: 2, reward: 150, title: 'Kıl payı', desc: 'Kör draftta rakibinin teklifini en fazla 5₺ farkla geç' },
+  { id: 'n_blind_narrow', scope: 'weekly', group: 'niche', stat: 'blindNarrow', target: 5, reward: 200, title: 'Kıl payı', desc: 'Kör draftta 5 oyuncuyu rakibinden 10₺\'den az farkla kap (ör. 140\'a karşı 145)' },
   { id: 'n_live_snipe', scope: 'weekly', group: 'niche', stat: 'liveSnipe', target: 3, reward: 150, title: 'Son saniye golcüsü', desc: 'Canlı açık arttırmada son 5 saniyede verdiğin teklifle oyuncu kap' },
   { id: 'n_wheel_steal', scope: 'weekly', group: 'niche', stat: 'wheelSteal', target: 1, reward: 100, title: 'Kapkaç', desc: 'Çark modunda rakibinden oyuncu çal' },
   { id: 'n_icons2', scope: 'weekly', group: 'niche', stat: 'icons2', target: 1, reward: 150, title: 'Efsaneler kulübü', desc: 'Bir draftı en az 2 efsane (icon) oyuncuyla bitir' },

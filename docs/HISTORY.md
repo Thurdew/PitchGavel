@@ -883,3 +883,11 @@ Etkilenen dosyalar: `server/src/shared/quests.js` (yeni), `server/src/quests/Que
 - Test: phase20'ye niş istatistikler, geçerli-maç şartı, bilinmeyen/negatif istatistik reddi ve DraftEngine olay noktalarının (stub io ile resolveBlindRound/resolveAuctionRound/assignPlayer/finishDraft) birim testleri. Takas kabulü için otomatik test yok (mevcut test paketinde de yok) — kod yolu okundu. 23 test dosyası yeşil. Headless Chrome'da Özel Görevler bölümü ve Topla görüldü.
 
 Etkilenen dosyalar: `server/src/shared/quests.js`, `server/src/quests/questLog.js` (yeni), `server/src/quests/QuestService.js`, `server/src/draft/DraftEngine.js`, `server/src/trade/TradeEngine.js`, `server/src/sockets/matchSockets.js`, `server/test/phase20-quests.test.js`, `client/public/views.js`, `client/public/styles.css`.
+
+### 2026-10-06 — "Kıl payı" görevi kullanıcının kastettiği hale getirildi — [KULLANICI İSTEĞİ]
+
+Kullanıcı açıkladı: "10 TL altı derken — ben 140 verdim, adam 145'le aldı; bunu 5 kere yaparsa bir ödül." Yani kör draftta rakibin teklifini 10₺'den AZ farkla geçmek. `DraftEngine` `QUEST_NARROW_MARGIN` 5 → 10 ve koşul `<` (fark 0–9₺; eşit teklifte önce gönderen kazandığı için 0 da sayılır, 10₺ fark sayılmaz); `n_blind_narrow` hedef 2 → 5, ödül 150 → 200, açıklama "Kör draftta 5 oyuncuyu rakibinden 10₺'den az farkla kap (ör. 140'a karşı 145)". Çok kişilik turda ikinci en yüksek teklife bakılır. Canlı açık arttırma bilerek dahil değil (en az artış 5₺ olduğu için orada fark neredeyse hep 5₺ — görev bedavaya dönerdi). Önceki yanlış yorumdan doğan "Kelepir" (rakipli turu 10₺'ye kazan) görevi ayrı bir niş görev olarak duruyor.
+
+Test: phase20'ye kullanıcının örneği (145/140), 9₺, eşit teklif, 10₺ (sayılmaz) ve 3 kişilik tur; phase3b yeşil.
+
+Etkilenen dosyalar: `server/src/draft/DraftEngine.js`, `server/src/shared/quests.js`, `server/test/phase20-quests.test.js`.
