@@ -130,10 +130,14 @@ function registerMatchSockets(io, socket, ctx) {
       .then(async (awards) => {
         // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] Geçerli maçlar görev ilerlemesine yazılır
         // (coin ödülüyle aynı kurallar). İstemci ilerlemeyi anlatım bitince çeker (spoiler yok).
+        // [GÖREVLER, NİŞ] Maç olaylarına oda modu/havuzu eklenir; o odadaki draft/takas olayları
+        // (room.questLog) sadece en az bir geçerli maçı olan oyuncu için yazılır.
         for (const p of room.players) {
           const award = awards[p.clientId];
           if (!award || !p.account || !award.events.length || !ctx.questService) continue;
-          try { await ctx.questService.recordMatches(p.account.userId, award.events); } catch (e) {
+          const events = award.events.map((e) => ({ ...e, draftMode: room.draftMode, playerPool: room.playerPool }));
+          const draftLog = room.questLog ? room.questLog[p.clientId] : null;
+          try { await ctx.questService.recordMatches(p.account.userId, events, Date.now(), draftLog); } catch (e) {
             console.error('[quests] ilerleme yazılamadı:', e.message);
           }
         }

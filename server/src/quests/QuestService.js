@@ -6,7 +6,7 @@
 // Tablo quest_progress (user_id, quest_id, period): period günlükte 'D2026-10-06', haftalıkta
 // pazartesinin tarihi 'W2026-10-05', tek seferlikte 'O'. Dönem değişince yeni satır = sıfırdan
 // başlar; toplanmamış eski dönem ödülleri kaybolur (istemci sıfırlanma süresini gösterir).
-const { QUESTS, QUEST_BY_ID } = require('../shared/quests');
+const { QUESTS, QUEST_BY_ID, DRAFT_QUEST_STATS } = require('../shared/quests');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -29,17 +29,24 @@ function resetsAtOf(scope, now = Date.now()) {
   return null;
 }
 
-// Bir maç olayından görev istatistikleri. event: { gf, ga } (bu oyuncunun gözünden).
+// Maç olaylarından görev istatistikleri. event: { gf, ga, draftMode?, playerPool? } (bu
+// oyuncunun gözünden; mod/havuz bilgisini matchSockets odadan ekler).
 function statsOf(events) {
-  const s = { play: 0, win: 0, goals: 0, cleanSheet: 0, bigWin: 0 };
+  const s = { play: 0, win: 0, goals: 0, cleanSheet: 0, bigWin: 0, oneNil: 0, goalRain: 0, superLigWin: 0, blindWin: 0, wheelWin: 0 };
   for (const e of events || []) {
     const gf = Number(e.gf) || 0;
     const ga = Number(e.ga) || 0;
+    const win = gf > ga;
     s.play += 1;
     s.goals += gf;
-    if (gf > ga) s.win += 1;
+    if (win) s.win += 1;
     if (ga === 0) s.cleanSheet += 1;
     if (gf - ga >= 3) s.bigWin += 1;
+    if (gf === 1 && ga === 0) s.oneNil += 1;
+    if (gf >= 5) s.goalRain += 1;
+    if (win && e.playerPool === 'super-lig') s.superLigWin += 1;
+    if (win && e.draftMode === 'blind') s.blindWin += 1;
+    if (win && e.draftMode === 'wheel') s.wheelWin += 1;
   }
   return s;
 }
@@ -50,9 +57,12 @@ class QuestService {
     this.coinService = coinService;
   }
 
-  // Maç sonunda bir kullanıcının geçerli maçlarını işler.
-  async recordMatches(userId, events, now = Date.now()) {
+  // Maç sonunda bir kullanıcının geçerli maçlarını (+ varsa o odadaki draft/takas olaylarını,
+  // bkz. quests/questLog.js) işler. Draft olayları sadece en az bir geçerli maç varsa sayılır.
+  async recordMatches(userId, events, now = Date.now(), draftLog = null) {
+    if (!events || !events.length) return;
     const stats = statsOf(events);
+    for (const k of DRAFT_QUEST_STATS) stats[k] = Math.max(0, Math.floor(Number(draftLog && draftLog[k]) || 0));
     for (const q of QUESTS) {
       const n = stats[q.stat] || 0;
       if (n <= 0) continue;
@@ -73,7 +83,7 @@ class QuestService {
       const progress = row ? Number(row.progress) || 0 : 0;
       const claimed = !!(row && row.claimed_at);
       return {
-        id: q.id, scope: q.scope, title: q.title, target: q.target, reward: q.reward,
+        id: q.id, scope: q.scope, group: q.group, title: q.title, desc: q.desc || null, target: q.target, reward: q.reward,
         progress: Math.min(progress, q.target), claimed, claimable: !claimed && progress >= q.target,
         resetsAt: resetsAtOf(q.scope, now),
       };

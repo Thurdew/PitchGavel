@@ -1422,9 +1422,10 @@ const kitSeriesOf = (kitId) => (KIT_VARIANTS.find((v) => v.id === kitId) || {}).
 // ============================== GÖREVLER ==============================
 // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — GÖREVLER] Üst bardaki "Görevler" düğmesinin açılır paneli
 // (app.js toggleQuestsPop bunu #questsPop içine kurar). Veri: GET /api/quests (state.quests).
-const QUEST_SCOPES = [
+const QUEST_GROUPS = [
   ['daily', 'Günlük', 'Küçük görevler'],
   ['weekly', 'Haftalık', 'Orta görevler'],
+  ['niche', 'Özel Görevler', 'Haftalık'],
   ['once', 'Büyük Görevler', 'Tek seferlik'],
 ];
 
@@ -1453,8 +1454,8 @@ export function renderQuestsPanel(state, actions) {
     ])]);
   }
   const list = q.data.quests;
-  const sections = QUEST_SCOPES.map(([scope, label, hint]) => {
-    const items = list.filter((x) => x.scope === scope);
+  const sections = QUEST_GROUPS.map(([group, label, hint]) => {
+    const items = list.filter((x) => (x.group || x.scope) === group);
     if (!items.length) return null;
     const resetsAt = items[0].resetsAt;
     return el('section', { class: 'qp-sec' }, [
@@ -1475,6 +1476,7 @@ export function renderQuestsPanel(state, actions) {
               el('span', { class: 'qp-row-title' }, x.title),
               el('span', { class: 'qp-reward' }, [coinIco(12), fmtCoins(x.reward)]),
             ]),
+            x.desc ? el('div', { class: 'qp-row-desc' }, x.desc) : null,
             el('div', { class: 'qp-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(x.target), 'aria-valuenow': String(x.progress) }, [
               el('i', { style: `width:${pct}%` }),
             ]),

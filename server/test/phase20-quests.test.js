@@ -4,6 +4,7 @@
 //  görevin kalıcılığı, Topla (tamamlanmamış, çift toplama, eşzamanlı toplama, bilinmeyen görev),
 //  coin_ledger kaydı, eski satır temizliği. Maç sonu → ilerleme yolu phase15'te uçtan uca test edilir.
 process.env.RESEND_API_KEY = '';
+process.env.DRAFT_ROUND_DELAY_MS = '1'; // motor testlerinde tur sonrası zamanlayıcı hemen bitsin
 
 const assert = require('assert');
 
@@ -30,7 +31,9 @@ const assert = require('assert');
     assert.strictEqual(resetsAtOf('once', wed), null);
     console.log('[test20] dönem anahtarları ve sıfırlanma zamanları ✅');
 
-    assert.deepStrictEqual(statsOf([{ gf: 4, ga: 0 }, { gf: 1, ga: 1 }, { gf: 0, ga: 2 }]), { play: 3, win: 1, goals: 5, cleanSheet: 1, bigWin: 1 });
+    assert.deepStrictEqual(statsOf([{ gf: 4, ga: 0 }, { gf: 1, ga: 1 }, { gf: 0, ga: 2 }]), { play: 3, win: 1, goals: 5, cleanSheet: 1, bigWin: 1, oneNil: 0, goalRain: 0, superLigWin: 0, blindWin: 0, wheelWin: 0 });
+    const niche = statsOf([{ gf: 1, ga: 0, draftMode: 'blind', playerPool: 'super-lig' }, { gf: 5, ga: 2, draftMode: 'wheel', playerPool: 'all' }, { gf: 0, ga: 1, draftMode: 'blind', playerPool: 'super-lig' }]);
+    assert.deepStrictEqual([niche.oneNil, niche.goalRain, niche.superLigWin, niche.blindWin, niche.wheelWin, niche.bigWin], [1, 1, 1, 1, 1, 1]);
     assert.strictEqual(new Set(QUESTS.map((q) => q.id)).size, QUESTS.length, 'görev id\'leri benzersiz');
     assert(QUESTS.some((q) => q.stat === 'win' && q.target === 5 && q.reward === 200), 'kullanıcının örneği: 5 galibiyet = 200 coin');
     console.log('[test20] maç istatistikleri + katalog ✅');
@@ -102,6 +105,81 @@ const assert = require('assert');
     const left = raw.prepare('SELECT period FROM quest_progress WHERE user_id = ?').all(uid).map((r) => r.period);
     assert(left.length > 0 && left.every((p) => p === 'O'), JSON.stringify(left));
     console.log('[test20] eski dönem temizliği ✅');
+
+    // ---- Niş: draft olayları sadece geçerli maçla yazılır ----
+    const uid2 = (await auth.register('n@example.com', 'parola1234', 'n')).user.id;
+    const get2 = async (id) => (await qs.list(uid2, wed)).quests.find((q) => q.id === id);
+    await qs.recordMatches(uid2, [], wed, { blindMin: 1 });
+    assert.strictEqual((await get2('n_blind_min')).progress, 0, 'geçerli maç yoksa draft olayı yazılmaz');
+    await qs.recordMatches(uid2, [{ gf: 1, ga: 0, draftMode: 'blind', playerPool: 'super-lig' }], wed, { blindMin: 1, liveSnipe: 2, hack: 50, trade: -3 });
+    assert.strictEqual((await get2('n_blind_min')).progress, 1);
+    assert.strictEqual((await get2('n_live_snipe')).progress, 2);
+    assert.strictEqual((await get2('n_trade')).progress, 0, 'negatif değer yok sayılır');
+    assert.strictEqual((await get2('n_one_nil')).progress, 1);
+    assert.strictEqual((await get2('n_superlig')).progress, 1);
+    assert.strictEqual((await get2('o_blind10')).progress, 1);
+    assert.strictEqual((await get2('n_blind_min')).group, 'niche');
+    assert((await get2('n_blind_min')).desc.includes('10₺'));
+    assert(!raw.prepare('SELECT 1 FROM quest_progress WHERE quest_id = ?').get('hack'), 'bilinmeyen istatistik görev üretmez');
+    console.log('[test20] niş: draft olayları + maç detayları, geçerli maç şartı ✅');
+
+    // ---- Niş: DraftEngine olay noktaları ----
+    const { DraftEngine } = require('../src/draft/DraftEngine');
+    const { MIN_PLAYER_PRICE } = require('../src/shared/gameConfig');
+    const ioStub = { to: () => ({ emit: () => {} }) };
+    const rmStub = { toPublicState: () => ({}) };
+    const engine = new DraftEngine(ioStub, rmStub);
+    engine.emitDraft = () => {};
+    const mkRoom = (draftMode) => ({
+      code: 'TEST1', status: 'finished', draftMode, questLog: {},
+      players: ['a', 'b'].map((id) => ({ clientId: id, budget: 1000, squad: [], slotsNeeded: { GK: 1 } })),
+      draft: { round: null, history: [], cascade: null },
+    });
+    const main = { id: 'p1', name: 'X', rating: 80 };
+    const blind = (bids, participants = ['a', 'b']) => {
+      const room = mkRoom('blind');
+      room.draft.round = { kind: 'blind_auction', slotType: 'GK', participantIds: participants, main, bids: new Map(Object.entries(bids).map(([k, v], i) => [k, { amount: v, at: i }])) };
+      engine.resolveBlindRound(room);
+      return room.questLog.a || {};
+    };
+    assert.strictEqual(blind({ a: MIN_PLAYER_PRICE }).blindMin, 1, 'rakipli turda 10₺ ile kazanmak');
+    assert.strictEqual(blind({ a: MIN_PLAYER_PRICE }, ['a']).blindMin, undefined, 'tek katılımcılı tur sayılmaz');
+    assert.strictEqual(blind({ a: 50 }).blindMin, undefined);
+    assert.strictEqual(blind({ a: 50, b: 46 }).blindNarrow, 1, '4₺ fark kıl payı');
+    assert.strictEqual(blind({ a: 50, b: 45 }).blindNarrow, 1, '5₺ fark sınırda');
+    assert.strictEqual(blind({ a: 50, b: 40 }).blindNarrow, undefined, '10₺ fark değil');
+    assert.strictEqual(blind({ a: 50 }).blindNarrow, undefined, 'rakip teklif vermediyse kıl payı yok');
+
+    const live = (bids) => {
+      const room = mkRoom('live');
+      room.draft.round = { kind: 'auction', slotType: 'GK', participantIds: ['a', 'b'], main, bids: new Map(Object.entries(bids).map(([k, v], i) => [k, { ...v, at: i }])) };
+      engine.resolveAuctionRound(room);
+      return room.questLog.a || {};
+    };
+    assert.strictEqual(live({ a: { amount: 60, late: true }, b: { amount: 55 } }).liveSnipe, 1, 'son saniyede kapmak');
+    assert.strictEqual(live({ a: { amount: 60, late: false }, b: { amount: 55 } }).liveSnipe, undefined);
+    assert.strictEqual(live({ a: { amount: 60, late: true } }).liveSnipe, undefined, 'rakipsiz son saniye sayılmaz');
+
+    const stealRoom = mkRoom('wheel');
+    engine.assignPlayer(stealRoom, stealRoom.players[0], main, 'GK', 0, 'wheel_stolen');
+    engine.assignPlayer(stealRoom, stealRoom.players[1], main, 'GK', 0, 'wheel_pick');
+    assert.strictEqual(stealRoom.questLog.a.wheelSteal, 1);
+    assert.strictEqual((stealRoom.questLog.b || {}).wheelSteal, undefined);
+
+    const finish = (draftMode) => {
+      const room = mkRoom(draftMode);
+      room.players[0].squad = [{ player: { isIcon: true } }, { player: { isIcon: true } }, { player: { isIcon: false } }];
+      room.players[0].budget = 300;
+      room.players[1].squad = [{ player: { isIcon: true } }];
+      room.players[1].budget = 299;
+      engine.finishDraft(room);
+      return room.questLog;
+    };
+    let log = finish('blind');
+    assert.deepStrictEqual([log.a.icons2, log.a.saver, (log.b || {}).icons2, (log.b || {}).saver], [1, 1, undefined, undefined]);
+    log = finish('wheel');
+    assert.strictEqual(log.a.saver, undefined, 'çark modunda bütçe yok — kumbaracı sayılmaz');
+    console.log('[test20] niş: DraftEngine olay noktaları (kelepir, kıl payı, son saniye, çalma, efsaneler, kumbaracı) ✅');
 
     console.log('[test20] TÜM TESTLER GEÇTİ ✅');
     process.exit(0);
