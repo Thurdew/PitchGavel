@@ -242,14 +242,30 @@ export function renderLobby({ state, actions }) {
     ]);
   }
 
-  const modePicker = ui.mode ? null : el('div', { class: 'lobby-mode-picker' }, [
-    lobbyModeCard('🔨', 'Oda Kur', 'Yeni bir açık arttırma başlat, kodu rakibine gönder', () => selectMode('create'), true),
-    lobbyModeCard('🎫', 'Odaya Katıl', 'Rakibinden aldığın kodla gir', () => selectMode('join'), true),
+  // [KULLANICI İSTEĞİ] "Burası hiç güzel değil" — mod kartları v2: bilet koçanı kaldırıldı (genişliği
+  // yiyip 3+1 yetim satır yaratıyordu). Dikey kutular: geniş ekranda tek sıra 4, tablette 2×2,
+  // mobilde yatay kompakt satırlar. Oda Kur birincil seçenek olarak vurgulu.
+  function lobbyModeTile(icon, tag, label, desc, onClick, primary) {
+    return el('button', { type: 'button', class: `lm-tile ${primary ? 'primary' : ''}`, onclick: onClick }, [
+      el('span', { class: 'lm-top' }, [
+        el('span', { class: 'lm-ico', 'aria-hidden': 'true' }, icon),
+        el('span', { class: 'lm-tag' }, tag),
+      ]),
+      el('span', { class: 'lm-txt' }, [
+        el('span', { class: 'lm-title' }, label),
+        el('span', { class: 'lm-desc' }, desc),
+      ]),
+      el('span', { class: 'lm-go', 'aria-hidden': 'true' }, '→'),
+    ]);
+  }
+  const modePicker = ui.mode ? null : el('div', { class: 'lm-grid' }, [
+    lobbyModeTile('🔨', 'Arkadaşınla', 'Oda Kur', 'Yeni bir açık arttırma başlat, kodu rakibine gönder', () => selectMode('create'), true),
+    lobbyModeTile('🎫', 'Kodla gir', 'Odaya Katıl', 'Rakibinden aldığın kodla gir', () => selectMode('join')),
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — HESAP SİSTEMİ SONRASI FAZ 4, "Yabancılarla Online
     // Eşleşme"] Oda kur/katıl akışına dokunmuyor — üçüncü, bağımsız bir yol.
-    lobbyModeCard('⚡', 'Hızlı Eşleş', 'Rastgele bir rakiple anında eşleş, draft otomatik başlar', () => selectMode('quick'), true),
+    lobbyModeTile('⚡', 'Online', 'Hızlı Eşleş', 'Rastgele bir rakiple anında eşleş, draft otomatik başlar', () => selectMode('quick')),
     // [KULLANICI İSTEĞİ, KARARLAŞTIRILDI — BİLGİSAYARA KARŞI] Rakip beklemeden bota karşı.
-    lobbyModeCard('🤖', 'Bilgisayara Karşı', 'Rakip beklemeden bota karşı oyna, draft hemen başlar (coin vermez)', () => selectMode('bot'), true),
+    lobbyModeTile('🤖', 'Pratik', 'Bilgisayara Karşı', 'Rakip beklemeden bota karşı oyna, draft hemen başlar (coin vermez)', () => selectMode('bot')),
   ]);
 
   // Kompakt hap-düğme grubu — bkz. yukarıdaki not. Dizilim ekranındaki `.formation-pick`/
@@ -1652,25 +1668,50 @@ export function friendsStrip(state, actions) {
   if (!data.friends.length && !data.incoming.length) {
     return el('button', { class: 'fr-strip-empty', onclick: go }, '👥 Arkadaşlarını ekle, odadayken tek tıkla yanlarına katıl →');
   }
-  const online = data.friends.filter((f) => f.presence && (f.presence.online || f.presence.room))
-    .sort((a, b) => friendRank(a) - friendRank(b));
-  return el('section', { class: 'fr-strip', 'aria-label': 'Arkadaşlar' }, [
-    el('div', { class: 'fr-strip-head' }, [
-      el('span', { class: 'dr-kicker' }, `Arkadaşlar · ${online.length} çevrimiçi`),
+  // [KULLANICI İSTEĞİ] "Online arkadaşlar kısmı kötü duruyor" — şerit v2: liste satırları yerine
+  // yatay avatar rafı. Çevrimiçiler önde (durum halkası + odadaysa Katıl), kimse yoksa çevrimdışı
+  // arkadaşlar soluk avatar olarak durur; boş metin kutusu yok.
+  const isOn = (f) => f.presence && (f.presence.online || f.presence.room);
+  const online = data.friends.filter(isOn).sort((a, b) => friendRank(a) - friendRank(b));
+  const offline = data.friends.filter((f) => !isOn(f));
+  const shown = [...online, ...offline].slice(0, 6);
+  const more = data.friends.length - shown.length;
+  const initial = (n) => String(n || '?').trim().charAt(0).toLocaleUpperCase('tr');
+  const people = shown.map((f) => {
+    const st = friendStatus(f);
+    const room = f.presence && f.presence.room;
+    const canJoin = room && room.joinable && !state.room;
+    return el('div', { class: `fr-av-item ${st.tone}`, title: `${f.displayName} · ${st.text}` }, [
+      el('button', {
+        type: 'button', class: 'fr-av',
+        onclick: canJoin ? () => actions.joinFriendRoom(room.code) : go,
+        'aria-label': canJoin ? `${f.displayName} odasına katıl` : f.displayName,
+      }, [
+        el('span', { class: 'fr-av-face' }, initial(f.displayName)),
+        el('span', { class: 'fr-av-dot', 'aria-hidden': 'true' }),
+        canJoin ? el('span', { class: 'fr-av-join' }, 'Katıl') : null,
+      ]),
+      el('span', { class: 'fr-av-name' }, f.displayName),
+      el('span', { class: 'fr-av-st' }, st.tone === 'off' ? 'Çevrimdışı' : room ? (room.joinable ? 'Odada' : 'Maçta') : 'Çevrimiçi'),
+    ]);
+  });
+  if (more > 0) {
+    people.push(el('div', { class: 'fr-av-item more' }, [
+      el('button', { type: 'button', class: 'fr-av', onclick: go, 'aria-label': 'Tüm arkadaşlar' }, el('span', { class: 'fr-av-face' }, `+${more}`)),
+      el('span', { class: 'fr-av-name' }, 'Diğerleri'),
+    ]));
+  }
+  return el('section', { class: `fr-rail ${online.length ? 'has-on' : ''}`, 'aria-label': 'Arkadaşlar' }, [
+    el('div', { class: 'fr-rail-head' }, [
+      el('span', { class: 'fr-rail-live', 'aria-hidden': 'true' }),
+      el('div', { class: 'fr-rail-txt' }, [
+        el('b', {}, online.length ? `${online.length} arkadaşın çevrimiçi` : 'Arkadaşların'),
+        el('span', {}, online.length ? 'Odadaysa avatarına dokun, yanına katıl' : 'Şu an kimse çevrimiçi değil'),
+      ]),
       data.incoming.length ? el('button', { class: 'fr-badge', onclick: go }, `${data.incoming.length} yeni istek`) : null,
-      el('button', { class: 'linklike fr-strip-all', onclick: go }, 'Tümü →'),
     ]),
-    online.length
-      ? el('div', { class: 'fr-strip-list' }, online.slice(0, 4).map((f) => {
-        const st = friendStatus(f);
-        return el('div', { class: 'fr-strip-row' }, [
-          el('span', { class: `fr-dot ${st.tone}` }),
-          el('span', { class: 'fr-strip-name' }, f.displayName),
-          el('span', { class: 'fr-strip-status' }, st.text),
-          friendJoinButton(f, state, actions),
-        ]);
-      }))
-      : el('div', { class: 'fr-strip-none' }, 'Şu an çevrimiçi arkadaşın yok.'),
+    el('div', { class: 'fr-rail-list' }, people),
+    el('button', { type: 'button', class: 'fr-rail-all', onclick: go, 'aria-label': 'Tüm arkadaşlar' }, [el('span', {}, 'Tümü'), el('i', {}, '→')]),
   ]);
 }
 

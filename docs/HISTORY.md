@@ -903,3 +903,15 @@ Kullanıcı masaüstündeki zip'i ekletti. İçinde `patch-v8.6/client/public/{v
 Doğrulama: `node --check`; headless Chrome'da misafir ve hesaplı Oda Kur formu (anahtarlar, özet), Katıl/Hızlı Eşleş/Bot formları, mobil 390px; görev paneli v2 (sekme, Hepsini Topla 3 ödül = 310 coin, mobil sayfa + kapat); hızlandırılmış sunucuda bota karşı tam oyun: draft mini sahasında formalar, dizilim → Hazırım → maç (22 forma noktası, skorbord) → Sonuca Geç → sonuç (44 formalı kart). Konsolda hata yok. Sunucu kodu değişmedi.
 
 Etkilenen dosyalar: `client/public/views.js`, `client/public/styles.css`.
+
+### 2026-10-12 — Lobi ekranı tasarım alternatifleri 1 (mod kartları v2 + arkadaş şeridi v2)
+
+İstek: "Lobi ekranı tasarım alternatifleri1" yamasını (zip, `patch-v8.6/client/public/{views.js,styles.css}`) ekle.
+
+Yama `diff --strip-trailing-cr` ile güncel koda karşı kontrol edildi; güncel koddan üretilmiş, hiçbir şey silmiyor, olduğu gibi alındı.
+- **Lobi mod kartları v2** (`lobbyModeTile`, `.lm-*`): bilet koçanlı kartlar yerine dikey kutular + etiket (Arkadaşınla/Kodla gir/Online/Pratik); geniş ekranda 4'lü, ≤900px 2×2, ≤520px yatay kompakt satırlar; Oda Kur vurgulu. ≤1280px'te `.lobby-decor` gizlenir. `lobbyModeCard` başka yerlerde kullanıldığı için duruyor.
+- **Ana sayfa arkadaş şeridi v2** (`.fr-rail`, `.fr-av-*`): liste yerine yatay avatar rafı (baş harf), çevrimiçiler önde, odadaysa avatarda "Katıl"; kimse çevrimiçi değilse çevrimdışılar soluk; en fazla 6 + "+N".
+
+Doğrulama: ES modül olarak `node --check`, CSS `/*`–`*/` sayısı 230/230; yerel sunucuda headless Chrome ile lobi 1440/800/390px ekran görüntüsü (4'lü, 2×2, mobil satır düzeni doğru). Arkadaş şeridi giriş + çevrimiçi arkadaş gerektirdiği için tarayıcıda görülmedi.
+
+Etkilenen dosyalar: `client/public/views.js`, `client/public/styles.css`, `docs/HISTORY.md`.
